@@ -34,11 +34,23 @@ is stamped `THIS REPORT IS NOT EVIDENCE` and `report` refuses to write without
 ## Choosing the scorer (ADR 0002)
 
 Two candidates are wired up, both free and self-hosted, because they are the
-only routes commercially usable today without buying a licence:
+only routes commercially usable today without buying a licence.
 
 ```bash
-pip install -e ".[dlib]"      # or ".[dinov2]", or both
-# fetch the model files, read their licences, fill in config/spike.yaml
+pip install -e ".[dlib]" ".[dinov2]"   # either or both
+make fetch-models                      # downloads, verifies, tells you what to read
+```
+
+`fetch-models` downloads each file, refuses anything that is really an error
+page or a Git LFS pointer, checks the digest where one is pinned, and then
+prints the licence for each one and the YAML to paste into `config/spike.yaml`.
+
+It deliberately leaves `licence` and `licence_verified_on` blank. The gate in
+`EmbedderConfig.require_usable` exists so that somebody read the text; a fetcher
+that ticked it off would defeat the point of having it. Nothing runs until you
+fill those two fields in.
+
+```bash
 python -m scripts.spike.cli bake-off --backends dlib dinov2
 ```
 
@@ -52,9 +64,6 @@ The bake-off calibrates both on the same data and ranks on distribution overlap,
 then on true-positive rate. It will not let a stub backend win. Whichever
 separates *your* data wins — published benchmarks measure real-identity
 recognition, which is not the task.
-
-No weights are downloaded automatically. Every path is explicit in config, so
-pulling in a model stays a deliberate act with a licence attached to it.
 
 ## A real run
 
@@ -106,7 +115,10 @@ comparing incomparable numbers (`BUILD_ORDER` amendment A3).
 - The stub embedder is insensitive to whole-frame affine changes, because it
   mean-subtracts before normalising. Noted because it is the kind of blindness
   a real embedder can also have.
-- **The dlib and DINOv2 model calls are unverified.** Neither package was
+- **The dlib and DINOv2 model calls are unverified.** The YuNet detector is
+  verified (it downloads, the digest matches, and it loads and runs), and the
+  dlib.net downloads could not be tested at all because that host was blocked by
+  the container's egress allowlist. Neither package was
   installable in the container this was written in (dlib builds from source and
   timed out; torch was not present). Everything around the call is tested — the
   licence and path gates, the detection contract, the crop geometry, the

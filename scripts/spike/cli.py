@@ -31,6 +31,7 @@ from .errors import SpikeError
 from .frames import ImageSequenceFrames
 from .ledger import CostLedger
 from .matrix import FAILURE_TAGS, GOLF_BATTERY, Condition, coverage, coverage_gaps, sample_matrix
+from .models import MODELS, config_snippet, fetch, sha256_of
 from .providers import (
     ImageRequest,
     LipSyncRequest,
@@ -553,6 +554,54 @@ def _calibrate_with(
     )
 
 
+def cmd_fetch_models(args: argparse.Namespace) -> int:
+    """Download the ADR 0002 candidate weights, then tell you what to read.
+
+    Deliberately does not fill in the licence fields. The gate in
+    EmbedderConfig.require_usable exists so that somebody read the text; a
+    fetcher that ticked it off would defeat the point of having it.
+    """
+    dest_dir = Path(args.dest)
+    wanted = [m for m in MODELS if args.backend in (None, m.backend)]
+    fetched: dict[str, Path] = {}
+    failures: list[str] = []
+
+    for model in wanted:
+        print(f"  {model.key:<18} {model.url}")
+        try:
+            path = fetch(model, dest_dir, force=args.force)
+        except SpikeError as exc:
+            failures.append(f"{model.key}: {exc}")
+            print(f"  {'':<18} FAILED — see below", file=sys.stderr)
+            continue
+        fetched[model.key] = path
+        print(f"  {'':<18} -> {path}  ({path.stat().st_size:,} bytes)")
+        print(f"  {'':<18}    sha256 {sha256_of(path)}")
+
+    if failures:
+        print("\nSome files did not download:", file=sys.stderr)
+        for failure in failures:
+            print(f"\n  {failure}", file=sys.stderr)
+
+    if not fetched:
+        return 2
+
+    print("\n" + "=" * 72)
+    print("NOW READ THE LICENCES. Nothing runs until you have.\n")
+    for model in wanted:
+        if model.key not in fetched:
+            continue
+        print(f"  {model.key}")
+        print(f"    {model.licence_where}")
+        print(f"    {model.licence_note}\n")
+
+    print("=" * 72)
+    print("Then paste into config/spike.yaml, filling in the two blank fields:\n")
+    print(config_snippet(fetched))
+    print("\nThen: python -m scripts.spike.cli bake-off --backends dlib dinov2")
+    return 0
+
+
 def cmd_bake_off(args: argparse.Namespace) -> int:
     """Calibrate several embedder backends on the same data and compare.
 
@@ -757,6 +806,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="render from stub data. Stamps the report NOT EVIDENCE.",
     )
     sp.set_defaults(func=cmd_report)
+
+    sp = sub.add_parser("fetch-models", help="download the ADR 0002 candidate weights")
+    sp.add_argument("--dest", default="models", help="where to put them (default: models/)")
+    sp.add_argument("--backend", choices=["dlib", "dinov2"], help="just one candidate")
+    sp.add_argument("--force", action="store_true", help="re-download existing files")
+    sp.set_defaults(func=cmd_fetch_models)
 
     sp = sub.add_parser("bake-off", help="ADR 0002: calibrate several backends side by side")
     add_run(sp)

@@ -1,0 +1,150 @@
+"""The model fetcher.
+
+Mostly tests for downloads that look like they worked and did not. Saving an
+error page as a .dat and discovering it at calibration time costs a day.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from scripts.spike.errors import SpikeError
+from scripts.spike.models import (
+    MODELS,
+    ModelFile,
+    _looks_like_a_model,
+    config_snippet,
+    fetch,
+    sha256_of,
+)
+
+BIG = b"\x00" * 50_000
+
+
+def _write(tmp_path: Path, name: str, data: bytes) -> Path:
+    p = tmp_path / name
+    p.write_bytes(data)
+    return p
+
+
+def test_git_lfs_pointer_is_named_specifically(tmp_path):
+    """The real failure this caught: opencv_zoo keeps .onnx files in LFS, so
+    raw.githubusercontent.com serves a 131-byte stub that is a valid HTTP 200."""
+    pointer = (
+        b"version https://git-lfs.github.com/spec/v1\n"
+        b"oid sha256:8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4\n"
+        b"size 232589\n"
+    )
+    complaint = _looks_like_a_model(_write(tmp_path, "m.onnx", pointer))
+    assert complaint is not None
+    assert "Git LFS pointer" in complaint
+    assert "media.githubusercontent.com" in complaint
+
+
+def test_html_error_page_is_rejected(tmp_path):
+    page = b"<!DOCTYPE html>\n<html><body>404 not found</body></html>" + b" " * 50_000
+    complaint = _looks_like_a_model(_write(tmp_path, "m.dat", page))
+    assert complaint is not None
+    assert "web page" in complaint
+
+
+def test_proxy_denial_body_is_rejected(tmp_path):
+    body = b"Host not in allowlist: dlib.net. Add this host to your egress settings."
+    assert _looks_like_a_model(_write(tmp_path, "m.dat", body)) is not None
+
+
+def test_tiny_file_is_rejected(tmp_path):
+    complaint = _looks_like_a_model(_write(tmp_path, "m.dat", b"\x00" * 200))
+    assert complaint is not None
+    assert "error page" in complaint
+
+
+def test_plausible_binary_is_accepted(tmp_path):
+    assert _looks_like_a_model(_write(tmp_path, "m.dat", BIG)) is None
+
+
+def test_yunet_url_does_not_use_the_lfs_stub_endpoint():
+    """Regression: the obvious URL returns a pointer, not the model."""
+    yunet = next(m for m in MODELS if m.key == "yunet")
+    assert "raw.githubusercontent.com" not in yunet.url
+    assert "media.githubusercontent.com/media/" in yunet.url
+    assert yunet.sha256, "the LFS pointer gives us the digest; pin it"
+
+
+def test_every_model_names_where_to_read_its_licence():
+    for model in MODELS:
+        assert model.licence_where.startswith("http")
+        assert model.licence_note
+
+
+def test_detector_licence_note_warns_it_is_separate():
+    yunet = next(m for m in MODELS if m.key == "yunet")
+    assert "SEPARATE licence question" in yunet.licence_note
+
+
+def test_hash_mismatch_refuses_and_deletes(tmp_path, monkeypatch):
+    """A changed model means a changed embedding space, so this must not pass."""
+    model = ModelFile(
+        key="t",
+        backend="dlib",
+        url="https://example.invalid/m.dat",
+        filename="m.dat",
+        config_key="recognition_model",
+        licence_where="https://example.invalid",
+        licence_note="x",
+        sha256="0" * 64,
+    )
+
+    class _Response:
+        def read(self) -> bytes:
+            return BIG
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Response())
+    with pytest.raises(SpikeError, match="sha256 mismatch"):
+        fetch(model, tmp_path)
+    assert not (tmp_path / "m.dat").exists()
+
+
+def test_matching_hash_is_kept(tmp_path, monkeypatch):
+    digest = sha256_of(_write(tmp_path, "probe.bin", BIG))
+    model = ModelFile(
+        key="t",
+        backend="dlib",
+        url="https://example.invalid/m.dat",
+        filename="m.dat",
+        config_key="recognition_model",
+        licence_where="https://example.invalid",
+        licence_note="x",
+        sha256=digest,
+    )
+
+    class _Response:
+        def read(self) -> bytes:
+            return BIG
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Response())
+    assert fetch(model, tmp_path / "out").exists()
+
+
+def test_config_snippet_leaves_the_licence_blank():
+    """The fetcher must never tick off the gate that exists to force a read."""
+    snippet = config_snippet({m.key: Path(f"models/{m.final_name}") for m in MODELS})
+    assert "licence: null" in snippet
+    assert "licence_verified_on: null" in snippet
+    assert "YOU fill this in" in snippet
+    assert "recognition_model:" in snippet
+    assert "detector_model:" in snippet
