@@ -14,7 +14,16 @@ dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
 # ADR 0002 candidates. Installed only when you run the bake-off; neither is
 # needed for `make check` or the offline demo.
 dlib = ["dlib>=19.24"]
-dinov2 = ["torch>=2.2", "transformers>=4.40", "opencv-python-headless>=4.9"]
+# torchvision is NOT optional despite not being imported directly: transformers
+# 5.x routes AutoImageProcessor through it, so leaving it out installs cleanly
+# and then fails at first use with an ImportError about a library you never
+# asked for.
+dinov2 = [
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "transformers>=4.40",
+  "opencv-python-headless>=4.9",
+]
 
 [tool.setuptools]
 packages = ["scripts", "scripts.spike"]

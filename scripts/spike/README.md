@@ -143,11 +143,17 @@ comparing incomparable numbers (`BUILD_ORDER` amendment A3).
 - The stub embedder is insensitive to whole-frame affine changes, because it
   mean-subtracts before normalising. Noted because it is the kind of blindness
   a real embedder can also have.
-- **The dlib and DINOv2 model calls are unverified.** The YuNet detector is
-  verified (it downloads, the digest matches, and it loads and runs). The
-  dlib.net and huggingface.co downloads could not be tested at all, because both
-  hosts are blocked by the egress allowlist of the environment this was written
-  in. A Codespace has no such restriction. Neither package was
+- **The DINOv2 model call is verified only up to the download.** torch,
+  torchvision and transformers install, the embedder constructs, and `_load()`
+  gets as far as an OSError reaching huggingface.co — which is the expected
+  failure in an environment where that host is blocked, and confirms the
+  transformers API usage is right. What has NOT run is the model itself, so the
+  embeddings have never been computed. A Codespace has no egress restriction, so
+  it will get further.
+- **The dlib backend is entirely unverified** — dlib.net is blocked here too,
+  and dlib builds from source. It is the fallback, not the chosen scorer.
+- The YuNet detector IS verified: it downloads, its digest matches, and it loads
+  and runs through `cv2.FaceDetectorYN`. Neither package was
   installable in the container this was written in (dlib builds from source and
   timed out; torch was not present). Everything around the call is tested — the
   licence and path gates, the detection contract, the crop geometry, the

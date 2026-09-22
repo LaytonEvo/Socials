@@ -31,6 +31,16 @@ else
 fi
 
 say "Installing DINOv2 (the chosen identity scorer) — this one is large"
+# CPU-only torch on purpose. A Codespace has no GPU, and the default wheels
+# pull in roughly 4GB of CUDA libraries that can never run -- measured, not
+# guessed: a default install came to 5.8GB of site-packages, 4.1GB of it
+# nvidia/ and triton/, with torch.cuda.is_available() False. That is a large
+# bite out of a 32GB machine and a slow first boot for nothing.
+# Falls back to the default index if the CPU one is unreachable.
+if ! pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu; then
+  warn "CPU-only torch index unreachable; falling back to default wheels (much larger)."
+fi
+
 if pip install --quiet -e ".[dinov2]"; then
   DINO_OK=1
 else
@@ -39,7 +49,7 @@ else
       pip install -e \".[dinov2]\""
 fi
 
-cat <<BANNER
+cat <<'BANNER'
 
 ────────────────────────────────────────────────────────────────────────
   Persona Studio — Spike 0
