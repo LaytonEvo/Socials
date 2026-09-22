@@ -3,12 +3,21 @@
 Two candidates, both free and self-hosted, chosen because they are the only
 routes that are commercially usable today without buying a licence:
 
-* ``dlib`` -- a genuine face recognition model, 128-d. The weights were
-  released into the public domain by their author. Residual risk is upstream:
-  part of the training data (FaceScrub) carries a non-commercial licence, and
-  the author's public-domain statement covers the model file rather than the
-  data it saw. ADR 0002 records this as a counsel question, not an engineering
-  one.
+* ``dlib`` -- a genuine face recognition model. Two variants ship in
+  dlib-models and they are NOT interchangeable, on either axis that matters:
+
+  - ``dlib_face_recognition_resnet_model_v1`` (128-d, 99.38% LFW). Covered by
+    the repository's public-domain statement, which is scoped to "trained
+    models created by me (Davis King)". Residual risk upstream: part of the
+    training data (FaceScrub) is non-commercial.
+  - ``face_recognition_densenet_model_v1`` (96.1% LFW). A third-party
+    contribution from the BAREL project, so that public-domain statement does
+    NOT reach it -- it covers its author's own models. BAREL licenses it MIT,
+    an explicit grant from the actual author rather than an informal note, but
+    its recognition training set is not documented.
+
+  Set ``dim`` to match whichever file is configured. The embedder checks the
+  descriptor it gets back and refuses on a mismatch.
 * ``dinov2`` -- a general visual embedder under Apache 2.0, applied to a
   cropped face. Not a face recognition model, which is the point. Face
   recognisers are *trained to be invariant* to pose, lighting, expression, age,
@@ -237,6 +246,11 @@ class DlibEmbedder:
     shape_predictor: Path
     licence: str | None
     jitter: int = 1
+    #: NOT hardcoded. dlib-models ships more than one face descriptor and they
+    #: are different networks -- the original ResNet is 128-d, the
+    #: community-contributed DenseNet (BAREL) is something else. Pinning 128
+    #: here would mis-shape the other one silently.
+    dim: int = 128
     info: EmbedderInfo = field(init=False)
 
     def __post_init__(self) -> None:
@@ -244,7 +258,7 @@ class DlibEmbedder:
             backend="dlib",
             model=self.recognition_model.name,
             version="v1",
-            dim=128,
+            dim=self.dim,
             licence=self.licence,
         )
 
@@ -264,6 +278,13 @@ class DlibEmbedder:
         vector = np.array(
             descriptor.compute_face_descriptor(arr, shape, self.jitter), dtype=np.float32
         )
+        if vector.shape[0] != self.dim:
+            raise EmbedderNotConfigured(
+                f"{self.recognition_model.name} produced a {vector.shape[0]}-d descriptor "
+                f"but embedder.backends.dlib.dim says {self.dim}. Pin the real dimension: "
+                f"a calibrated threshold is valid for exactly one model at one version "
+                f"(amendment A3)."
+            )
         return FrameEmbedding(0, 0.0, OK, faces=1, vector=l2_normalise(vector), source=str(path))
 
 
@@ -349,6 +370,7 @@ def _build_dlib(cfg: EmbedderConfig) -> DlibEmbedder:
         ),
         licence=cfg.licence,
         jitter=int(cfg.options.get("jitter", 1)),
+        dim=int(cfg.dim or 128),
     )
 
 

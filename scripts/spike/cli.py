@@ -562,7 +562,15 @@ def cmd_fetch_models(args: argparse.Namespace) -> int:
     fetcher that ticked it off would defeat the point of having it.
     """
     dest_dir = Path(args.dest)
-    wanted = [m for m in MODELS if args.backend in (None, m.backend)]
+    wanted = [
+        m
+        for m in MODELS
+        if args.backend in (None, m.backend) and (not m.optional or m.key in args.include)
+    ]
+    if not args.include:
+        skipped = [m.key for m in MODELS if m.optional and args.backend in (None, m.backend)]
+        if skipped:
+            print(f"  (skipping alternatives: {', '.join(skipped)} — add with --include)\n")
     fetched: dict[str, Path] = {}
     failures: list[str] = []
 
@@ -811,6 +819,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--dest", default="models", help="where to put them (default: models/)")
     sp.add_argument("--backend", choices=["dlib", "dinov2"], help="just one candidate")
     sp.add_argument("--force", action="store_true", help="re-download existing files")
+    sp.add_argument(
+        "--include",
+        nargs="+",
+        default=[],
+        metavar="KEY",
+        help="also fetch an alternative file, e.g. dlib-densenet",
+    )
     sp.set_defaults(func=cmd_fetch_models)
 
     sp = sub.add_parser("bake-off", help="ADR 0002: calibrate several backends side by side")

@@ -26,12 +26,14 @@ Checked 2026-09-22 against current sources (linked below). **Re-verify before re
 | InsightFace `buffalo_l` (ArcFace) | Code MIT; **pretrained models non-commercial research only** | MS1M / Glint360K derivatives, research-only | **No** — but commercial licensing is offered |
 | SFace (OpenCV Zoo) | Apache 2.0 on the model directory | CASIA-WebFace, **non-commercial research and educational use** | Contested |
 | dlib `dlib_face_recognition_resnet_model_v1` | **Public domain**, explicit author statement | ~3M faces incl. FaceScrub and VGG; FaceScrub non-commercial | Contested, cleanest of the face-specific options |
+| dlib `face_recognition_densenet_model_v1` | **MIT**, from the BAREL project — *not* covered by the dlib-models statement | Undocumented for the recognition stage | **Yes** on the grant; provenance unknown |
 | DigiFace-1M (to train our own) | Dataset **non-commercial research** | Synthetic | **No** |
 | DINOv2 | **Apache 2.0** (relicensed from CC-BY-NC) | LVD-142M | **Yes**, but not a face model |
 
 Two specific traps worth recording because they are easy to walk into:
 
 - **DINOv3 is not DINOv2.** DINOv3 ships under a bespoke "DINOv3 License", not Apache 2.0. Reaching for the newer model by reflex changes the licence position.
+- **The dlib-models public-domain statement does not cover every file in that repository.** Its exact wording is *"This repository contains trained models created by me (Davis King)... anyone can do whatever they want with these model files as I've released them into the public domain."* That is scoped to its author's own models. `face_recognition_densenet_model_v1` is a third-party contribution from the [BAREL project](https://github.com/Cydral/BAREL), which licenses it MIT separately. Reading the blanket line and assuming it covers everything in the repo is the easy mistake — and in this case the answer happens to be fine, but by a different route than the one you checked.
 - **Detection is a separate licence question from recognition.** The popular face detectors ship inside the same non-commercial packages as the recognisers. The harness uses YuNet (Apache 2.0, OpenCV Zoo) or dlib's classical HOG detector (Boost Software License, no learned weights from a scraped corpus) for exactly this reason.
 
 ### Finding 2 — face recognition invariance is the opposite of what we need
@@ -74,7 +76,9 @@ Both are wired up in `scripts/spike/embedders.py` and registered, so each is one
 python -m scripts.spike.cli bake-off --backends dlib dinov2
 ```
 
-- **`dlib`** — a genuine face recognition model, 128-d. Public-domain weights per the author's statement. The FaceScrub contamination upstream is a counsel question, not an engineering one.
+- **`dlib`** — a genuine face recognition model. Two variants exist and they fill the same slot, so pick one:
+  - `dlib_face_recognition_resnet_model_v1`, 128-d, 99.38% LFW. Public-domain weights per the author's statement; the FaceScrub contamination upstream is a counsel question.
+  - `face_recognition_densenet_model_v1`, 96.1% LFW. MIT from BAREL — a cleaner grant, because it is explicit and comes from the model's actual author rather than resting on a blanket line that does not reach it. But less accurate, and its recognition training set is undocumented, so the provenance question is not removed, only reshaped.
 - **`dinov2`** — Apache 2.0 general visual embedder on a cropped face, 768-d. Not a face recogniser, deliberately, per Finding 2.
 
 The bake-off calibrates both on the same master and control sets and ranks on distribution overlap, then on true-positive rate — the candidate that separates, and among those the one that discards fewest good takes. It refuses to let a stub backend win, because a stub posts a perfect score on fixtures it was never going to fail.
@@ -107,3 +111,14 @@ Checked 2026-09-22. All are primary except where noted.
 - DigiFace-1M licence — [microsoft/DigiFace1M](https://github.com/microsoft/DigiFace1M/blob/main/README.md)
 - DINOv2 commercial relicensing — [Meta AI blog](https://ai.meta.com/blog/dinov2-facet-computer-vision-fairness-evaluation/)
 - DINOv3 licence — [facebookresearch/dinov3](https://github.com/facebookresearch/dinov3)
+- BAREL (densenet variant) licence — [Cydral/BAREL](https://github.com/Cydral/BAREL)
+
+## Log
+
+**2026-09-22** — Owner supplied two Apache 2.0 licence files and the
+`face_recognition_densenet_model_v1` weights. Apache 2.0 confirms commercial use
+for the DINOv2 route (model and detector). The densenet is a *different file*
+from the one this ADR originally named, which turned out to be worth catching:
+it is not covered by the dlib-models public-domain statement, and is MIT via
+BAREL instead. Still **open** — awaiting the owner's explicit go-ahead on which
+route to record, and which project each Apache file belongs to.

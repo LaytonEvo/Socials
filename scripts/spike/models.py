@@ -41,6 +41,11 @@ class ModelFile:
     #: where it is known, so a silently-changed or truncated file is caught
     #: before it becomes a calibration you cannot reproduce.
     sha256: str | None = None
+    #: True for a file that is an ALTERNATIVE to another one filling the same
+    #: config slot, rather than an addition. Skipped unless asked for by name,
+    #: because fetching two candidates for one slot leaves you having to guess
+    #: which the config means.
+    optional: bool = False
 
     @property
     def final_name(self) -> str:
@@ -62,6 +67,25 @@ MODELS: tuple[ModelFile, ...] = (
             "and record it verbatim."
         ),
         compressed=True,
+    ),
+    ModelFile(
+        key="dlib-densenet",
+        backend="dlib",
+        url="http://dlib.net/files/face_recognition_densenet_model_v1.dat.bz2",
+        filename="face_recognition_densenet_model_v1.dat.bz2",
+        config_key="recognition_model",
+        licence_where="https://github.com/Cydral/BAREL",
+        licence_note=(
+            "ALTERNATIVE to dlib-recognition, not an addition -- both fill the same "
+            "config slot. Third-party contribution from the BAREL project, so the "
+            "dlib-models public-domain statement does NOT cover it: that statement is "
+            "scoped to 'trained models created by me (Davis King)'. BAREL licenses it "
+            "MIT, which is a cleaner grant (explicit, from the actual author) but its "
+            "recognition training set is undocumented. Weaker too: 96.1% LFW against "
+            "the ResNet's 99.38%. Set backends.dlib.dim to its real output size."
+        ),
+        compressed=True,
+        optional=True,
     ),
     ModelFile(
         key="dlib-landmarks",
@@ -178,9 +202,24 @@ def fetch(model: ModelFile, dest_dir: Path, force: bool = False) -> Path:
     return final
 
 
+def clashing_slots(fetched: dict[str, Path]) -> list[str]:
+    """Config slots that more than one fetched file wants to fill."""
+    seen: dict[str, list[str]] = {}
+    for model in MODELS:
+        if model.key in fetched:
+            seen.setdefault(f"{model.backend}.{model.config_key}", []).append(model.key)
+    return [slot for slot, keys in seen.items() if len(keys) > 1]
+
+
 def config_snippet(fetched: dict[str, Path]) -> str:
     """The YAML to paste, with licence fields deliberately left blank."""
     lines = ["embedder:", "  backends:"]
+    for slot in clashing_slots(fetched):
+        lines.insert(
+            0,
+            f"# NOTE: you have more than one file for {slot}. They are alternatives, "
+            f"not additions -- keep the one you want and delete the other line.",
+        )
     for backend in ("dlib", "dinov2"):
         keys = {
             m.config_key: fetched[m.key]

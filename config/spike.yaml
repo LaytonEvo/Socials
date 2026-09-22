@@ -40,12 +40,27 @@ embedder:
   # licence, record it in docs/decisions/0002-..., then fill in the path.
   backends:
     dlib:
-      # A real face recognition model, 128-d.
-      # Weights: public domain per the author's statement. Residual risk is
-      # upstream -- part of the training data (FaceScrub) is non-commercial.
-      # See ADR 0002; this is a counsel question, not an engineering one.
-      #   http://dlib.net/files/dlib_face_recognition_resnet_model_v1.dat.bz2
-      #   http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2
+      # A real face recognition model. TWO variants exist and they are not
+      # interchangeable. Pick one for `recognition_model` and set `dim` to
+      # match, or the embedder will refuse.
+      #
+      #  (a) dlib_face_recognition_resnet_model_v1  -- 128-d, 99.38% LFW.
+      #      Covered by the dlib-models public-domain statement, which is
+      #      scoped to "trained models created by me (Davis King)".
+      #      Residual risk: part of the training data (FaceScrub) is
+      #      non-commercial. ADR 0002 treats that as a counsel question.
+      #        http://dlib.net/files/dlib_face_recognition_resnet_model_v1.dat.bz2
+      #
+      #  (b) face_recognition_densenet_model_v1     -- 96.1% LFW.
+      #      A BAREL project contribution, so the public-domain statement
+      #      above does NOT reach it. BAREL licenses it MIT -- an explicit
+      #      grant from the actual author, which is cleaner -- but its
+      #      recognition training set is undocumented, and it is less
+      #      accurate. Check its real output size before setting dim.
+      #        http://dlib.net/files/face_recognition_densenet_model_v1.dat.bz2
+      #
+      # Both need the landmark predictor:
+      #        http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2
       dim: 128
       recognition_model: null
       shape_predictor: null

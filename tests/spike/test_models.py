@@ -148,3 +148,35 @@ def test_config_snippet_leaves_the_licence_blank():
     assert "YOU fill this in" in snippet
     assert "recognition_model:" in snippet
     assert "detector_model:" in snippet
+
+
+def test_densenet_is_an_alternative_not_an_addition():
+    """Both dlib descriptors fill the same config slot.
+
+    Fetching both by default would leave you with two files for one setting and
+    no way to tell which the config meant.
+    """
+    densenet = next(m for m in MODELS if m.key == "dlib-densenet")
+    resnet = next(m for m in MODELS if m.key == "dlib-recognition")
+    assert densenet.config_key == resnet.config_key
+    assert densenet.optional is True
+    assert resnet.optional is False
+
+
+def test_densenet_note_records_that_the_public_domain_statement_misses_it():
+    """The dlib-models statement is scoped to its author's own models; the
+    densenet is a third-party contribution, so it is not covered by it."""
+    densenet = next(m for m in MODELS if m.key == "dlib-densenet")
+    assert "does NOT cover it" in densenet.licence_note
+    assert "BAREL" in densenet.licence_note
+    assert densenet.licence_where == "https://github.com/Cydral/BAREL"
+
+
+def test_clashing_slots_are_flagged_in_the_snippet():
+    from scripts.spike.models import clashing_slots
+
+    fetched = {m.key: Path(f"models/{m.final_name}") for m in MODELS}
+    assert "dlib.recognition_model" in clashing_slots(fetched)
+    snippet = config_snippet(fetched)
+    assert "alternatives" in snippet
+    assert "delete the other line" in snippet
