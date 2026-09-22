@@ -53,9 +53,9 @@ class ImageSequenceFrames:
 class FfmpegFrames:
     """Sample a real video file at a fixed rate via ffmpeg.
 
-    NOTE: unexercised in the container this harness was written in -- ffmpeg was
-    not installed there. Run `make check` on a machine with ffmpeg on PATH
-    before trusting it against real clips.
+    Covered by tests/spike/test_ffmpeg_path.py, which encodes a real .mp4 and
+    runs it through the whole scoring path. Those tests skip themselves when
+    ffmpeg is absent, so the harness stays developable without it.
     """
 
     image_format: str = "png"

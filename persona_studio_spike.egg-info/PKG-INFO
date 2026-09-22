@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: persona-studio-spike
+Version: 0.0.0
+Summary: Spike 0 feasibility harness. Throwaway by design; not the production system.
+Requires-Python: >=3.11
+Requires-Dist: numpy>=1.26
+Requires-Dist: pillow>=10
+Requires-Dist: pyyaml>=6
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: ruff>=0.5; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: types-PyYAML; extra == "dev"
+Provides-Extra: dlib
+Requires-Dist: dlib>=19.24; extra == "dlib"
+Provides-Extra: dinov2
+Requires-Dist: torch>=2.2; extra == "dinov2"
+Requires-Dist: transformers>=4.40; extra == "dinov2"
+Requires-Dist: opencv-python-headless>=4.9; extra == "dinov2"

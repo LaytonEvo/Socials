@@ -1,8 +1,15 @@
 # Spike 0 harness
 
-> **Running this on Windows?** `make` is a Unix tool and will not exist on your
-> machine. Every `make X` below is a shortcut for a plain Python command, and
-> the Python form works everywhere. The table in
+> **Easiest way to run this: GitHub Codespaces.** Open the repository on
+> GitHub, press `.` or use the green **Code** button → **Codespaces** → **Create
+> codespace**. You get a working environment in a browser tab with Python,
+> ffmpeg and every dependency already installed — nothing to install locally, on
+> Windows or anywhere else. First creation takes a few minutes; after that it is
+> instant. See `.devcontainer/` for what it sets up.
+>
+> **Running it locally on Windows instead?** `make` is a Unix tool and will not
+> exist on your machine. Every `make X` below is a shortcut for a plain Python
+> command, and the Python form works everywhere. The table in
 > [Commands](#commands-make-vs-plain-python) gives both.
 
 Answers the two questions in `docs/BUILD_ORDER.md` Section 3 — does the face
@@ -131,19 +138,16 @@ comparing incomparable numbers (`BUILD_ORDER` amendment A3).
 
 ## Known limitations
 
-- **ffmpeg is a runtime dependency and was not available in the container this
-  was written in.** `ImageSequenceFrames` (fixture directories) is exercised by
-  the tests; `FfmpegFrames` is not. Run `make check` somewhere with ffmpeg on
-  PATH before trusting it against real clips.
 - No real provider backend is implemented. Doing so requires verifying the
   provider's current API against official documentation first.
 - The stub embedder is insensitive to whole-frame affine changes, because it
   mean-subtracts before normalising. Noted because it is the kind of blindness
   a real embedder can also have.
 - **The dlib and DINOv2 model calls are unverified.** The YuNet detector is
-  verified (it downloads, the digest matches, and it loads and runs), and the
-  dlib.net downloads could not be tested at all because that host was blocked by
-  the container's egress allowlist. Neither package was
+  verified (it downloads, the digest matches, and it loads and runs). The
+  dlib.net and huggingface.co downloads could not be tested at all, because both
+  hosts are blocked by the egress allowlist of the environment this was written
+  in. A Codespace has no such restriction. Neither package was
   installable in the container this was written in (dlib builds from source and
   timed out; torch was not present). Everything around the call is tested — the
   licence and path gates, the detection contract, the crop geometry, the
