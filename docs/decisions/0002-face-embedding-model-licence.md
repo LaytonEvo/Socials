@@ -1,6 +1,6 @@
 # ADR 0002 — Face-embedding model and licence route
 
-- **Status:** **Open — human decision required.** Blocks Spike 0. Candidates are wired up and ready to bake off.
+- **Status:** **Accepted 2026-09-22 — DINOv2.** No longer blocks Spike 0.
 - **Date:** 2026-09-22 (research recorded); superseded sections dated where changed
 - **Deciders:** Layton (owner), supervising engineer; touches counsel under D7
 - **Relates to:** `BUILD_PLAN.md` Section 3 (stack), tasks 1.2 and 1.3; `docs/BUILD_ORDER.md` amendment A3
@@ -66,7 +66,26 @@ Generating the control set synthetically — distinct looks from the same image 
 
 **(d) Train or fine-tune our own.** Disproportionate, and it reintroduces dataset licensing rather than removing it — the obvious synthetic corpus (DigiFace-1M) is itself non-commercial.
 
-## Decision (proposed)
+## Decision
+
+**DINOv2 (option a), decided by the owner on 2026-09-22.** Recorded in
+`config/spike.yaml` as `embedder.backend: dinov2`.
+
+Apache 2.0 covers both the embedder (`facebook/dinov2-base`) and its face
+detector (YuNet, OpenCV Zoo). Commercial use is explicitly granted for both,
+with no third-party asterisk and no undocumented training corpus behind the
+grant — which is what separates it from the dlib options rather than raw
+benchmark accuracy.
+
+The substantive reason is Finding 2, not the licence: a general visual embedder
+has no trained-in invariance to the axes this project needs to measure.
+
+**The dlib route stays wired up and is not deleted.** If DINOv2 turns out not to
+separate the distributions, `face_recognition_densenet_model_v1` (MIT, via
+BAREL) is the fallback and the bake-off compares them in one command. Option
+(b), a paid commercial licence, remains the funded fallback beyond that.
+
+### Original proposal, retained for the record
 
 **Bake off two free, self-hosted candidates inside Spike 0, and keep (b) as the funded fallback.**
 
@@ -85,7 +104,21 @@ The bake-off calibrates both on the same master and control sets and ranks on di
 
 Choose on measured separation against **our** data, not on published benchmarks: those measure real-identity recognition, which is not the task.
 
-## Required before this closes
+## Still required, now that the model is chosen
+
+1. **A machine that can run it.** `huggingface.co` must be reachable from
+   wherever this executes — that is where `facebook/dinov2-base` downloads from.
+   Not verified in this repository's environment, where both `huggingface.co`
+   and `dlib.net` are blocked by the container's egress allowlist.
+2. Set `embedder.backends.dinov2.detector_model` to the local path of the YuNet
+   ONNX file once that machine exists. `fetch-models --backend dinov2` gets it.
+3. Calibrate, then check the worst-frame contact sheet before trusting the
+   threshold. A scorer that agrees with the statistics and disagrees with your
+   eye is still the wrong scorer.
+4. Put Finding 4 (control-set biometric data) into the D7 counsel scope. Still
+   outstanding.
+
+### Superseded checklist
 
 1. Fetch the model files listed in `config/spike.yaml` under `embedder.backends`, **read the actual current licence text for each**, and record it verbatim with the date read. Nothing is downloaded automatically: pulling in weights is a licence decision, not a cache miss.
 2. Run the bake-off. Record both calibrations and the winner in this ADR.
@@ -96,7 +129,7 @@ Choose on measured separation against **our** data, not on published benchmarks:
 
 ## Consequences
 
-Until this closes, Spike 0 cannot start: every task from S0.2 onward depends on the scorer. It remains the single highest-priority open item.
+Spike 0 is unblocked on the scorer. The remaining gate is somewhere to run it, not a decision.
 
 If neither free candidate separates adequately, that is not a dead end but a decision point with evidence attached: either buy a commercial licence, or accept that automated identity scoring is **advisory rather than gating** — in which case the human review load in Phase 3 rises substantially and task 3.4's auto-reject design needs rework before it is built. The harness reports this outcome explicitly rather than quietly picking the least-bad number.
 
@@ -122,3 +155,10 @@ from the one this ADR originally named, which turned out to be worth catching:
 it is not covered by the dlib-models public-domain statement, and is MIT via
 BAREL instead. Still **open** — awaiting the owner's explicit go-ahead on which
 route to record, and which project each Apache file belongs to.
+
+**2026-09-22 (later)** — Owner chose DINOv2. Recorded in config. The DINOv2
+model call itself remains **unverified**: `huggingface.co` is blocked from this
+repository's build environment, so the weights could not be downloaded to test
+against. The YuNet detector IS verified — it downloads, its digest matches, and
+it loads and runs. First person to run this on a connected machine is the first
+to exercise the embedder.

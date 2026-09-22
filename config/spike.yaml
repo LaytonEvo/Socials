@@ -14,12 +14,16 @@ run_root: spike/runs
 price_max_age_days: 90
 
 # --- Identity scorer -------------------------------------------------------
-# BLOCKED ON docs/decisions/0002-face-embedding-model-licence.md
-# The scorer is the measuring instrument for the whole spike. It cannot be
-# chosen provisionally: changing it invalidates every stored vector and the
-# calibrated threshold with them (BUILD_ORDER amendment A3).
+# DECIDED: dinov2. See docs/decisions/0002-face-embedding-model-licence.md.
+# Apache 2.0 for both the embedder and its detector, confirmed by the owner
+# on 2026-09-22.
+#
+# Changing this later invalidates every stored vector and the calibrated
+# threshold with them (BUILD_ORDER amendment A3), so it is not a setting to
+# flip casually. The code enforces that: scoring with a calibration from a
+# different model raises rather than comparing incomparable numbers.
 embedder:
-  backend: null            # registry key, e.g. "arcface-onnx"
+  backend: dinov2          # DECIDED 2026-09-22, see ADR 0002
   model: null              # exact weights identifier
   version: null            # weights version/revision, pinned
   dim: null                # embedding dimension
@@ -80,9 +84,9 @@ embedder:
       detector: yunet               # yunet | dlib-hog
       # YuNet ONNX, Apache 2.0, from the OpenCV Zoo. Not bundled with the pip
       # package. Detection is a separate licence question from recognition.
-      detector_model: null
-      licence: null
-      licence_verified_on: null
+      detector_model: null            # <- set once you know where this runs
+      licence: Apache-2.0
+      licence_verified_on: 2026-09-22  # owner read the licence text and confirmed
 
 # --- Providers -------------------------------------------------------------
 # `backend: null` means "not implemented yet" and raises a clear error if used.
