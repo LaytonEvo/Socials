@@ -1,0 +1,96 @@
+# Spike 0 configuration.
+#
+# Rules from CLAUDE.md that this file enforces:
+#   - No model names, endpoints or prices in code. They live here.
+#   - Every price carries a verified_on date. The harness REFUSES to use a
+#     price without one, or one older than price_max_age_days.
+#   - Model weights carry a licence and the date it was read.
+#
+# Nothing below has been verified. Every `null` is a deliberate blocker:
+# fill it in only after reading the provider's current official docs, and
+# record what you found in docs/decisions/.
+
+run_root: spike/runs
+price_max_age_days: 90
+
+# --- Identity scorer -------------------------------------------------------
+# BLOCKED ON docs/decisions/0002-face-embedding-model-licence.md
+# The scorer is the measuring instrument for the whole spike. It cannot be
+# chosen provisionally: changing it invalidates every stored vector and the
+# calibrated threshold with them (BUILD_ORDER amendment A3).
+embedder:
+  backend: null            # registry key, e.g. "arcface-onnx"
+  model: null              # exact weights identifier
+  version: null            # weights version/revision, pinned
+  dim: null                # embedding dimension
+  licence: null            # verbatim licence identifier
+  licence_verified_on: null  # YYYY-MM-DD, date the licence TEXT was read
+  frame_sample_fps: 2.0
+  # Similarity below which a frame is treated as a different person for
+  # reporting. Written by `cli.py calibrate`; do not hand-edit.
+  threshold: null
+  threshold_calibrated_on: null
+
+# --- Providers -------------------------------------------------------------
+# `backend: null` means "not implemented yet" and raises a clear error if used.
+# The `fake` backends are offline stubs for validating the harness itself.
+# Runs containing fake data cannot produce a Gate A report without --allow-fake.
+providers:
+  image:
+    fake:
+      backend: fake
+      model: fake-image-v0
+      price_usd_per_image: 0.0
+      verified_on: 1970-01-01
+    primary:
+      backend: null
+      model: null
+      endpoint: null
+      price_usd_per_image: null
+      verified_on: null
+
+  video:
+    fake:
+      backend: fake
+      model: fake-video-v0
+      price_usd_per_second: 0.0
+      verified_on: 1970-01-01
+    flagship:            # face-forward hero shots
+      backend: null
+      model: null
+      endpoint: null
+      price_usd_per_second: null
+      verified_on: null
+    budget:              # volume / B-roll
+      backend: null
+      model: null
+      endpoint: null
+      price_usd_per_second: null
+      verified_on: null
+
+  lipsync:
+    fake:
+      backend: fake
+      model: fake-lipsync-v0
+      price_usd_per_second: 0.0
+      verified_on: 1970-01-01
+    primary:
+      backend: null
+      model: null
+      endpoint: null
+      price_usd_per_second: null
+      verified_on: null
+
+# --- LoRA (S0.4) -----------------------------------------------------------
+lora:
+  base_model: null
+  base_model_licence: null          # must permit commercial use
+  base_model_licence_verified_on: null
+  max_training_runs: 3
+
+# --- Generation defaults ---------------------------------------------------
+generation:
+  clip_duration_s: 5
+  identity_matrix_cells: 24         # >= 20 required by BUILD_PLAN task 1.6
+  takes_per_battery_prompt: 2
+  seed: 20260922

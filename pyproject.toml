@@ -1,0 +1,44 @@
+[project]
+name = "persona-studio-spike"
+version = "0.0.0"
+description = "Spike 0 feasibility harness. Throwaway by design; not the production system."
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "pillow>=10", "pyyaml>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
+
+[tool.setuptools]
+packages = ["scripts", "scripts.spike"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["scripts", "tests"]
+mypy_path = "."
+strict = true
+warn_unused_ignores = false
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = ["PIL", "PIL.*", "numpy", "numpy.*", "yaml", "yaml.*", "pytest", "_pytest.*"]
+ignore_missing_imports = true
+
+# The spike's tests are throwaway alongside the spike. They are linted and run,
+# but not held to strict typing -- annotating every fixture would cost more than
+# it catches here.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

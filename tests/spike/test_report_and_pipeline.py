@@ -1,0 +1,226 @@
+"""Report integrity, and the whole harness end to end on fakes."""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from pathlib import Path
+
+import pytest
+
+from scripts.spike.calibrate import Calibration
+from scripts.spike.cli import main
+from scripts.spike.errors import FakeDataInReport
+from scripts.spike.report import render_gate_report
+from scripts.spike.score import ClipScore
+
+TODAY = dt.date(2026, 9, 22)
+
+
+def _cal(stub: bool = False) -> Calibration:
+    return Calibration(
+        embedder_key="stub:p:0:d256" if stub else "real:m:1:d512",
+        embedder_is_stub=stub,
+        calibrated_on=TODAY,
+        threshold=0.82,
+        target_fpr=0.01,
+        fpr_at_threshold=0.004,
+        tpr_at_threshold=0.97,
+        eer_threshold=0.80,
+        eer=0.01,
+        auc=0.998,
+        d_prime=4.2,
+        overlap=0.02,
+        verdict="EXCELLENT",
+        positives={"n": 120, "mean": 0.93, "sd": 0.03, "p05": 0.88, "median": 0.93, "p95": 0.97},
+        negatives={"n": 300, "mean": 0.31, "sd": 0.09, "p05": 0.18, "median": 0.31, "p95": 0.46},
+    )
+
+
+def _score(ref: str, min_score: float, condition: dict[str, str]) -> ClipScore:
+    return ClipScore(
+        ref=ref,
+        label=ref,
+        embedder_key="real:m:1:d512",
+        threshold=0.82,
+        min_face_presence=0.9,
+        frames_sampled=10,
+        frames_usable=10,
+        no_face_frames=0,
+        multi_face_frames=0,
+        identity_score_min=min_score,
+        identity_score_mean=min_score + 0.02,
+        max_similarity_any_master=min_score + 0.03,
+        worst_frame_source=None,
+        condition=condition,
+    )
+
+
+SCORES = [
+    _score(
+        "a",
+        0.91,
+        {
+            "angle": "front",
+            "distance": "close",
+            "light": "indoor",
+            "motion": "static",
+            "cell_id": "a",
+        },
+    ),
+    _score(
+        "b",
+        0.70,
+        {
+            "angle": "profile",
+            "distance": "wide",
+            "light": "midday",
+            "motion": "turning",
+            "cell_id": "b",
+        },
+    ),
+]
+LEDGER = {
+    "budget_usd": "300",
+    "spent_usd": "182.40",
+    "calls": 48,
+    "failed_calls": 2,
+    "contains_fake_spend": False,
+    "by_provider": {},
+}
+
+
+def test_report_refuses_stub_evidence():
+    """A human makes a go/no-go call from this document."""
+    with pytest.raises(FakeDataInReport, match="stub embedder"):
+        render_gate_report(
+            run_id="r",
+            calibration=_cal(stub=True),
+            scores=SCORES,
+            ledger_summary=LEDGER,
+            today=TODAY,
+        )
+
+
+def test_report_refuses_fake_provider_spend():
+    ledger = {**LEDGER, "contains_fake_spend": True}
+    with pytest.raises(FakeDataInReport, match="stub providers"):
+        render_gate_report(
+            run_id="r", calibration=_cal(), scores=SCORES, ledger_summary=ledger, today=TODAY
+        )
+
+
+def test_allow_fake_stamps_the_report_loudly():
+    text = render_gate_report(
+        run_id="r",
+        calibration=_cal(stub=True),
+        scores=SCORES,
+        ledger_summary=LEDGER,
+        allow_fake=True,
+        today=TODAY,
+    )
+    assert "THIS REPORT IS NOT EVIDENCE" in text
+    assert "Do not make a gate decision from it" in text
+
+
+def test_real_evidence_needs_no_override_and_has_every_section():
+    text = render_gate_report(
+        run_id="r",
+        calibration=_cal(),
+        scores=SCORES,
+        ledger_summary=LEDGER,
+        usable_seconds=60.0,
+        today=TODAY,
+    )
+    assert "NOT EVIDENCE" not in text
+    for heading in (
+        "## 1. Threshold calibration",
+        "## 2. Identity pass rate by condition",
+        "## 3. Worst-frame contact sheet",
+        "## 4. Lip-sync drift probe",
+        "## 5. Golf format matrix",
+        "## 6. Cost",
+        "## 7. Operator time",
+        "## 8. Recommendation",
+    ):
+        assert heading in text, heading
+
+
+def test_report_leads_with_overlap_not_the_threshold():
+    text = render_gate_report(
+        run_id="r", calibration=_cal(), scores=SCORES, ledger_summary=LEDGER, today=TODAY
+    )
+    assert text.index("Distribution overlap") < text.index("Chosen threshold")
+    assert "**Read this first.**" in text
+
+
+def test_report_breaks_pass_rate_down_by_condition():
+    text = render_gate_report(
+        run_id="r", calibration=_cal(), scores=SCORES, ledger_summary=LEDGER, today=TODAY
+    )
+    assert "A single headline number is not the finding" in text
+    for axis in ("### angle", "### distance", "### light", "### motion"):
+        assert axis in text
+
+
+def test_cost_per_usable_second_is_reported():
+    text = render_gate_report(
+        run_id="r",
+        calibration=_cal(),
+        scores=SCORES,
+        ledger_summary=LEDGER,
+        usable_seconds=60.0,
+        today=TODAY,
+    )
+    assert "Cost per usable second" in text
+    assert "$3.0400" in text  # 182.40 / 60
+
+
+# --------------------------------------------------------------------------
+# End to end
+# --------------------------------------------------------------------------
+
+
+def test_full_harness_runs_offline_and_catches_drift(tmp_path, monkeypatch):
+    """The demo path: fixtures -> calibrate -> generate -> score -> report."""
+    monkeypatch.chdir(Path.cwd())
+    cfg_path = tmp_path / "spike.yaml"
+    original = Path("config/spike.yaml").read_text()
+    cfg_path.write_text(original.replace("run_root: spike/runs", f"run_root: {tmp_path / 'runs'}"))
+
+    assert main(["--config", str(cfg_path), "demo", "--cells", "10"]) == 0
+
+    run_dir = next((tmp_path / "runs").iterdir())
+    scores = json.loads((run_dir / "scores.json").read_text())
+    assert len(scores) == 10
+
+    # The fake provider drifts some clips and not others. If everything passed,
+    # the harness would be proving only that it runs.
+    passed = [s for s in scores if s["passed"]]
+    assert 0 < len(passed) < len(scores)
+
+    # Face loss must be caught by the presence rule, not the similarity rule.
+    lost = [s for s in scores if s["no_face_frames"] > 0]
+    assert lost, "expected the fixture to lose the face in at least one clip"
+    assert all(not s["passed"] for s in lost)
+
+    cal = json.loads((run_dir / "calibration.json").read_text())
+    assert cal["embedder_is_stub"] is True
+    assert cal["verdict"] == "EXCELLENT"
+
+    probe = json.loads((run_dir / "lipsync_probe.json").read_text())
+    assert probe["mean_delta"] < 0, "lip sync should measurably degrade identity"
+
+    assert (run_dir / "contact_sheet.png").exists()
+    report = (run_dir / "gate-a.md").read_text()
+    assert "THIS REPORT IS NOT EVIDENCE" in report
+
+
+def test_budget_is_mandatory_on_every_spending_command():
+    """Amendment A7, enforced by argparse rather than by remembering."""
+    import contextlib
+    import io
+
+    for command in ("run-matrix", "battery", "lipsync-probe"):
+        with pytest.raises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            main([command])

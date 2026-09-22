@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# Spike run outputs: media and logs are evidence, not source.
+# Gate report is promoted to docs/reports/ by hand.
+spike/runs/
