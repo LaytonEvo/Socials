@@ -42,6 +42,7 @@ it — use the right-hand column. Run these from the root of the project folder
 |---|---|
 | `make fetch-models` | `python -m scripts.spike.cli fetch-models` |
 | `make check-embedder` | `python -m scripts.spike.cli check-embedder` |
+| — | `python -m scripts.spike.cli prepare-set <folder> --which master` |
 | `make demo` | `python -m scripts.spike.cli demo` |
 | `make test` | `python -m pytest -q` |
 | `make lint` | `python -m ruff check scripts tests` |
@@ -123,7 +124,12 @@ recognition, which is not the task.
 
 ```bash
 python -m scripts.spike.cli init-run --note "throwaway look A"
-# put the master stills in <run>/master/ and a different-faces control set in <run>/control/
+
+# Validate the stills before they become a calibration set. Reports which
+# images have exactly one detectable face and copies only those into the run.
+python -m scripts.spike.cli prepare-set ~/persona-stills --which master
+python -m scripts.spike.cli prepare-set ~/other-people  --which control
+
 python -m scripts.spike.cli calibrate --target-fpr 0.01 --write-config
 python -m scripts.spike.cli run-matrix    --budget 150 --video-slot flagship
 python -m scripts.spike.cli battery       --budget 120

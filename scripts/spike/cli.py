@@ -35,6 +35,7 @@ from .embed import EmbeddingSet, cross_similarities, embed_images, load_embedder
 from .embedders import DETECTORS  # noqa: F401  (import registers dlib + dinov2)
 from .errors import SpikeError
 from .frames import ImageSequenceFrames
+from .ingest import format_report, ingest
 from .ledger import CostLedger
 from .matrix import FAILURE_TAGS, GOLF_BATTERY, Condition, coverage, coverage_gaps, sample_matrix
 from .models import MODELS, config_snippet, fetch, sha256_of
@@ -182,6 +183,38 @@ def cmd_make_fixtures(args: argparse.Namespace) -> int:
     print(f"fixtures: {args.master_count} master, {n} control -> {run_dir}")
     print("  ! synthetic shapes for harness validation, not a persona")
     return 0
+
+
+def cmd_prepare_set(args: argparse.Namespace) -> int:
+    """S0.1: validate a folder of stills, then copy the usable ones into the run.
+
+    Fails early and legibly. Calibrating on a set the detector cannot read
+    gives either a crash or, worse, a confident threshold computed from three
+    images — which reaches the Gate A report looking like a finding about the
+    persona rather than a problem with the input.
+    """
+    cfg = load_config(args.config)
+    run_dir = _run_dir(cfg, args.run)
+    embedder = _embedder(cfg, args.embedder)
+
+    source = Path(args.source)
+    if not source.is_dir():
+        raise SpikeError(f"{source} is not a directory")
+
+    dest = run_dir / args.which
+    report = ingest(source, dest, args.which, embedder, copy=not args.dry_run)
+    print(format_report(report, dest))
+
+    RunLog(run_dir).event(
+        "set_prepared",
+        which=args.which,
+        source=str(source),
+        candidates=len(report.candidates),
+        usable=len(report.usable),
+        copied=len(report.copied),
+        dry_run=args.dry_run,
+    )
+    return 0 if report.usable else 1
 
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
@@ -849,6 +882,19 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--master-count", type=int, default=10)
     sp.add_argument("--control-count", type=int, default=16)
     sp.set_defaults(func=cmd_make_fixtures)
+
+    sp = sub.add_parser("prepare-set", help="S0.1 validate stills and add them to a run")
+    add_run(sp)
+    add_embedder(sp)
+    sp.add_argument("source", help="folder of images you generated")
+    sp.add_argument(
+        "--which",
+        choices=["master", "control"],
+        required=True,
+        help="master = the persona. control = other, different people.",
+    )
+    sp.add_argument("--dry-run", action="store_true", help="report only, copy nothing")
+    sp.set_defaults(func=cmd_prepare_set)
 
     sp = sub.add_parser("calibrate", help="S0.3 threshold calibration")
     add_run(sp)
