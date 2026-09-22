@@ -173,3 +173,79 @@ def test_bake_off_reports_unconfigured_candidates_without_crashing(tmp_path, cap
     assert main(["--config", str(cfg_path), "bake-off", "--backends", "dlib", "dinov2"]) == 2
     err = capsys.readouterr().err
     assert "dlib" in err and "dinov2" in err
+
+
+# --- contact sheet legibility ---------------------------------------------
+
+
+def _scored(label: str, *, no_face: int = 0, multi_face: int = 0):
+    from scripts.spike.score import ClipScore
+
+    return ClipScore(
+        ref=label,
+        label=label,
+        embedder_key="k",
+        threshold=0.9,
+        min_face_presence=0.9,
+        frames_sampled=10,
+        frames_usable=10 - no_face,
+        no_face_frames=no_face,
+        multi_face_frames=multi_face,
+        identity_score_min=0.95,
+        identity_score_mean=0.97,
+        max_similarity_any_master=0.97,
+        worst_frame_source=None,
+    )
+
+
+def test_caption_drops_the_prefix_every_tile_shares():
+    """Printing `matrix-011-` on every tile spends a third of the caption
+    saying nothing, and truncates away the condition, which is the only part
+    a reviewer is looking for."""
+    from scripts.spike.contactsheet import caption_for
+
+    assert (
+        caption_for(_scored("matrix-011-profile-wide-overcast-turning"))
+        == "profile-wide-overcast-turning"
+    )
+
+
+def test_caption_leaves_other_labels_alone():
+    from scripts.spike.contactsheet import caption_for
+
+    label = "battery-full_swing_impact-flagship-0"
+    assert caption_for(_scored(label)) == label
+
+
+def test_label_and_face_lost_flag_do_not_collide(tmp_path):
+    """Regression: a fixed-width label ran into the flag on exactly the clips
+    that most needed reading — the ones where the face disappeared."""
+    from PIL import Image, ImageDraw
+
+    from scripts.spike.contactsheet import FLAG_W, TILE, _fit, caption_for
+
+    draw = ImageDraw.Draw(Image.new("RGB", (TILE, TILE)))
+    score = _scored("matrix-011-profile-wide-overcast-turning", no_face=2)
+    room = TILE - 12 - FLAG_W
+    fitted = _fit(caption_for(score), room, draw)
+    assert draw.textlength(fitted) <= room
+
+
+def test_long_labels_are_trimmed_with_an_ellipsis(tmp_path):
+    from PIL import Image, ImageDraw
+
+    from scripts.spike.contactsheet import _fit
+
+    draw = ImageDraw.Draw(Image.new("RGB", (200, 200)))
+    out = _fit("x" * 200, 100, draw)
+    assert out.endswith("…")
+    assert draw.textlength(out) <= 100
+
+
+def test_short_labels_are_left_intact():
+    from PIL import Image, ImageDraw
+
+    from scripts.spike.contactsheet import _fit
+
+    draw = ImageDraw.Draw(Image.new("RGB", (200, 200)))
+    assert _fit("short", 180, draw) == "short"
