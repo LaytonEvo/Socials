@@ -36,7 +36,11 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
-python_version = "3.11"
+# The project's target (BUILD_PLAN Section 3), NOT whatever interpreter happens
+# to be installed. This was pinned to 3.11 because a dev container had that, and
+# CI on 3.12 then failed inside numpy's own type stubs, which use 3.12 syntax.
+# Pin the target; let the interpreter vary.
+python_version = "3.12"
 files = ["scripts", "tests"]
 mypy_path = "."
 strict = true

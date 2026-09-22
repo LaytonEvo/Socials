@@ -46,9 +46,6 @@ jobs:
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dinov2]"
 
-      - name: Lint, types, tests
-        run: make check
-
       - name: Fetch the face detector
         run: python -m scripts.spike.cli fetch-models --backend dinov2 --dest models
 
@@ -77,3 +74,9 @@ jobs:
 
       - name: Offline demo, end to end
         run: make demo
+
+      # Last on purpose. This workflow exists to answer one question — does the
+      # scorer actually run — and a lint failure hiding that answer is exactly
+      # what happened on the first attempt.
+      - name: Lint, types, tests
+        run: make check
