@@ -4,7 +4,7 @@
 **Amends:** `BUILD_PLAN.md` Sections 4 and 6 (see [Plan amendments](#plan-amendments))
 **Leaves unchanged:** Sections 0–3, 5, 7–9. The architecture, adapter contract, compliance requirements and data model are sound. Only the sequencing and a short list of concrete gaps change.
 **Rationale:** `docs/decisions/0001-spike-first-build-order.md`
-**Status:** Draft for human review. Nothing here has been built.
+**Status:** **Accepted 2026-09-22.** Spike 0 is the current stage; its harness is built (`scripts/spike/`). Phase 0 has not started and does not start until Gate A passes.
 
 ---
 
@@ -237,8 +237,8 @@ Worth stating explicitly, because the list above is all criticism and the plan i
 
 | # | Decision | Where | Blocks |
 |---|---|---|---|
-| A | Accept or reject the spike-first reordering | This document | Everything |
-| B | Face-embedding model and licence route | ADR 0002 | Spike 0 |
+| ~~A~~ | ~~Accept or reject the spike-first reordering~~ | **Closed 2026-09-22: accepted** | — |
+| ~~B~~ | ~~Face-embedding model and licence route~~ | **Closed 2026-09-22: DINOv2** (ADR 0002) | — |
 | C | `SPIKE_BUDGET_USD` | §3.4 | Spike 0 |
 | D | Whether the concept survives a likely swing/ball-flight block | ADR 0003, informed by S0.7 | D1 |
 | E | Moderation: in scope for Phase 3, or explicitly owned elsewhere | A6 | Phase 4 |

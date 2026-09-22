@@ -1,6 +1,6 @@
 # ADR 0001 — Spike-first build order
 
-- **Status:** Proposed — awaiting human review
+- **Status:** **Accepted 2026-09-22** by the owner.
 - **Date:** 2026-09-22
 - **Deciders:** Layton (owner), supervising engineer
 - **Supersedes:** `BUILD_PLAN.md` Section 10
@@ -58,3 +58,9 @@ Phase numbering in `BUILD_PLAN.md` is preserved. Nothing is renumbered.
 **Spike inside Phase 0, reusing the real schema and adapters.** Rejected: the abstractions are precisely what the spike is meant to inform. Building them first to run the experiment through them defeats the purpose and is slower.
 
 **Wait for D1 before spiking.** Rejected: the spike measures whether the technique works, which a throwaway look answers. Waiting serialises a human decision in front of a technical one for no gain, and risks burning the real look on a failed experiment.
+
+## Log
+
+**2026-09-22** — Accepted by Layton. Spike 0 is the current stage; Phase 0 is not
+started and must not be, until Gate A passes. `BUILD_PLAN.md` Section 10 is
+superseded by `docs/BUILD_ORDER.md` and carries a banner saying so.

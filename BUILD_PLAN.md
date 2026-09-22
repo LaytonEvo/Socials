@@ -348,6 +348,18 @@ From the brief: roughly 3 in 5 generations are discarded. A 60-second piece of t
 
 ## 10. Suggested order of work for Claude Code
 
+> [!IMPORTANT]
+> **Superseded 2026-09-22 by [`docs/BUILD_ORDER.md`](docs/BUILD_ORDER.md).**
+> The order below builds the Phase 0 foundation before the experiment that can
+> invalidate it, and makes D1 before the evidence that constrains it. A
+> scripts-only Spike 0 now runs first, ending at a human go/no-go (Gate A).
+> Accepted by the owner; rationale in `docs/decisions/0001-spike-first-build-order.md`.
+> Everything else in this document stands, with ten amendments listed in
+> BUILD_ORDER section 5.
+>
+> The original text is kept below for the record.
+
+
 1. Phase 0 in full, on fake providers.
 2. Embedding service and threshold calibration (1.2, 1.3). These are needed by everything.
 3. One real image provider and two real video adapters.
