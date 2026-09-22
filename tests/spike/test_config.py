@@ -31,10 +31,25 @@ def _slot(**over) -> ProviderConfig:
     return ProviderConfig(**base)  # type: ignore[arg-type]
 
 
-def test_shipped_config_blocks_the_embedder(cfg):
-    """The repo's config must not let anyone score with an unchosen model."""
-    with pytest.raises(EmbedderNotConfigured, match="0002"):
-        cfg.embedder.require_usable()
+def test_shipped_config_records_the_chosen_scorer(cfg):
+    """ADR 0002 was decided on 2026-09-22: DINOv2, Apache 2.0.
+
+    The licence gate is satisfied for this one backend and no other. Changing
+    the scorer later invalidates every stored vector and the calibrated
+    threshold with it, so this assertion is here to make a silent swap loud.
+    """
+    assert cfg.embedder.backend == "dinov2"
+    chosen = cfg.embedder_for("dinov2")
+    chosen.require_usable()
+    assert chosen.licence == "Apache-2.0"
+    assert chosen.licence_verified_on is not None
+    assert chosen.dim == 768
+
+
+def test_unchosen_backends_are_still_blocked_on_their_licence(cfg):
+    """Deciding one candidate must not wave the others through."""
+    with pytest.raises(EmbedderNotConfigured, match="licence"):
+        cfg.embedder_for("dlib").require_usable()
 
 
 def test_shipped_config_blocks_real_providers(cfg):

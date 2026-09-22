@@ -33,10 +33,23 @@ def test_both_candidates_are_registered(cfg):
             load_embedder(cfg.embedder_for(backend))  # blocked on licence, not on lookup
 
 
-def test_candidates_are_blocked_until_the_licence_is_recorded(cfg):
-    for backend in ("dlib", "dinov2"):
-        with pytest.raises(EmbedderNotConfigured, match="licence"):
-            cfg.embedder_for(backend).require_usable()
+def test_dlib_is_still_blocked_until_its_licence_is_recorded(cfg):
+    """DINOv2 was chosen (ADR 0002); dlib remains the unrecorded fallback."""
+    with pytest.raises(EmbedderNotConfigured, match="licence"):
+        cfg.embedder_for("dlib").require_usable()
+
+
+def test_chosen_backend_is_blocked_on_its_model_path_not_its_licence(cfg):
+    """The licence question is closed; the remaining gate is a machine to run on.
+
+    DINOv2 must fail on the missing detector file, NOT on the licence -- if it
+    still failed on the licence, the decision was not really recorded.
+    """
+    import scripts.spike.embedders as mod
+
+    cfg.embedder_for("dinov2").require_usable()  # licence gate: passes
+    with pytest.raises(EmbedderNotConfigured, match="detector_model"):
+        mod._build_dinov2(cfg.embedder_for("dinov2"))
 
 
 def test_each_candidate_declares_its_own_dimension(cfg):
