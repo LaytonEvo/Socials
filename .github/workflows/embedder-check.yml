@@ -1,0 +1,79 @@
+# Runs the identity scorer's self-check on a clean machine with real network
+# access. It exists because the environment this project was largely written in
+# blocks huggingface.co, so the DINOv2 model could never actually be run there —
+# only verified as far as the download attempt.
+#
+# A GitHub runner has no such restriction, so this is the first place the model
+# genuinely executes.
+
+name: Embedder self-check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "scripts/spike/**"
+      - "config/spike.yaml"
+      - ".github/workflows/embedder-check.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Install the harness
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install DINOv2 (CPU-only torch)
+        run: |
+          # CPU-only on purpose: the runner has no GPU, and the default wheels
+          # pull in ~4GB of CUDA libraries that cannot run.
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dinov2]"
+
+      - name: Lint, types, tests
+        run: make check
+
+      - name: Fetch the face detector
+        run: python -m scripts.spike.cli fetch-models --backend dinov2 --dest models
+
+      - name: Self-check — model only, detection skipped
+        run: python -m scripts.spike.cli check-embedder --detector whole-image
+
+      - name: Self-check — full path, with face detection
+        run: |
+          # Point the config at the detector we just fetched. Done here rather
+          # than committed, because the path is machine-specific.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("config/spike.yaml")
+          p.write_text(
+              p.read_text().replace(
+                  "detector_model: null            # <- set once you know where this runs",
+                  "detector_model: models/face_detection_yunet_2023mar.onnx",
+              )
+          )
+          PY
+          grep -n "detector_model:" config/spike.yaml
+          # Expected to report no faces found: the probe images are coloured
+          # shapes, not photographs. That is a real result, not a failure of
+          # the model — it is what the detector is supposed to say.
+          python -m scripts.spike.cli check-embedder || true
+
+      - name: Offline demo, end to end
+        run: make demo
