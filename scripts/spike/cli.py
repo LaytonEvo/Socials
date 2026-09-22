@@ -23,7 +23,13 @@ from pathlib import Path
 from typing import Any
 
 from .calibrate import Calibration, calibrate
-from .config import DEFAULT_CONFIG_PATH, SpikeConfig, load_config, write_threshold
+from .config import (
+    DEFAULT_CONFIG_PATH,
+    EmbedderConfig,
+    SpikeConfig,
+    load_config,
+    write_threshold,
+)
 from .contactsheet import build_contact_sheet, worst_first
 from .embed import EmbeddingSet, cross_similarities, embed_images, load_embedder
 from .embedders import DETECTORS  # noqa: F401  (import registers dlib + dinov2)
@@ -42,6 +48,11 @@ from .providers import (
 from .report import render_gate_report
 from .runlog import RunLog, new_run_id
 from .score import ClipScore, score_clip
+from .selfcheck import (
+    format_result,
+    run_check,
+    sample_images_from,
+)
 
 CONTROL_IDENTITIES = ("control-b", "control-c", "control-d", "control-e")
 
@@ -60,17 +71,26 @@ def _run_dir(cfg: SpikeConfig, run_id: str | None) -> Path:
     return existing[-1]
 
 
-def _embedder(cfg: SpikeConfig, override: str | None) -> Any:
+def _embedder_config(cfg: SpikeConfig, override: str | None) -> EmbedderConfig:
+    """Resolve a backend's config, filling in defaults for ones with no block.
+
+    The stub has no entry under ``embedder.backends`` because it has nothing
+    real to declare, so it would otherwise fail the dimension gate that exists
+    to stop real backends being left unpinned.
+    """
     emb_cfg = cfg.embedder_for(override)
-    if override and emb_cfg.backend == override and emb_cfg.dim is None:
-        # A backend with no entry under embedder.backends (e.g. the stub).
+    if emb_cfg.dim is None:
         emb_cfg = dataclasses.replace(
             emb_cfg,
-            model=emb_cfg.model or f"{override}-override",
+            model=emb_cfg.model or f"{emb_cfg.backend}-override",
             version=emb_cfg.version or "0",
             dim=256,
         )
-    embedder = load_embedder(emb_cfg)
+    return emb_cfg
+
+
+def _embedder(cfg: SpikeConfig, override: str | None) -> Any:
+    embedder = load_embedder(_embedder_config(cfg, override))
     if embedder.info.is_stub:
         print(
             "  ! stub embedder in use: pixel statistics, not face recognition. "
@@ -554,6 +574,52 @@ def _calibrate_with(
     )
 
 
+def cmd_check_embedder(args: argparse.Namespace) -> int:
+    """Does the chosen scorer actually load and produce sensible numbers here?
+
+    The question worth answering before spending anything. Deliberately not a
+    calibration: it reports that plainly, because a plumbing check mistaken for
+    evidence would be worse than no check.
+    """
+    cfg = load_config(args.config)
+    backend = args.embedder or cfg.embedder.backend
+    if backend is None:
+        raise SpikeError(
+            "No embedder configured and none given. Pass --embedder, or set "
+            "embedder.backend in config/spike.yaml."
+        )
+
+    emb_cfg = _embedder_config(cfg, backend)
+    if args.detector:
+        emb_cfg = dataclasses.replace(
+            emb_cfg, options={**emb_cfg.options, "detector": args.detector}
+        )
+
+    print(f"\nchecking: {backend}")
+    print(f"  model      {emb_cfg.model}")
+    print(f"  dimension  {emb_cfg.dim}")
+    print(
+        f"  licence    {emb_cfg.licence or '(not recorded)'}"
+        + (f", read {emb_cfg.licence_verified_on}" if emb_cfg.licence_verified_on else "")
+    )
+    if args.detector:
+        print(f"  detector   {args.detector} (overridden)")
+
+    embedder = load_embedder(emb_cfg)
+    workdir = Path(args.workdir) if args.workdir else cfg.run_root / "_selfcheck"
+    result = run_check(
+        embedder,
+        workdir=workdir,
+        expected_dim=emb_cfg.dim,
+        sample_images=sample_images_from(Path(args.images) if args.images else None),
+        fps=cfg.embedder.frame_sample_fps,
+        clip_s=float(cfg.generation.get("clip_duration_s", 5)),
+        clips=int(cfg.generation.get("identity_matrix_cells", 24)),
+    )
+    print(format_result(result, backend))
+    return 0 if result.ok else 1
+
+
 def cmd_fetch_models(args: argparse.Namespace) -> int:
     """Download the ADR 0002 candidate weights, then tell you what to read.
 
@@ -814,6 +880,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="render from stub data. Stamps the report NOT EVIDENCE.",
     )
     sp.set_defaults(func=cmd_report)
+
+    sp = sub.add_parser(
+        "check-embedder", help="does the chosen scorer load and work on this machine?"
+    )
+    add_embedder(sp)
+    sp.add_argument(
+        "--detector",
+        choices=["yunet", "dlib-hog", "whole-image"],
+        help="override the detector. 'whole-image' skips detection, which tests the "
+        "model on its own.",
+    )
+    sp.add_argument("--images", help="a directory of real photographs, to exercise detection")
+    sp.add_argument("--workdir", help="where to write probe images")
+    sp.set_defaults(func=cmd_check_embedder)
 
     sp = sub.add_parser("fetch-models", help="download the ADR 0002 candidate weights")
     sp.add_argument("--dest", default="models", help="where to put them (default: models/)")

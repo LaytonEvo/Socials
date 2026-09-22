@@ -81,8 +81,20 @@ def test_yunet_needs_its_model_file():
         build_detector({"detector": "yunet"}, "dinov2")
 
 
-def test_both_detectors_are_available_by_name():
-    assert set(DETECTORS) == {"yunet", "dlib-hog"}
+def test_detectors_are_available_by_name():
+    assert set(DETECTORS) == {"yunet", "dlib-hog", "whole-image"}
+
+
+def test_whole_image_detector_needs_no_model_and_no_licence():
+    """It exists so the self-check can exercise the model without dragging
+    detection into the same test. No weights, so no licence question."""
+    from PIL import Image
+
+    from scripts.spike.embedders import FaceBox, build_detector
+
+    detector = build_detector({"detector": "whole-image"}, "dinov2")
+    assert detector.detect(Image.new("RGB", (120, 80))) == [FaceBox(0, 0, 120, 80)]
+    assert "no model" in detector.licence
 
 
 # --- the contract both backends share -------------------------------------

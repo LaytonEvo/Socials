@@ -41,6 +41,7 @@ it — use the right-hand column. Run these from the root of the project folder
 | Shortcut | Works everywhere |
 |---|---|
 | `make fetch-models` | `python -m scripts.spike.cli fetch-models` |
+| `make check-embedder` | `python -m scripts.spike.cli check-embedder` |
 | `make demo` | `python -m scripts.spike.cli demo` |
 | `make test` | `python -m pytest -q` |
 | `make lint` | `python -m ruff check scripts tests` |
@@ -85,6 +86,27 @@ python -m scripts.spike.cli bake-off --backends dlib dinov2
 # or just one:
 python -m scripts.spike.cli bake-off --backends dinov2
 ```
+
+### Before any of that: does the scorer even work here?
+
+```bash
+make check-embedder
+```
+
+Downloads the model, embeds a handful of probe images and reports whether the
+dimension matches config, the vectors are normalised, the same image twice
+gives the same vector, variations of one identity score closer than two
+identities, and how many milliseconds an embedding takes — translated into what
+a real run will cost in wall-clock.
+
+`--detector whole-image` skips face detection, to test the model on its own.
+`--images <dir>` points it at real photographs, which is the only way to
+exercise detection properly; the built-in probe images are coloured shapes.
+
+It says plainly in its own output that it is a plumbing check and not evidence.
+Passing it means the scorer runs. It says nothing about whether the scorer
+separates real faces well enough to gate takes on — only calibration against a
+real master set answers that.
 
 `dlib` is a real face recognition model (128-d, public-domain weights).
 `dinov2` is an Apache 2.0 general visual embedder applied to a cropped face —

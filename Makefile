@@ -3,7 +3,7 @@
 # Python and will report every third-party import as missing.
 PY ?= python3
 
-.PHONY: check lint types test demo fetch-models clean-runs
+.PHONY: check lint types test demo fetch-models check-embedder clean-runs
 
 check: lint types test
 
@@ -22,6 +22,9 @@ demo:
 
 fetch-models:
 	$(PY) -m scripts.spike.cli fetch-models
+
+check-embedder:
+	$(PY) -m scripts.spike.cli check-embedder
 
 clean-runs:
 	rm -rf spike/runs

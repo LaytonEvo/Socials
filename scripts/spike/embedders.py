@@ -186,7 +186,29 @@ class DlibHogDetector:
         return [FaceBox(r.left(), r.top(), r.right(), r.bottom()) for r in rects]
 
 
-DETECTORS: dict[str, Any] = {"yunet": YuNetDetector, "dlib-hog": DlibHogDetector}
+@dataclass
+class WholeImageDetector:
+    """Treats the whole image as one face. No detection, no licence question.
+
+    Two honest uses: stills that are already cropped to a face, and the
+    embedder self-check, which needs to exercise the model without dragging
+    detection into the same test. Everything else should detect properly --
+    feeding DINOv2 an uncropped frame lets background and clothing drive the
+    embedding, which is the failure mode ``crop_with_margin`` exists to avoid.
+    """
+
+    name: str = field(default="whole-image", init=False)
+    licence: str = field(default="n/a (no model)", init=False)
+
+    def detect(self, image: Image.Image) -> list[FaceBox]:
+        return [FaceBox(0, 0, image.width, image.height)]
+
+
+DETECTORS: dict[str, Any] = {
+    "yunet": YuNetDetector,
+    "dlib-hog": DlibHogDetector,
+    "whole-image": WholeImageDetector,
+}
 
 
 def build_detector(options: dict[str, Any], backend: str) -> FaceDetector:
@@ -195,6 +217,8 @@ def build_detector(options: dict[str, Any], backend: str) -> FaceDetector:
         raise EmbedderNotConfigured(
             f"Unknown detector {name!r}. Available: {', '.join(sorted(DETECTORS))}."
         )
+    if name == "whole-image":
+        return WholeImageDetector()
     if name == "yunet":
         path = _require_path(
             options,

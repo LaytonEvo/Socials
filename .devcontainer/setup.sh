@@ -65,6 +65,10 @@ cat <<'BANNER'
 
   When you want the real scorer (needs internet, downloads the model):
 
+    make check-embedder
+        Downloads DINOv2 and checks it actually works on this machine:
+        dimensions, determinism, and how long an embedding takes.
+
     python -m scripts.spike.cli fetch-models --backend dinov2
         Fetches the face detector, then tells you what to put in
         config/spike.yaml.
