@@ -7,6 +7,10 @@ dependencies = ["numpy>=1.26", "pillow>=10", "pyyaml>=6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
+# ADR 0002 candidates. Installed only when you run the bake-off; neither is
+# needed for `make check` or the offline demo.
+dlib = ["dlib>=19.24"]
+dinov2 = ["torch>=2.2", "transformers>=4.40", "opencv-python-headless>=4.9"]
 
 [tool.setuptools]
 packages = ["scripts", "scripts.spike"]
@@ -27,7 +31,10 @@ warn_unused_ignores = false
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
-module = ["PIL", "PIL.*", "numpy", "numpy.*", "yaml", "yaml.*", "pytest", "_pytest.*"]
+module = [
+  "PIL", "PIL.*", "numpy", "numpy.*", "yaml", "yaml.*", "pytest", "_pytest.*",
+  "cv2", "cv2.*", "dlib", "torch", "torch.*", "transformers", "transformers.*",
+]
 ignore_missing_imports = true
 
 # The spike's tests are throwaway alongside the spike. They are linted and run,

@@ -31,6 +31,31 @@ face recognition**, and the fake providers emit coloured shapes, so the output
 is stamped `THIS REPORT IS NOT EVIDENCE` and `report` refuses to write without
 `--allow-fake`.
 
+## Choosing the scorer (ADR 0002)
+
+Two candidates are wired up, both free and self-hosted, because they are the
+only routes commercially usable today without buying a licence:
+
+```bash
+pip install -e ".[dlib]"      # or ".[dinov2]", or both
+# fetch the model files, read their licences, fill in config/spike.yaml
+python -m scripts.spike.cli bake-off --backends dlib dinov2
+```
+
+`dlib` is a real face recognition model (128-d, public-domain weights).
+`dinov2` is an Apache 2.0 general visual embedder applied to a cropped face —
+**not** a face recogniser, deliberately: face models are trained to be invariant
+to pose, lighting, expression, age and hairstyle, which is exactly the drift a
+persona scorer needs to catch.
+
+The bake-off calibrates both on the same data and ranks on distribution overlap,
+then on true-positive rate. It will not let a stub backend win. Whichever
+separates *your* data wins — published benchmarks measure real-identity
+recognition, which is not the task.
+
+No weights are downloaded automatically. Every path is explicit in config, so
+pulling in a model stays a deliberate act with a licence attached to it.
+
 ## A real run
 
 ```bash
@@ -81,3 +106,9 @@ comparing incomparable numbers (`BUILD_ORDER` amendment A3).
 - The stub embedder is insensitive to whole-frame affine changes, because it
   mean-subtracts before normalising. Noted because it is the kind of blindness
   a real embedder can also have.
+- **The dlib and DINOv2 model calls are unverified.** Neither package was
+  installable in the container this was written in (dlib builds from source and
+  timed out; torch was not present). Everything around the call is tested — the
+  licence and path gates, the detection contract, the crop geometry, the
+  bake-off's refusal to let a stub win — but the embeddings themselves have not
+  been computed. Run the bake-off before trusting either.

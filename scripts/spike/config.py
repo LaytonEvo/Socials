@@ -9,8 +9,9 @@ blockers are being worked through.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,9 @@ class EmbedderConfig:
     frame_sample_fps: float
     threshold: float | None
     threshold_calibrated_on: dt.date | None
+    #: Backend-specific settings, merged from ``embedder.backends.<name>``.
+    #: Model file paths live here, never in code.
+    options: dict[str, Any] = field(default_factory=dict)
 
     def require_usable(self) -> None:
         if self.backend is None:
@@ -137,6 +141,35 @@ class SpikeConfig:
     lora: dict[str, Any]
     generation: dict[str, Any]
     source_path: Path
+    _embedder_backends: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def embedder_for(self, backend: str | None = None) -> EmbedderConfig:
+        """Embedder config for one backend, with its own options merged in.
+
+        Each backend declares its own dimension, licence and model paths under
+        ``embedder.backends.<name>``, because a bake-off runs several and they
+        do not share any of those. The top-level block still holds what is
+        common: sampling rate, and the calibrated threshold.
+        """
+        name = backend or self.embedder.backend
+        if name is None:
+            return self.embedder
+        opts = dict(self._embedder_backends.get(name, {}))
+        licence_date = opts.pop("licence_verified_on", None)
+        return dataclasses.replace(
+            self.embedder,
+            backend=name,
+            model=opts.pop("model", None) or opts.get("hf_model") or name,
+            version=str(opts.pop("version", "0")),
+            dim=int(opts.pop("dim")) if opts.get("dim") is not None else None,
+            licence=opts.pop("licence", None),
+            licence_verified_on=(
+                _as_date(licence_date, f"embedder.backends.{name}.licence_verified_on")
+                if licence_date
+                else None
+            ),
+            options=opts,
+        )
 
     def provider(self, kind: str, slot: str) -> ProviderConfig:
         try:
@@ -208,6 +241,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> SpikeConfig:
         lora=raw.get("lora") or {},
         generation=raw.get("generation") or {},
         source_path=path,
+        _embedder_backends=emb.get("backends") or {},
     )
 
 

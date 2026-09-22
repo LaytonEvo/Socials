@@ -31,6 +31,44 @@ embedder:
   threshold: null
   threshold_calibrated_on: null
 
+  # Candidate backends for the ADR 0002 bake-off. Each declares its OWN
+  # dimension, licence and model paths -- they share nothing but the sampling
+  # rate. Run them head to head with:
+  #     python -m scripts.spike.cli bake-off --backends dlib dinov2
+  #
+  # No weights are downloaded automatically. Fetch each file yourself, read its
+  # licence, record it in docs/decisions/0002-..., then fill in the path.
+  backends:
+    dlib:
+      # A real face recognition model, 128-d.
+      # Weights: public domain per the author's statement. Residual risk is
+      # upstream -- part of the training data (FaceScrub) is non-commercial.
+      # See ADR 0002; this is a counsel question, not an engineering one.
+      #   http://dlib.net/files/dlib_face_recognition_resnet_model_v1.dat.bz2
+      #   http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2
+      dim: 128
+      recognition_model: null
+      shape_predictor: null
+      jitter: 1
+      licence: null                 # record verbatim once read
+      licence_verified_on: null
+
+    dinov2:
+      # A general visual embedder on a cropped face. Apache 2.0.
+      # NOT a face recogniser, deliberately: face models are trained to be
+      # invariant to pose, light, expression, age and hairstyle, which is the
+      # drift we need to catch. Note DINOv3 is NOT Apache 2.0 -- it ships under
+      # a bespoke licence. Do not swap it in without reading that.
+      dim: 768
+      hf_model: facebook/dinov2-base
+      crop_margin: 0.25
+      detector: yunet               # yunet | dlib-hog
+      # YuNet ONNX, Apache 2.0, from the OpenCV Zoo. Not bundled with the pip
+      # package. Detection is a separate licence question from recognition.
+      detector_model: null
+      licence: null
+      licence_verified_on: null
+
 # --- Providers -------------------------------------------------------------
 # `backend: null` means "not implemented yet" and raises a clear error if used.
 # The `fake` backends are offline stubs for validating the harness itself.

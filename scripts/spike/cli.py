@@ -26,6 +26,7 @@ from .calibrate import Calibration, calibrate
 from .config import DEFAULT_CONFIG_PATH, SpikeConfig, load_config, write_threshold
 from .contactsheet import build_contact_sheet, worst_first
 from .embed import EmbeddingSet, cross_similarities, embed_images, load_embedder
+from .embedders import DETECTORS  # noqa: F401  (import registers dlib + dinov2)
 from .errors import SpikeError
 from .frames import ImageSequenceFrames
 from .ledger import CostLedger
@@ -59,14 +60,14 @@ def _run_dir(cfg: SpikeConfig, run_id: str | None) -> Path:
 
 
 def _embedder(cfg: SpikeConfig, override: str | None) -> Any:
-    emb_cfg = cfg.embedder
-    if override:
+    emb_cfg = cfg.embedder_for(override)
+    if override and emb_cfg.backend == override and emb_cfg.dim is None:
+        # A backend with no entry under embedder.backends (e.g. the stub).
         emb_cfg = dataclasses.replace(
             emb_cfg,
-            backend=override,
             model=emb_cfg.model or f"{override}-override",
             version=emb_cfg.version or "0",
-            dim=emb_cfg.dim or 256,
+            dim=256,
         )
     embedder = load_embedder(emb_cfg)
     if embedder.info.is_stub:
@@ -535,6 +536,96 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _calibrate_with(
+    cfg: SpikeConfig, run_dir: Path, backend: str, target_fpr: float
+) -> Calibration:
+    embedder = _embedder(cfg, backend)
+    master = _master_set(run_dir, embedder)
+    control_stills = sorted((run_dir / "control").glob("*.png"))
+    if not control_stills:
+        raise SpikeError(f"No control stills in {run_dir / 'control'}.")
+    control = embed_images(embedder, control_stills, label="control")
+    return calibrate(
+        _pairwise(master),
+        cross_similarities(list(master.vectors), list(control.vectors)),
+        embedder.info,
+        target_fpr=target_fpr,
+    )
+
+
+def cmd_bake_off(args: argparse.Namespace) -> int:
+    """Calibrate several embedder backends on the same data and compare.
+
+    This is how ADR 0002 gets decided: not on published benchmarks, which
+    measure real-identity recognition, but on which candidate separates OUR
+    distributions -- synthetic renders of one invented character against other
+    synthetic faces.
+    """
+    cfg = load_config(args.config)
+    run_dir = _run_dir(cfg, args.run)
+    log = RunLog(run_dir)
+
+    results: dict[str, Any] = {}
+    for backend in args.backends:
+        try:
+            cal = _calibrate_with(cfg, run_dir, backend, args.target_fpr)
+        except SpikeError as exc:
+            print(f"  {backend:<10} unavailable: {exc}", file=sys.stderr)
+            results[backend] = {"error": str(exc)}
+            continue
+        results[backend] = cal.to_json()
+        log.write_artifact(f"calibration_{backend}.json", cal.to_json())
+
+    usable = {k: v for k, v in results.items() if "error" not in v}
+    print(
+        f"\n{'backend':<10} {'verdict':<10} {'overlap':>8} {'auc':>8} "
+        f"{'thr':>8} {'tpr':>7} {'dim':>5}"
+    )
+    print("-" * 62)
+    for name, cal in usable.items():
+        mark = "   (STUB - not a candidate)" if cal["embedder_is_stub"] else ""
+        print(
+            f"{name:<10} {cal['verdict']:<10} {cal['overlap']:>8.3f} {cal['auc']:>8.4f} "
+            f"{cal['threshold']:>8.4f} {cal['tpr_at_threshold']:>7.3f} "
+            f"{cal['embedder_key'].rsplit('d', 1)[-1]:>5}{mark}"
+        )
+
+    if not usable:
+        print("\nNo candidate ran. Fill in the model paths in config/spike.yaml first.")
+        return 2
+
+    # A stub can post a perfect score on fixtures it was never going to fail.
+    # Letting one win a bake-off that decides ADR 0002 would be the worst failure
+    # this command could have, so stubs are shown and never selected.
+    real = {k: v for k, v in usable.items() if not v["embedder_is_stub"]}
+    if not real:
+        print(
+            "\nOnly stub backends ran, and a stub is never a candidate: it is pixel "
+            "statistics scoring fixtures it cannot fail. Configure dlib or dinov2 in "
+            "config/spike.yaml and run this again."
+        )
+        return 2
+
+    # Rank on overlap, then TPR: the winner is the one that separates, and
+    # among those, the one that throws away fewest good takes.
+    winner = min(real.items(), key=lambda kv: (kv[1]["overlap"], -kv[1]["tpr_at_threshold"]))
+    log.write_artifact("bake_off.json", {"results": results, "winner": winner[0]})
+    print(f"\nseparates best: {winner[0]}")
+    if not Calibration(
+        **{**winner[1], "calibrated_on": dt.date.fromisoformat(winner[1]["calibrated_on"])}
+    ).trustworthy:
+        print(
+            "  ! No candidate is trustworthy. Neither free option separates your data, "
+            "which is the evidence for buying a commercial licence (ADR 0002 route A) "
+            "-- or a finding that automated scoring must be advisory, not gating."
+        )
+    print(
+        "  Check the worst-frame contact sheet before accepting this: a scorer that "
+        "agrees with the statistics and disagrees with your eye is still the wrong scorer."
+    )
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """Run the whole harness offline on fakes, to validate it end to end."""
     ns = argparse.Namespace(config=args.config, run=None, embedder="stub")
@@ -666,6 +757,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="render from stub data. Stamps the report NOT EVIDENCE.",
     )
     sp.set_defaults(func=cmd_report)
+
+    sp = sub.add_parser("bake-off", help="ADR 0002: calibrate several backends side by side")
+    add_run(sp)
+    sp.add_argument("--backends", nargs="+", default=["dlib", "dinov2"])
+    sp.add_argument("--target-fpr", type=float, default=0.01)
+    sp.set_defaults(func=cmd_bake_off)
 
     sp = sub.add_parser("demo", help="run the whole harness offline on fakes")
     sp.add_argument("--cells", type=int, default=12)
