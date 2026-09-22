@@ -9,3 +9,4 @@ __pycache__/
 # Spike run outputs: media and logs are evidence, not source.
 # Gate report is promoted to docs/reports/ by hand.
 spike/runs/
+ci-spike.yaml

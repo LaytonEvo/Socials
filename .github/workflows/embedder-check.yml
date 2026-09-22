@@ -54,23 +54,24 @@ jobs:
 
       - name: Self-check — full path, with face detection
         run: |
-          # Point the config at the detector we just fetched. Done here rather
-          # than committed, because the path is machine-specific.
+          # Write a SEPARATE config rather than editing the tracked one. Editing
+          # config/spike.yaml in place broke three tests that assert the shipped
+          # config leaves the detector path unset — the job mutated the very
+          # thing the suite was about to check.
           python - <<'PY'
           from pathlib import Path
-          p = Path("config/spike.yaml")
-          p.write_text(
-              p.read_text().replace(
+          src = Path("config/spike.yaml").read_text()
+          Path("ci-spike.yaml").write_text(
+              src.replace(
                   "detector_model: null            # <- set once you know where this runs",
                   "detector_model: models/face_detection_yunet_2023mar.onnx",
               )
           )
           PY
-          grep -n "detector_model:" config/spike.yaml
           # Expected to report no faces found: the probe images are coloured
-          # shapes, not photographs. That is a real result, not a failure of
-          # the model — it is what the detector is supposed to say.
-          python -m scripts.spike.cli check-embedder || true
+          # shapes, not photographs. That is the detector working, not the model
+          # failing, so it must not fail the job.
+          python -m scripts.spike.cli --config ci-spike.yaml check-embedder || true
 
       - name: Offline demo, end to end
         run: make demo

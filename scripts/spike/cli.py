@@ -557,6 +557,32 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _require_usable_embeddings(embeddings: EmbeddingSet, which: str, backend: str) -> None:
+    """Refuse to calibrate on a set the detector found no faces in.
+
+    Without this the bake-off reaches ``calibrate`` with two empty lists and
+    dies on a ValueError traceback that says nothing about the actual problem,
+    which is images the face detector could not read. Seen for real: a fully
+    configured DINOv2 pointed at the synthetic fixture images, where YuNet
+    correctly finds nothing, because they are coloured shapes rather than
+    photographs.
+    """
+    counts = embeddings.counts()
+    if counts["usable"]:
+        return
+    raise SpikeError(
+        f"{backend}: no usable embeddings from the {which} set. Of {counts['frames']} "
+        f"images, {counts['no_face']} had no face detected and {counts['multi_face']} "
+        f"had several.\n"
+        f"  Most likely the {which} images are not photographs of one face each. The "
+        f"fixtures written by `make-fixtures` are coloured shapes for harness testing "
+        f"and a real detector will find nothing in them — put real stills in "
+        f"<run>/{which}/ before calibrating.\n"
+        f"  To test the model itself without detection, use "
+        f"`check-embedder --detector whole-image`."
+    )
+
+
 def _calibrate_with(
     cfg: SpikeConfig, run_dir: Path, backend: str, target_fpr: float
 ) -> Calibration:
@@ -566,6 +592,10 @@ def _calibrate_with(
     if not control_stills:
         raise SpikeError(f"No control stills in {run_dir / 'control'}.")
     control = embed_images(embedder, control_stills, label="control")
+
+    _require_usable_embeddings(master, "master", backend)
+    _require_usable_embeddings(control, "control", backend)
+
     return calibrate(
         _pairwise(master),
         cross_similarities(list(master.vectors), list(control.vectors)),

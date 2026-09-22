@@ -261,3 +261,42 @@ def test_short_labels_are_left_intact():
 
     draw = ImageDraw.Draw(Image.new("RGB", (200, 200)))
     assert _fit("short", 180, draw) == "short"
+
+
+# --- calibrating on images the detector cannot read ------------------------
+
+
+def test_calibration_refuses_a_master_set_with_no_detectable_faces():
+    """Regression, found by CI rather than locally.
+
+    A fully configured DINOv2 pointed at the synthetic fixtures produced zero
+    usable embeddings — YuNet correctly finds no face in a coloured shape — and
+    the bake-off died on a ValueError traceback from deep inside calibrate(),
+    saying nothing about the actual problem. It must say what is wrong with the
+    images instead.
+    """
+    from scripts.spike.cli import _require_usable_embeddings
+    from scripts.spike.embed import NO_FACE, EmbedderInfo, EmbeddingSet, FrameEmbedding
+    from scripts.spike.errors import SpikeError
+
+    info = EmbedderInfo("dinov2", "m", "1", 768)
+    blind = EmbeddingSet([FrameEmbedding(i, 0.0, NO_FACE, faces=0) for i in range(6)], info)
+
+    with pytest.raises(SpikeError) as excinfo:
+        _require_usable_embeddings(blind, "master", "dinov2")
+    message = str(excinfo.value)
+    assert "no usable embeddings from the master set" in message
+    assert "6 images, 6 had no face" in message.replace("Of ", "")
+    assert "whole-image" in message  # tells you how to test the model anyway
+
+
+def test_calibration_accepts_a_set_with_usable_embeddings():
+    import numpy as np
+
+    from scripts.spike.cli import _require_usable_embeddings
+    from scripts.spike.embed import EmbedderInfo, EmbeddingSet, FrameEmbedding, l2_normalise
+
+    info = EmbedderInfo("dinov2", "m", "1", 768)
+    vec = l2_normalise(np.ones(768, dtype=np.float32))
+    ok = EmbeddingSet([FrameEmbedding(0, 0.0, "ok", faces=1, vector=vec)], info)
+    _require_usable_embeddings(ok, "master", "dinov2")  # must not raise
