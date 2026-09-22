@@ -1,5 +1,10 @@
 # Spike 0 harness
 
+> **Running this on Windows?** `make` is a Unix tool and will not exist on your
+> machine. Every `make X` below is a shortcut for a plain Python command, and
+> the Python form works everywhere. The table in
+> [Commands](#commands-make-vs-plain-python) gives both.
+
 Answers the two questions in `docs/BUILD_ORDER.md` Section 3 — does the face
 survive animation, and which golf formats render usably — with scripts and a
 folder of files. No Postgres, no Redis, no FastAPI, no adapter protocols.
@@ -20,10 +25,28 @@ deliverable is evidence, not software.
 Every one of those is a `null` in `config/spike.yaml`, and the harness refuses
 to run against any of them rather than defaulting to something plausible.
 
+## Commands: make vs plain Python
+
+`make` is a convenience on macOS and Linux. On Windows — or anywhere without
+it — use the right-hand column. Run these from the root of the project folder
+(the one containing `pyproject.toml`), not from your home directory.
+
+| Shortcut | Works everywhere |
+|---|---|
+| `make fetch-models` | `python -m scripts.spike.cli fetch-models` |
+| `make demo` | `python -m scripts.spike.cli demo` |
+| `make test` | `python -m pytest -q` |
+| `make lint` | `python -m ruff check scripts tests` |
+| `make types` | `python -m mypy` |
+| `make check` | all three of the above, in order |
+
+Minimum to run anything: `pip install numpy pillow pyyaml`. No install of this
+project itself is needed — `python -m` picks it up from the current folder.
+
 ## Try it without a provider or a model
 
 ```bash
-make demo          # fixtures -> calibrate -> generate -> score -> report, all offline
+python -m scripts.spike.cli demo    # fixtures -> calibrate -> generate -> score -> report
 ```
 
 Everything runs on stub backends. The stub embedder is **pixel statistics, not
@@ -37,8 +60,8 @@ Two candidates are wired up, both free and self-hosted, because they are the
 only routes commercially usable today without buying a licence.
 
 ```bash
-pip install -e ".[dlib]" ".[dinov2]"   # either or both
-make fetch-models                      # downloads, verifies, tells you what to read
+pip install -e ".[dlib]"     # or ".[dinov2]", or both
+python -m scripts.spike.cli fetch-models
 ```
 
 `fetch-models` downloads each file, refuses anything that is really an error
@@ -52,6 +75,8 @@ fill those two fields in.
 
 ```bash
 python -m scripts.spike.cli bake-off --backends dlib dinov2
+# or just one:
+python -m scripts.spike.cli bake-off --backends dinov2
 ```
 
 `dlib` is a real face recognition model (128-d, public-domain weights).
