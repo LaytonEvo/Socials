@@ -118,7 +118,8 @@ A cap somewhere in the low hundreds buys the evidence. Set it, and make the harn
 
 | Blocker | Resolves via | Blocks |
 |---|---|---|
-| Face-embedding model licence | `docs/decisions/0002-face-embedding-model-licence.md` — **open, human decision** | S0.2 onward. The scorer is the measuring instrument; it cannot be chosen provisionally |
+| Face-embedding model **choice** | `docs/decisions/0004-identity-scorer-dlib-resnet.md` — **settled 2026-09-23 on measured separation**: dlib ResNet | Unblocks S0.2 onward |
+| Face-embedding model **licence** | ADR 0004 "The bill" — **open, human decision**: accept the FaceScrub caveat, buy a commercial licence, or revert and accept MARGINAL | Publication, not measurement. Spike scoring proceeds; a published render does not |
 | `SPIKE_BUDGET_USD` | §3.4 above, extends D8 | Any paid call |
 | Provider access and current pricing | Verify against official docs at implementation time, record in `docs/decisions/` per `CLAUDE.md` | S0.5 onward |
 | LoRA base model licence | Checked as part of S0.4, recorded verbatim | S0.4 |

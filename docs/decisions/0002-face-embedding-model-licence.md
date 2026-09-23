@@ -1,6 +1,6 @@
 # ADR 0002 — Face-embedding model and licence route
 
-- **Status:** **Superseded 2026-09-23 — see the log.** DINOv2 was accepted on 2026-09-22 and measured MARGINAL against a realistic control the next day; dlib measured EXCELLENT on the same data. A revision is pending.
+- **Status:** **Superseded 2026-09-23 by [ADR 0004](0004-identity-scorer-dlib-resnet.md).** DINOv2 was accepted on 2026-09-22 and measured MARGINAL against a realistic control the next day; dlib measured EXCELLENT on the same data. The licence research below still stands and is why ADR 0004 carries an open condition; the *choice* it reached does not.
 - **Date:** 2026-09-22 (research recorded); superseded sections dated where changed
 - **Deciders:** Layton (owner), supervising engineer; touches counsel under D7
 - **Relates to:** `BUILD_PLAN.md` Section 3 (stack), tasks 1.2 and 1.3; `docs/BUILD_ORDER.md` amendment A3
