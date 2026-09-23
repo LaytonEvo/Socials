@@ -129,8 +129,10 @@ def test_an_unknown_status_stops_rather_than_guessing():
 
 
 def test_an_http_error_surfaces_the_status_and_detail():
-    c = _client([(401, {"detail": "Unauthorized"})])
-    with pytest.raises(ProviderFailed, match="401"):
+    """A non-auth error. 401 and 403 take the dedicated path above, because
+    "unauthorized" has two possible causes here and a bare status says neither."""
+    c = _client([(500, {"detail": "internal"})])
+    with pytest.raises(ProviderFailed, match="500"):
         c.submit(MODEL, {"prompt": "x"})
 
 
@@ -238,10 +240,36 @@ def test_generate_refuses_a_slot_with_no_model_id():
         )
 
 
-def test_no_api_key_in_the_environment_is_refused(monkeypatch):
+def test_no_api_key_is_allowed_because_it_may_be_injected_in_front(monkeypatch):
+    """Absence of FAL_KEY is not an error: a proxy may add the header.
+
+    Refusing here would break the safer of the two setups, the one where the
+    key never enters the process at all.
+    """
     monkeypatch.delenv("FAL_KEY", raising=False)
-    with pytest.raises(ProviderNotConfigured, match="FAL_KEY"):
-        FalVideoProvider(_cfg())
+    provider = FalVideoProvider(_cfg())
+    assert provider.client is not None
+    assert provider.client.api_key is None
+
+
+def test_without_a_key_no_authorization_header_is_sent(monkeypatch):
+    """Sending our own alongside an injected one is two conflicting headers."""
+    monkeypatch.delenv("FAL_KEY", raising=False)
+    c = FalClient(transport=FakeTransport([(200, {"request_id": "abc"})]))
+    c.submit(MODEL, {"prompt": "x"})
+    _u, _m, _b, headers = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert "Authorization" not in headers
+    assert headers["Content-Type"] == "application/json"
+
+
+def test_a_401_explains_both_routes_rather_than_just_failing():
+    c = _client([(401, {"detail": "Unauthorized"})])
+    with pytest.raises(ProviderNotConfigured) as excinfo:
+        c.submit(MODEL, {"prompt": "x"})
+    message = str(excinfo.value)
+    assert "FAL_KEY" in message
+    assert "injected" in message
+    assert "not both" in message
 
 
 def test_the_adapter_never_retries_a_submission_itself():

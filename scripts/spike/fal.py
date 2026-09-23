@@ -67,9 +67,23 @@ def urllib_transport(
 
 @dataclass
 class FalClient:
-    """The queue protocol, with no opinion about what is being generated."""
+    """The queue protocol, with no opinion about what is being generated.
 
-    api_key: str
+    ``api_key`` is optional because there are two legitimate ways this gets
+    authenticated, and they must not both happen at once:
+
+    * **The adapter sends it.** ``FAL_KEY`` is in the environment and this class
+      sets the header. That is the shape for an ordinary deployment.
+    * **Something in front injects it.** A proxy adds the header to outbound
+      requests and the key never enters the process at all. Better isolation,
+      and the case where sending our own header risks a duplicate or a
+      conflicting one.
+
+    So: send a header only when we actually hold a key, and make the failure
+    legible when neither route turned out to be configured.
+    """
+
+    api_key: str | None = None
     transport: Transport = urllib_transport
     poll_interval_s: float = 2.0
     timeout_s: float = 600.0
@@ -77,8 +91,11 @@ class FalClient:
     now: Callable[[], float] = time.monotonic
 
     def _headers(self) -> dict[str, str]:
-        # Verified 2026-09-23: "Key", not "Bearer".
-        return {"Authorization": f"Key {self.api_key}", "Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            # Verified 2026-09-23: "Key", not "Bearer".
+            headers["Authorization"] = f"Key {self.api_key}"
+        return headers
 
     def _json(self, url: str, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
         payload = json.dumps(body).encode() if body is not None else None
@@ -89,6 +106,15 @@ class FalClient:
             raise ProviderFailed(
                 f"fal returned {status} with a body that is not JSON: {raw[:200]!r}"
             ) from None
+        if status in (401, 403):
+            raise ProviderNotConfigured(
+                f"fal rejected the request ({status}). Neither authentication route is "
+                f"working: {API_KEY_ENV} is "
+                f"{'set' if self.api_key else 'NOT set'} in this process, and no "
+                "credential appears to be injected in front of it. Set the environment "
+                "variable, or configure header injection for *.fal.run — but not both, "
+                "since two Authorization headers is its own failure."
+            )
         if status >= 400:
             detail = parsed.get("detail") if isinstance(parsed, dict) else parsed
             raise ProviderFailed(f"fal returned {status}: {detail!r}")
@@ -199,14 +225,9 @@ class FalVideoProvider:
 
     def __post_init__(self) -> None:
         if self.client is None:
-            key = os.environ.get(API_KEY_ENV)
-            if not key:
-                raise ProviderNotConfigured(
-                    f"{API_KEY_ENV} is not in the environment. Secrets come from the "
-                    "environment only (CLAUDE.md); put it in the deployment environment's "
-                    "settings, not in a file and not in code."
-                )
-            self.client = FalClient(api_key=key)
+            # No key is not an error here: it may be injected in front of us.
+            # A real misconfiguration surfaces as a 401, which says so plainly.
+            self.client = FalClient(api_key=os.environ.get(API_KEY_ENV))
         if self.download is None:
             self.download = _download
         if self.resolve_keyframe is None:
