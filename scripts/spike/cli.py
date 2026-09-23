@@ -781,13 +781,16 @@ def cmd_bake_off(args: argparse.Namespace) -> int:
     for backend in args.backends:
         try:
             cal = _calibrate_with(cfg, run_dir, backend, args.target_fpr)
-        except SpikeError as exc:
-            # Reported in the table below, not to stderr. A candidate that
-            # could not run is a RESULT of the bake-off -- "dlib-densenet is
-            # unusable as configured" is exactly what you came to find out --
-            # and on a CI runner stderr is buried under pages of unrelated
-            # library warnings.
-            results[backend] = {"error": str(exc)}
+        except Exception as exc:
+            # Every exception, not just SpikeError. A dlib RuntimeError from
+            # incompatible weights took the whole bake-off down and destroyed
+            # the other candidates' results with it -- one broken entrant must
+            # not cost you the comparison.
+            #
+            # Reported in the table below rather than on stderr: a candidate
+            # that could not run is a RESULT of the bake-off, and on a CI
+            # runner stderr is buried under pages of library warnings.
+            results[backend] = {"error": f"{type(exc).__name__}: {exc}"}
             continue
         results[backend] = cal.to_json()
         log.write_artifact(f"calibration_{backend}.json", cal.to_json())

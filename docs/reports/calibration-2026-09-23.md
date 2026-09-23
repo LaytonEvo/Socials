@@ -92,16 +92,49 @@ on that one.
 The two models have opposite blind spots. That question cannot be settled until
 there is video to score, in Phase 1.
 
+## The DenseNet variant does not load — 2026-09-23
+
+Measured to settle whether the cleaner-licensed dlib model could replace the
+ResNet and retire the FaceScrub caveat. It cannot, at least not as a
+configuration change:
+
+```
+RuntimeError: An error occurred while trying to read the first object from the
+file 'face_recognition_densenet_model_v1.dat'.
+ERROR: Unexpected version found while deserializing dlib::add_skip_layer.
+```
+
+`dlib.face_recognition_model_v1` expects the ResNet architecture. The DenseNet
+uses skip layers and was serialised by BAREL's own dlib build, so loading it
+needs BAREL's network definition rather than dlib's stock loader.
+
+**Consequence for the licence question.** Adopting the MIT-licensed variant is
+an integration project, not a config edit: BAREL's model-loading code would
+have to be vendored, with its own maintenance and its own licence review. The
+choice is therefore between
+
+- the ResNet, on an informal public-domain statement with a training-data
+  caveat (ADR 0002 Finding 1), usable today; and
+- the DenseNet, cleanly MIT, costing integration work and carrying an
+  undocumented recognition training set of its own.
+
+The caveat is not resolved by the cheaper route. That is an owner decision, now
+an informed one.
+
+**Two things this exposed in the harness**, both fixed: `fetch-models` reported
+a failed download on stderr and still exited 0, leaving a config field null and
+the real reason invisible for three runs; and the bake-off caught only
+`SpikeError`, so dlib's `RuntimeError` destroyed the results of candidates that
+had already completed.
+
 ## Recommended next step
 
 ~~**Run the bake-off against dlib**~~ *(done — see above)*
 
 1. **Switch the primary scorer to dlib** and revisit ADR 0002.
-2. **Resolve the licence properly.** The dlib ResNet rests on an informal
-   public-domain statement with the FaceScrub training-data caveat. Now that it
-   is the likely production scorer, that caveat is a real decision. Add the
-   MIT-licensed DenseNet variant to the next bake-off: if it separates
-   adequately too, it is the cleaner choice.
+2. ~~**Add the MIT-licensed DenseNet variant to the next bake-off.**~~ *(done —
+   it does not load; see above. The licence caveat stands and the cheap route
+   to avoiding it does not exist.)*
 3. **Keep DINOv2 wired up.** It may earn a place as a secondary drift signal
    precisely because it is sensitive to what dlib ignores.
 

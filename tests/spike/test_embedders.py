@@ -346,3 +346,36 @@ def test_dlib_errors_name_the_backend_being_configured(cfg):
         with pytest.raises(EmbedderNotConfigured) as excinfo:
             mod._build_dlib(cfg.embedder_for(backend))
         assert f"embedder.backends.{backend}.{missing}" in str(excinfo.value)
+
+
+def test_one_broken_backend_does_not_cost_the_whole_bake_off(tmp_path, capsys, monkeypatch):
+    """Regression: dlib raised a RuntimeError on incompatible weights and took
+    the entire bake-off down, destroying the results of candidates that had
+    already run. Only SpikeError was caught."""
+    import scripts.spike.cli as cli
+    from scripts.spike.cli import main
+
+    cfg_path = tmp_path / "spike.yaml"
+    cfg_path.write_text(
+        Path("config/spike.yaml")
+        .read_text()
+        .replace("run_root: spike/runs", f"run_root: {tmp_path / 'runs'}")
+    )
+    main(["--config", str(cfg_path), "init-run"])
+    main(["--config", str(cfg_path), "make-fixtures"])
+
+    real = cli._calibrate_with
+
+    def explode(cfg, run_dir, backend, target_fpr):
+        if backend == "stub":
+            return real(cfg, run_dir, backend, target_fpr)
+        raise RuntimeError("Unexpected version found while deserializing")
+
+    monkeypatch.setattr(cli, "_calibrate_with", explode)
+    capsys.readouterr()
+
+    main(["--config", str(cfg_path), "bake-off", "--backends", "stub", "dlib"])
+    out = capsys.readouterr().out
+    assert "stub" in out and "EXCELLENT" in out  # the working one survived
+    assert "DID NOT RUN" in out
+    assert "RuntimeError" in out  # named, not swallowed
