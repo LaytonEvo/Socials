@@ -25,7 +25,9 @@ adapter is testable without a network or a key.
 
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
 import os
 import time
 import urllib.error
@@ -208,7 +210,7 @@ class FalVideoProvider:
         if self.download is None:
             self.download = _download
         if self.resolve_keyframe is None:
-            self.resolve_keyframe = _require_hosted_keyframe
+            self.resolve_keyframe = data_uri_keyframe
 
     def generate(self, req: VideoRequest, dest: Path) -> Path:
         if not self.cfg.model:
@@ -235,21 +237,60 @@ class FalVideoProvider:
         return self.download(first_media_url(result), dest)
 
 
+#: fal warns against data URIs "for files larger than a few KB" because the
+#: whole file rides in the request payload. A keyframe is far larger than that,
+#: so this is a deliberate trade rather than an oversight: it is a documented
+#: input format, it needs no vendor SDK and no infrastructure of our own, and at
+#: spike volumes the inefficiency costs nothing that matters. The cap exists so
+#: the trade stays small — past it, the answer is the CDN, not a bigger payload.
+MAX_DATA_URI_BYTES = 4 * 1024 * 1024
+
+
+def data_uri_keyframe(keyframe: Path, max_bytes: int = MAX_DATA_URI_BYTES) -> str:
+    """Inline a local keyframe as a `data:` URI.
+
+    One of three documented ways to give fal a file (ADR 0006): the SDK's CDN
+    upload, a data URI, or a URL you already host. Raw REST upload is *not*
+    documented — the CDN page says auth is handled by the SDK — so implementing
+    one would mean reverse-engineering it, which is the guess this project
+    refuses to make.
+
+    Refuses rather than truncates above the cap, because a silently shortened
+    keyframe would produce a video of something else entirely.
+    """
+    if not keyframe.is_file():
+        raise ProviderNotConfigured(f"keyframe does not exist: {keyframe}")
+    raw = keyframe.read_bytes()
+    if len(raw) > max_bytes:
+        raise ProviderNotConfigured(
+            f"{keyframe.name} is {len(raw) / 1024 / 1024:.1f}MB, over the "
+            f"{max_bytes / 1024 / 1024:.0f}MB data-URI cap. fal discourages inlining "
+            "large files; upload it to their CDN or host it yourself and pass the URL "
+            "via resolve_keyframe."
+        )
+    mime, _ = mimetypes.guess_type(keyframe.name)
+    if mime is None or not mime.startswith("image/"):
+        raise ProviderNotConfigured(
+            f"cannot tell what image type {keyframe.name} is; fal needs a media type"
+        )
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
 def _require_hosted_keyframe(keyframe: Path) -> str:
-    """The default resolver: refuse, because uploading is not verified yet.
+    """Alternative resolver: accept only files someone else already hosts.
 
-    fal takes an image URL. Our keyframes are local files, so something has to
-    upload them, and fal's upload API is in ADR 0006's "not verified" list.
-    Guessing at it is the precise failure that ADR exists to prevent, so this
-    raises and says what would unblock it.
+    Kept because it is the right choice once there is somewhere to host
+    keyframes: fal's runner fetches the URL itself, so nothing is inlined and
+    nothing is uploaded. Not the default, because that host does not exist yet.
 
-    Note a `Path` cannot carry a URL: `Path("https://x/y")` normalises the
-    double slash away. Hence a resolver rather than a string check.
+    Note a `Path` cannot carry a URL — `Path("https://x/y")` normalises the
+    double slash away — so this takes the URL separately rather than sniffing
+    the path.
     """
     raise ProviderNotConfigured(
-        "fal needs a URL for the keyframe, and uploading a local file needs fal's "
-        "upload API, which is not yet verified against their docs (ADR 0006, "
-        f"'Not verified'). Got: {keyframe}. Pass resolve_keyframe= once it is read."
+        f"no hosted URL for {keyframe}. Use data_uri_keyframe, or pass a resolver "
+        "that returns a publicly fetchable URL — fal's runner downloads it directly, "
+        "so it must need no auth header."
     )
 
 

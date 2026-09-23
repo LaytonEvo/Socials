@@ -211,16 +211,17 @@ def test_generate_runs_submit_wait_result_then_downloads(tmp_path):
     assert body["image_url"] == "https://example.com/her.jpg"
 
 
-def test_generate_refuses_a_local_keyframe_rather_than_inventing_an_upload(tmp_path):
-    """fal's upload API is in ADR 0006's 'not verified' list. Do not guess it."""
-    provider = FalVideoProvider(_cfg(), client=_client([]), download=lambda u, d: d)
-    with pytest.raises(ProviderNotConfigured, match="not yet verified"):
-        provider.generate(
-            VideoRequest(
-                keyframe=tmp_path / "local.jpg", prompt="p", duration_s=5, seed=1, ref="t1"
-            ),
-            tmp_path / "out.mp4",
-        )
+def test_the_hosted_url_resolver_refuses_a_local_file(tmp_path):
+    """The alternative resolver, for when there is somewhere to host keyframes.
+
+    Not the default: nothing hosts them yet. It exists because it is the better
+    route once something does — fal's runner fetches the URL itself, so nothing
+    is inlined into the request at all.
+    """
+    from scripts.spike.fal import _require_hosted_keyframe
+
+    with pytest.raises(ProviderNotConfigured, match="no hosted URL"):
+        _require_hosted_keyframe(tmp_path / "local.jpg")
 
 
 def test_generate_refuses_a_slot_with_no_model_id():
@@ -268,3 +269,78 @@ def test_an_unregistered_video_backend_lists_what_is_registered():
 
     with pytest.raises(PNC, match="fal"):
         load_provider(dataclasses.replace(_cfg(), backend="nope"))
+
+
+# --- keyframe resolution: the one input fal cannot take as a local file ------
+
+
+def _jpeg(path: Path, size: tuple[int, int] = (64, 64)) -> Path:
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, (120, 90, 70)).save(path, quality=90)
+    return path
+
+
+def test_a_keyframe_becomes_a_data_uri_with_its_real_media_type(tmp_path):
+    from scripts.spike.fal import data_uri_keyframe
+
+    uri = data_uri_keyframe(_jpeg(tmp_path / "her.jpg"))
+    assert uri.startswith("data:image/jpeg;base64,")
+    # And it round-trips to the bytes on disk, rather than to something plausible.
+    import base64
+
+    assert base64.b64decode(uri.split(",", 1)[1]) == (tmp_path / "her.jpg").read_bytes()
+
+
+def test_an_oversized_keyframe_is_refused_not_truncated(tmp_path):
+    """A silently shortened keyframe would generate a video of something else."""
+    from scripts.spike.fal import data_uri_keyframe
+
+    big = tmp_path / "big.jpg"
+    big.write_bytes(b"\xff\xd8" + b"x" * 5000)
+    with pytest.raises(ProviderNotConfigured, match="data-URI cap"):
+        data_uri_keyframe(big, max_bytes=1000)
+
+
+def test_a_keyframe_of_unknown_type_is_refused(tmp_path):
+    from scripts.spike.fal import data_uri_keyframe
+
+    odd = tmp_path / "keyframe.unknownext"
+    odd.write_bytes(b"\x00\x01")
+    with pytest.raises(ProviderNotConfigured, match="what image type"):
+        data_uri_keyframe(odd)
+
+
+def test_a_missing_keyframe_says_so_plainly(tmp_path):
+    from scripts.spike.fal import data_uri_keyframe
+
+    with pytest.raises(ProviderNotConfigured, match="does not exist"):
+        data_uri_keyframe(tmp_path / "nope.jpg")
+
+
+def test_generate_inlines_a_local_keyframe_by_default(tmp_path):
+    """End to end with the shipped default resolver: no injection, no network."""
+    c = _client(
+        [
+            (200, {"request_id": "abc"}),
+            (200, {"status": "COMPLETED", "metrics": {"inference_time": 5.0}}),
+            (200, {"video": {"url": "https://v3.fal.media/clip.mp4"}}),
+        ]
+    )
+    provider = FalVideoProvider(
+        _cfg(), client=c, download=lambda _u, d: (d.write_bytes(b"MP4"), d)[1]
+    )
+    provider.generate(
+        VideoRequest(
+            keyframe=_jpeg(tmp_path / "her.jpg"),
+            prompt="a swing",
+            duration_s=5.0,
+            seed=1,
+            ref="t1",
+        ),
+        tmp_path / "out.mp4",
+    )
+    _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body is not None
+    assert str(body["image_url"]).startswith("data:image/jpeg;base64,")

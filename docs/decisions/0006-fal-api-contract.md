@@ -92,6 +92,42 @@ affects. Whether native audio can replace the lip-sync stage is a separate
 question, worth a handful of clips at $0.40/s once identity is settled — not
 worth paying double across the whole matrix to find out early.
 
+## Getting a keyframe to fal, and the two things that came with it
+
+Read from `https://fal.ai/docs/documentation/model-apis/fal-cdn.md`, 2026-09-23.
+
+Models take file inputs as **URLs**. There are exactly three documented ways to
+give fal a local file, and **raw REST upload is not one of them** — the CDN page
+says auth is "handled automatically by the SDK", and no plain-HTTP upload
+endpoint is documented. (`POST /assets/uploads` on the platform API takes a
+`url`: it imports from somewhere else, it does not upload bytes.) Implementing
+one would mean reverse-engineering the client library, which is the guess this
+project refuses to make.
+
+| Route | Verdict |
+|---|---|
+| `fal_client` SDK upload | Documented and supported. Adds a vendor dependency, which `CLAUDE.md` permits inside the provider seam. The production answer if data URIs stop being enough. |
+| **Data URI** (`data:image/jpeg;base64,...`) | **Chosen.** Documented, no dependency, no infrastructure. fal discourages it above "a few KB", which a keyframe exceeds — accepted deliberately: at spike volumes the inefficiency costs nothing, and `MAX_DATA_URI_BYTES` keeps the trade small. |
+| A URL you already host | Best of the three once something hosts keyframes, because fal's runner fetches it and nothing is inlined. Nothing hosts them yet. `_require_hosted_keyframe` is the resolver for that day. |
+
+Two things on that page that are not about uploading and matter more:
+
+**CDN files are public by default.** "Anyone with the URL can download." Any
+keyframe or generated clip that lands on fal's CDN is publicly retrievable by
+URL. The persona is synthetic so this is not a personal-data problem, but it
+does mean unreleased renders of her are world-readable to anyone holding the
+link. fal provides File ACLs and a per-request
+`X-Fal-Object-Lifecycle-Preference` header for retention. **Neither is
+configured, and this belongs in the D7 counsel scope alongside ADR 0002
+Finding 4.** Choosing the data URI route sidesteps it for inputs — nothing of
+hers is uploaded — but outputs still land there.
+
+**The CDN host is not one hostname.** Uploads return `v3b.fal.media`; queue
+results in fal's own examples use `v3.fal.media`; the SDK falls back to
+`fal.media`. Anything allow-listing fal's egress needs all three, plus
+`queue.fal.run` and `api.fal.ai`. Allow-listing the apex domains alone does not
+cover them, which this environment demonstrated.
+
 ## The cost-ledger consequence, which needs a decision later
 
 `CLAUDE.md` requires every paid call to write a `cost_ledger` row in USD in the
