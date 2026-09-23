@@ -4,7 +4,7 @@
 - **Date:** 2026-09-23
 - **Deciders:** Layton (owner), supervising engineer; the licence condition touches counsel under D7
 - **Supersedes:** [ADR 0002](0002-face-embedding-model-licence.md), which chose DINOv2 on 2026-09-22
-- **Evidence:** [`docs/reports/calibration-2026-09-23.md`](../reports/calibration-2026-09-23.md)
+- **Evidence:** [`docs/reports/calibration-2026-09-23-corrected.md`](../reports/calibration-2026-09-23-corrected.md). The first report was measured in the wrong space and is superseded; the ranking held, the DINOv2 verdict did not.
 - **Relates to:** `docs/BUILD_ORDER.md` amendment A3 (an embedder change invalidates every calibrated threshold)
 
 ## Context
@@ -27,12 +27,18 @@ persona, 17 control images of *similar* young English women rather than random
 strangers. Identical inputs matter here: the control set was prepared once with
 a single embedder so that every candidate scored the same selection of images.
 
-| Scorer | Overlap | AUC | TPR @ 1% FPR | Verdict |
-|---|---|---|---|---|
-| dlib ResNet (128-d) | 0.000 | 1.0000 | 1.000 | EXCELLENT |
-| DINOv2 (768-d), hard control | 0.297 | — | 0.66 | MARGINAL |
-| DINOv2 (768-d), easy control | 0.063 | — | 0.92 | ADEQUATE |
-| dlib DenseNet (128-d) | — | — | — | did not load |
+| Scorer | Overlap | AUC | Threshold | TPR | Verdict |
+|---|---|---|---|---|---|
+| dlib ResNet (128-d) | 0.000 | 1.0000 | 0.9748 | 1.000 | EXCELLENT |
+| DINOv2 (768-d), hard control | 0.107 | 0.9509 | 0.8779 | 0.893 | ADEQUATE |
+| DINOv2 (768-d), easy control | 0.036 | 0.9976 | 0.7999 | 0.964 | EXCELLENT |
+| dlib DenseNet (128-d) | — | — | — | — | did not load |
+
+dlib wins decisively, but `overlap 0.000` reads more comfortably than the
+picture underneath it. Per-image, her weakest frame scores 0.9766 and the
+nearest stranger 0.9523 — a margin of 0.0243 on 28 + 15 images — and the
+threshold sits 0.0018 below her weakest image. The separation is real and thin,
+and the 100% true-positive rate has almost no headroom.
 
 Two findings, and the second is the one that generalises.
 
@@ -81,10 +87,12 @@ DID NOT RUN row rather than silently omitting it.
 2. **Buy a commercial licence** (InsightFace offers one). Clean, costs money
    and procurement time, and is now justifiable with numbers rather than a
    guess — which was the point of measuring first.
-3. **Revert to DINOv2** and accept MARGINAL, with a manual review step behind
-   every borderline take. This is the option a threshold cannot rescue: at
-   0.297 overlap, no cut point exists that keeps good takes and rejects bad
-   ones.
+3. **Revert to DINOv2** (Apache 2.0, no asterisk) and accept ADEQUATE: overlap
+   0.107, TPR 89.3%, so roughly one genuine image in ten is rejected. Worse
+   than dlib and workable, which is a different thing from the fig leaf this
+   ADR first called it — the earlier MARGINAL/66% figure came from the
+   miscalibration, not from DINOv2. If the licence question goes badly, this
+   is a real answer rather than a last resort.
 
 Until this resolves, dlib is the scorer for **spike measurement only**. It must
 not carry into a published render, because a published render is the commercial
@@ -107,7 +115,15 @@ use the caveat is about.
 
 ## What would overturn this
 
-A larger hard control set that closes the gap, or per-image inspection showing
-the margin rests on one or two images. Both are cheap. Neither has been run at
-scale yet, and a result this clean on a sample this small deserves the scrutiny
-before it earns the confidence.
+A larger hard control set, or a master set with more variation. Per-image
+inspection has now been run and the margin did not collapse, but it is thin:
+`master_026.jpg` and `control_005.jpg` decide it between them.
+
+One correction is already on the record. The first calibration of this decision
+was measured in a space the scorer does not read — pairwise similarities
+against a centroid-based scorer — which made every threshold too lenient and
+understated DINOv2 by a full verdict. The ranking survived because both
+candidates were mismeasured identically, which is luck rather than method. The
+lesson is not about centroids: it is that a self-consistent set of statistics
+is not evidence of a correct instrument, and the only thing that caught it was
+printing individual numbers next to each other.

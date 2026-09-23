@@ -1,3 +1,9 @@
+> **SUPERSEDED 2026-09-23 by [`calibration-2026-09-23-corrected.md`](calibration-2026-09-23-corrected.md).**
+> Every number below was measured in the wrong space: the calibration used
+> pairwise similarities while the scorer compares frames to the master
+> centroid. The thresholds here are all too lenient. Kept unedited, because a
+> report that quietly acquires correct numbers teaches nobody what went wrong.
+
 # Calibration on real images — 2026-09-23
 
 First measurement this project has produced from anything other than synthetic

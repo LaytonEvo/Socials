@@ -5,8 +5,15 @@
 #
 # A GitHub runner has no such restriction, so this is the first place the model
 # genuinely executes.
+#
+# Every step here names its backend explicitly. This job went red the moment it
+# did not: the primary backend in config/spike.yaml changed from
+# dinov2 to dlib, every unqualified command followed it, and this workflow
+# installs neither dlib nor its weights. The second time that has happened, so:
+# a workflow step that runs a scorer names the scorer. dlib is covered against
+# real images by calibrate.yml, which is where it belongs.
 
-name: Embedder self-check
+name: DINOv2 self-check
 
 on:
   workflow_dispatch:
@@ -50,7 +57,9 @@ jobs:
         run: python -m scripts.spike.cli fetch-models --backend dinov2 --dest models
 
       - name: Self-check — model only, detection skipped
-        run: python -m scripts.spike.cli check-embedder --detector whole-image
+        run: |
+          python -m scripts.spike.cli check-embedder \
+            --backend dinov2 --detector whole-image
 
       - name: Self-check — full path, with face detection
         run: |
@@ -71,7 +80,8 @@ jobs:
           # Expected to report no faces found: the probe images are coloured
           # shapes, not photographs. That is the detector working, not the model
           # failing, so it must not fail the job.
-          python -m scripts.spike.cli --config ci-spike.yaml check-embedder || true
+          python -m scripts.spike.cli --config ci-spike.yaml \
+            check-embedder --backend dinov2 || true
 
       - name: Offline demo, end to end
         run: make demo
