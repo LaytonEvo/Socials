@@ -35,7 +35,7 @@ from .embed import EmbeddingSet, cross_similarities, embed_images, load_embedder
 from .embedders import DETECTORS  # noqa: F401  (import registers dlib + dinov2)
 from .errors import SpikeError
 from .frames import ImageSequenceFrames
-from .ingest import format_report, ingest
+from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
 from .ledger import CostLedger
 from .matrix import FAILURE_TAGS, GOLF_BATTERY, Condition, coverage, coverage_gaps, sample_matrix
 from .models import MODELS, config_snippet, fetch, sha256_of, write_paths
@@ -110,12 +110,30 @@ def _load_calibration(run_dir: Path) -> Calibration:
     return Calibration(**data)
 
 
-def _master_set(run_dir: Path, embedder: Any) -> EmbeddingSet:
-    master_dir = run_dir / "master"
-    stills = sorted(master_dir.glob("*.png"))
+def _stills_in(directory: Path, which: str) -> list[Path]:
+    """Every image in a set directory, whatever the file extension.
+
+    Deliberately not `glob("*.png")`, which is what this was and which made
+    calibration silently see an empty folder for any set of JPEGs. `prepare-set`
+    preserves the extension it was given, and most people's photographs are
+    JPEG, so the two halves disagreed about what an image was.
+    """
+    if not directory.is_dir():
+        raise SpikeError(
+            f"No {which} directory at {directory}. Add stills with "
+            f"`prepare-set <folder> --which {which}`."
+        )
+    stills = find_images(directory)
     if not stills:
-        raise SpikeError(f"No master stills in {master_dir}. Run `make-fixtures` or add them.")
-    return embed_images(embedder, stills, label="master")
+        raise SpikeError(
+            f"No {which} stills in {directory}. The folder exists but holds no images "
+            f"(looked for {', '.join(IMAGE_SUFFIXES)})."
+        )
+    return stills
+
+
+def _master_set(run_dir: Path, embedder: Any) -> EmbeddingSet:
+    return embed_images(embedder, _stills_in(run_dir / "master", "master"), label="master")
 
 
 def _ledger(cfg: SpikeConfig, log: RunLog, budget: str) -> CostLedger:
@@ -224,13 +242,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     embedder = _embedder(cfg, args.embedder)
 
     master = _master_set(run_dir, embedder)
-    control_stills = sorted((run_dir / "control").glob("*.png"))
-    if not control_stills:
-        raise SpikeError(
-            f"No control stills in {run_dir / 'control'}. Calibration needs a set of "
-            f"DIFFERENT faces to measure separation against; without it there is no "
-            f"threshold, only a number."
-        )
+    control_stills = _stills_in(run_dir / "control", "control")
     control = embed_images(embedder, control_stills, label="control")
 
     positives = _pairwise(master)
@@ -621,9 +633,7 @@ def _calibrate_with(
 ) -> Calibration:
     embedder = _embedder(cfg, backend)
     master = _master_set(run_dir, embedder)
-    control_stills = sorted((run_dir / "control").glob("*.png"))
-    if not control_stills:
-        raise SpikeError(f"No control stills in {run_dir / 'control'}.")
+    control_stills = _stills_in(run_dir / "control", "control")
     control = embed_images(embedder, control_stills, label="control")
 
     _require_usable_embeddings(master, "master", backend)

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scripts.spike.embed import MULTI_FACE, NO_FACE, StubEmbedder
 from scripts.spike.ingest import (
     MIN_EDGE_PX,
@@ -139,3 +141,55 @@ def test_report_counts_every_rejection_reason(tmp_path):
     text = format_report(report, tmp_path / "d")
     for reason in ("no face detected", "more than one face", "too small"):
         assert reason in text
+
+
+# --- the two halves must agree on what an image is ------------------------
+
+
+def test_calibration_finds_jpeg_sets(tmp_path):
+    """Regression, found by a real run on real photographs.
+
+    `prepare-set` preserves the extension it is given. `_master_set` used to
+    glob only for *.png. Feed it JPEGs — which is what most photographs are,
+    and what the first real master set was — and calibration reported an empty
+    folder while the files sat right there.
+    """
+    from scripts.spike.cli import _stills_in
+
+    master = tmp_path / "master"
+    master.mkdir()
+    for i in range(3):
+        render_fake_face("look-a", variation=i).convert("RGB").save(
+            master / f"master_{i:03d}.jpg", "JPEG"
+        )
+    assert len(_stills_in(master, "master")) == 3
+
+
+def test_calibration_finds_mixed_extensions(tmp_path):
+    from scripts.spike.cli import _stills_in
+
+    d = tmp_path / "control"
+    d.mkdir()
+    render_fake_face("a").save(d / "a.png")
+    render_fake_face("b").convert("RGB").save(d / "b.jpg", "JPEG")
+    render_fake_face("c").convert("RGB").save(d / "c.jpeg", "JPEG")
+    assert len(_stills_in(d, "control")) == 3
+
+
+def test_missing_directory_says_how_to_make_one(tmp_path):
+    from scripts.spike.cli import _stills_in
+    from scripts.spike.errors import SpikeError
+
+    with pytest.raises(SpikeError, match="prepare-set"):
+        _stills_in(tmp_path / "nope", "master")
+
+
+def test_empty_directory_lists_what_it_looked_for(tmp_path):
+    from scripts.spike.cli import _stills_in
+    from scripts.spike.errors import SpikeError
+
+    d = tmp_path / "master"
+    d.mkdir()
+    (d / "notes.txt").write_text("x")
+    with pytest.raises(SpikeError, match=r"\.jpg"):
+        _stills_in(d, "master")
