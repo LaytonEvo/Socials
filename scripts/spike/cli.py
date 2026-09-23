@@ -363,6 +363,15 @@ def _generate_and_score(
             outcome.ok = True
 
     clip_path = run_dir / "clips" / ref
+    # Record the provider's own id for the job the instant it is queued. A run
+    # that dies between submitting and downloading has still been billed, and
+    # without this the paid-for clip is unfindable -- which happened once, for
+    # $2 and nothing to show.
+    if hasattr(video_provider, "on_submit") and video_provider.on_submit is None:
+        video_provider.on_submit = lambda q: log.event(
+            "provider_request_queued", ref=ref, request_id=q.request_id, status_url=q.status_url
+        )
+
     with ledger.paid_call(video_cfg, duration, ref=f"{ref}:clip", prompt=prompt) as outcome:
         video_provider.generate(
             VideoRequest(

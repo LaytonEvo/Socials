@@ -66,6 +66,40 @@ def urllib_transport(
 
 
 @dataclass
+class QueuedRequest:
+    """A submitted request, and the URLs fal gave us for following it.
+
+    The URLs come from the submit response rather than being rebuilt from the
+    model id, because they are not the same shape. Submitting to
+    ``fal-ai/veo3.1/image-to-video`` returns status and response URLs under
+    ``fal-ai/veo3.1/requests/...`` -- the queue groups by app, not by endpoint.
+    Reconstructing them by pattern worked for single-app models and returned an
+    empty-bodied 405 for this one, after the job had been queued and paid for.
+
+    So: follow the links the provider hands you. ADR 0006 recorded these fields
+    and the first implementation ignored them.
+    """
+
+    request_id: str
+    status_url: str
+    response_url: str
+    cancel_url: str | None = None
+
+    @classmethod
+    def from_response(cls, res: dict[str, Any], model_id: str) -> QueuedRequest:
+        request_id = str(res["request_id"])
+        # Fall back to the conventional shape only if fal omits a URL, so a
+        # missing field degrades instead of crashing -- but prefer theirs.
+        base = f"{QUEUE_ROOT}/{model_id}/requests/{request_id}"
+        return cls(
+            request_id=request_id,
+            status_url=str(res.get("status_url") or f"{base}/status"),
+            response_url=str(res.get("response_url") or base),
+            cancel_url=str(res["cancel_url"]) if res.get("cancel_url") else None,
+        )
+
+
+@dataclass
 class FalClient:
     """The queue protocol, with no opinion about what is being generated.
 
@@ -156,24 +190,24 @@ class FalClient:
             )
         return parsed
 
-    def submit(self, model_id: str, arguments: dict[str, Any]) -> str:
-        """Queue a request and return its id. Does not wait."""
+    def submit(self, model_id: str, arguments: dict[str, Any]) -> QueuedRequest:
+        """Queue a request and return a handle to it. Does not wait."""
         # A refusal here is free: nothing was queued, so no runner ran.
         res = self._json(f"{QUEUE_ROOT}/{model_id}", "POST", arguments, refusal_is_free=True)
-        request_id = res.get("request_id") if isinstance(res, dict) else None
-        if not request_id:
+        if not isinstance(res, dict) or not res.get("request_id"):
             raise ProviderFailed(f"fal accepted the submission but returned no request_id: {res!r}")
-        return str(request_id)
+        return QueuedRequest.from_response(res, model_id)
 
-    def wait(self, model_id: str, request_id: str) -> dict[str, Any]:
+    def wait(self, queued: QueuedRequest) -> dict[str, Any]:
         """Poll until the request reaches COMPLETED, then return its status.
 
         Raises on timeout rather than returning a partial result, and carries
         the request id on the exception: a timed-out request may still have
         been billed, so the run has to be reconcilable afterwards.
         """
+        request_id = queued.request_id
         deadline = self.now() + self.timeout_s
-        status_url = f"{QUEUE_ROOT}/{model_id}/requests/{request_id}/status"
+        status_url = queued.status_url
         while True:
             status = self._json(status_url)
             state = status.get("status") if isinstance(status, dict) else None
@@ -193,10 +227,12 @@ class FalClient:
                 )
             self.sleep(self.poll_interval_s)
 
-    def result(self, model_id: str, request_id: str) -> dict[str, Any]:
-        res = self._json(f"{QUEUE_ROOT}/{model_id}/requests/{request_id}")
+    def result(self, queued: QueuedRequest) -> dict[str, Any]:
+        res = self._json(queued.response_url)
         if not isinstance(res, dict):
-            raise ProviderFailed(f"fal returned a non-object result for {request_id}: {res!r}")
+            raise ProviderFailed(
+                f"fal returned a non-object result for {queued.request_id}: {res!r}"
+            )
         return res
 
 
@@ -258,6 +294,11 @@ class FalVideoProvider:
     #: was not read when ADR 0006 was written, so the default refuses rather
     #: than guesses. Everything either side of it is implemented and tested.
     resolve_keyframe: Callable[[Path], str] | None = None
+    #: Called with the handle as soon as a request is queued, before any
+    #: polling. The moment money is committed is the moment the id becomes
+    #: worth recording: if everything after this fails, that id is the only way
+    #: to find what was paid for.
+    on_submit: Callable[[QueuedRequest], None] | None = None
     name: str = field(default="fal-video", init=False)
 
     def __post_init__(self) -> None:
@@ -288,10 +329,14 @@ class FalVideoProvider:
             "duration": req.duration_s,
             "seed": req.seed,
         }
-        request_id = self.client.submit(self.cfg.model, arguments)
-        status = self.client.wait(self.cfg.model, request_id)
-        raise_if_failed(status, request_id)
-        result = self.client.result(self.cfg.model, request_id)
+        queued = self.client.submit(self.cfg.model, arguments)
+        # Surfaced so a run whose polling fails can still be reconciled against
+        # fal: without the id, a job that was queued and billed is unfindable.
+        if self.on_submit is not None:
+            self.on_submit(queued)
+        status = self.client.wait(queued)
+        raise_if_failed(status, queued.request_id)
+        result = self.client.result(queued)
         return self.download(first_media_url(result), dest)
 
 

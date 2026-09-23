@@ -17,12 +17,20 @@ from scripts.spike.errors import ProviderFailed, ProviderNotConfigured, Provider
 from scripts.spike.fal import (
     FalClient,
     FalVideoProvider,
+    QueuedRequest,
     first_media_url,
     raise_if_failed,
 )
 from scripts.spike.providers import VideoRequest
 
 MODEL = "fal-ai/some-video-model"
+
+#: A handle as fal would return it, for tests that poll without submitting.
+QUEUED = QueuedRequest(
+    request_id="abc",
+    status_url=f"https://queue.fal.run/{MODEL}/requests/abc/status",
+    response_url=f"https://queue.fal.run/{MODEL}/requests/abc",
+)
 
 
 class FakeTransport:
@@ -76,7 +84,7 @@ def test_auth_header_is_Key_not_Bearer():
 def test_submit_posts_arguments_unwrapped_to_the_queue_host():
     """REST takes the arguments directly; `input:` is a client-library shape."""
     c = _client([(200, {"request_id": "abc"})])
-    assert c.submit(MODEL, {"prompt": "a swing"}) == "abc"
+    assert c.submit(MODEL, {"prompt": "a swing"}).request_id == "abc"
     url, method, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
     assert url == f"https://queue.fal.run/{MODEL}"
     assert method == "POST"
@@ -104,7 +112,7 @@ def test_wait_polls_through_queue_and_progress_to_completed():
             (200, {"status": "COMPLETED", "metrics": {"inference_time": 3.4}}),
         ]
     )
-    assert c.wait(MODEL, "abc")["status"] == "COMPLETED"
+    assert c.wait(QUEUED)["status"] == "COMPLETED"
 
 
 def test_a_timeout_carries_the_request_id():
@@ -116,7 +124,7 @@ def test_a_timeout_carries_the_request_id():
     )
     c.now = lambda: next(ticks)
     with pytest.raises(ProviderTimeout) as excinfo:
-        c.wait(MODEL, "abc")
+        c.wait(QUEUED)
     assert excinfo.value.request_id == "abc"
     assert "reconcile" in str(excinfo.value)
 
@@ -125,7 +133,7 @@ def test_an_unknown_status_stops_rather_than_guessing():
     """ADR 0006 records three states. A fourth means the contract moved."""
     c = _client([(200, {"status": "SOMETHING_NEW"})])
     with pytest.raises(ProviderFailed, match="unrecognised status"):
-        c.wait(MODEL, "abc")
+        c.wait(QUEUED)
 
 
 def test_an_http_error_surfaces_the_status_and_detail():
@@ -440,7 +448,7 @@ def test_a_4xx_while_polling_is_billable_because_the_work_may_have_run():
     about whether compute was spent. Assume it was."""
     c = _client([(404, {"detail": "unknown request"})])
     with pytest.raises(ProviderFailed) as excinfo:
-        c.wait(MODEL, "abc")
+        c.wait(QUEUED)
     assert getattr(excinfo.value, "billable", True) is True
 
 
@@ -469,7 +477,7 @@ def test_a_422_is_free_even_when_it_surfaces_late():
 
     c = _client([(422, {"detail": [{"type": "missing", "loc": ["body", "image_url"]}]})])
     with pytest.raises(ProviderRefused) as excinfo:
-        c.result(MODEL, "abc")
+        c.result(QUEUED)
     assert excinfo.value.billable is False
 
 
@@ -479,3 +487,74 @@ def test_a_completed_status_with_no_error_does_not_prove_success():
     raise_if_failed(
         {"status": "COMPLETED", "error": None, "metrics": {"inference_time": 0.049}}, "a"
     )
+
+
+# --- follow the provider's links, do not rebuild them ------------------------
+
+
+def test_polling_uses_the_urls_fal_returned_not_a_rebuilt_pattern():
+    """Regression from the third live run, which cost $2 and returned nothing.
+
+    Submitting to fal-ai/veo3.1/image-to-video returns status and response URLs
+    under fal-ai/veo3.1/requests/... -- the queue groups by app, not by
+    endpoint. The rebuilt URL 405'd with an empty body *after* the job had been
+    queued and billed, so the clip was paid for and unreachable.
+    """
+    submit_res = {
+        "request_id": "xyz",
+        "status_url": "https://queue.fal.run/fal-ai/veo3.1/requests/xyz/status",
+        "response_url": "https://queue.fal.run/fal-ai/veo3.1/requests/xyz",
+        "cancel_url": "https://queue.fal.run/fal-ai/veo3.1/requests/xyz/cancel",
+    }
+    c = _client(
+        [
+            (200, submit_res),
+            (200, {"status": "COMPLETED"}),
+            (200, {"video": {"url": "https://v3.fal.media/x.mp4"}}),
+        ]
+    )
+    queued = c.submit("fal-ai/veo3.1/image-to-video", {"prompt": "p"})
+    c.wait(queued)
+    c.result(queued)
+
+    polled = c.transport.calls[1][0]  # type: ignore[attr-defined]
+    fetched = c.transport.calls[2][0]  # type: ignore[attr-defined]
+    assert polled == submit_res["status_url"]
+    assert fetched == submit_res["response_url"]
+    assert "image-to-video" not in polled, "rebuilding the path is what broke this"
+
+
+def test_a_missing_url_falls_back_rather_than_crashing():
+    """Prefer fal's links; degrade to the conventional shape if one is absent."""
+    c = _client([(200, {"request_id": "xyz"})])
+    queued = c.submit(MODEL, {"prompt": "p"})
+    assert queued.status_url.endswith(f"{MODEL}/requests/xyz/status")
+    assert queued.cancel_url is None
+
+
+def test_the_request_id_is_surfaced_the_moment_money_is_committed(tmp_path):
+    """If everything after submit fails, the id is the only way to find what
+    was paid for. The third live run had no id and the clip was unrecoverable."""
+    seen: list[str] = []
+    c = _client(
+        [
+            (
+                200,
+                {"request_id": "xyz", "status_url": "https://q/s", "response_url": "https://q/r"},
+            ),
+            (500, {"detail": "boom"}),
+        ]
+    )
+    provider = FalVideoProvider(
+        _cfg(),
+        client=c,
+        download=lambda _u, d: d,
+        resolve_keyframe=lambda _p: "https://example.com/k.jpg",
+        on_submit=lambda q: seen.append(q.request_id),
+    )
+    with pytest.raises(ProviderFailed):
+        provider.generate(
+            VideoRequest(keyframe=tmp_path / "k.jpg", prompt="p", duration_s=5, seed=1, ref="t"),
+            tmp_path / "o.mp4",
+        )
+    assert seen == ["xyz"], "the id must be recorded before anything can go wrong"
