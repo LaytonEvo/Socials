@@ -58,7 +58,54 @@ be forced onto facial geometry — which is the comparison we actually want.
 The reasoning was sound about video drift and wrong about this discrimination.
 Both effects are real; this result says the second dominates.
 
+## Bake-off result — dlib, run the same day
+
+| Backend | Verdict | Overlap | AUC | Threshold | TPR | Dim |
+|---|---|---|---|---|---|---|
+| dinov2 | MARGINAL | 0.297 | 0.894 | 0.871 | 65.9% | 768 |
+| **dlib** | **EXCELLENT** | **0.000** | **1.000** | 0.952 | **100%** | 128 |
+
+Identical master set, identical hard control, same run. dlib separates the
+persona from 16 similar young women completely: no overlap, and every one of
+her images clears the threshold.
+
+This vindicates the fallback and confirms the diagnosis above. A purpose-built
+face recogniser, being invariant to the styling the two sets share, is forced
+onto facial geometry — the comparison we actually want. The general visual
+embedder was distracted by everything else in the frame.
+
+### Read this result with two reservations
+
+**Perfect separation on a small sample warrants scrutiny, not celebration.**
+28 master images and 16 controls. A degenerate result is ruled out — identical
+embeddings would push overlap to 1.0, not 0.0 — but perfect separation is
+easier to achieve on small samples than large ones. The worst-frame contact
+sheet check still applies, and so does a larger control set.
+
+**The discrimination test is not the whole job.** dlib proves it can tell her
+from other people. It has not been shown to catch *her, drifted* — and its
+invariance to pose, lighting and expression, which is exactly why it won here,
+is exactly what might make it forgiving of the drift this system exists to
+detect. DINOv2's sensitivity was a liability on this test and could be an asset
+on that one.
+
+The two models have opposite blind spots. That question cannot be settled until
+there is video to score, in Phase 1.
+
 ## Recommended next step
+
+~~**Run the bake-off against dlib**~~ *(done — see above)*
+
+1. **Switch the primary scorer to dlib** and revisit ADR 0002.
+2. **Resolve the licence properly.** The dlib ResNet rests on an informal
+   public-domain statement with the FaceScrub training-data caveat. Now that it
+   is the likely production scorer, that caveat is a real decision. Add the
+   MIT-licensed DenseNet variant to the next bake-off: if it separates
+   adequately too, it is the cleaner choice.
+3. **Keep DINOv2 wired up.** It may earn a place as a secondary drift signal
+   precisely because it is sensitive to what dlib ignores.
+
+Original recommendation follows.
 
 **Run the bake-off against dlib**, which ADR 0002 kept wired up as exactly this
 fallback: `python -m scripts.spike.cli bake-off --backends dinov2 dlib`.

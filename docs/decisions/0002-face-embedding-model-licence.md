@@ -1,6 +1,6 @@
 # ADR 0002 — Face-embedding model and licence route
 
-- **Status:** **Accepted 2026-09-22 — DINOv2.** No longer blocks Spike 0.
+- **Status:** **Superseded 2026-09-23 — see the log.** DINOv2 was accepted on 2026-09-22 and measured MARGINAL against a realistic control the next day; dlib measured EXCELLENT on the same data. A revision is pending.
 - **Date:** 2026-09-22 (research recorded); superseded sections dated where changed
 - **Deciders:** Layton (owner), supervising engineer; touches counsel under D7
 - **Relates to:** `BUILD_PLAN.md` Section 3 (stack), tasks 1.2 and 1.3; `docs/BUILD_ORDER.md` amendment A3
@@ -162,3 +162,26 @@ repository's build environment, so the weights could not be downloaded to test
 against. The YuNet detector IS verified — it downloads, its digest matches, and
 it loads and runs. First person to run this on a connected machine is the first
 to exercise the embedder.
+
+**2026-09-23 (evening)** — First real calibration, `docs/reports/calibration-2026-09-23.md`.
+
+Against a control of young women of the same type, DINOv2 reads MARGINAL:
+overlap 0.297, AUC 0.894, and only 66% of the persona's own images clear the
+threshold. Against the same data dlib reads EXCELLENT: overlap 0.000, AUC
+1.000, 100%.
+
+**Finding 2 above is wrong, or at least incomplete.** The argument was that a
+face recogniser's invariance to pose, light and hair makes it blind to the axes
+a persona drifts along, so a general visual embedder would serve better. But a
+realistic control set shares the master set's styling — same lighting, same
+treatment, similar hair — and a general embedder scores that as similarity. The
+face recogniser's invariance is what forces it onto facial geometry.
+
+The original argument is not refuted, only out-scoped: it was about detecting
+*drift in her*, and this measurement was about telling her from *other people*.
+Both matter, and the two models appear to have opposite blind spots. The drift
+half cannot be measured until Phase 1 produces video.
+
+This ADR should be revised to dlib as primary once the licence question is
+settled — the ResNet's public-domain statement carries the FaceScrub caveat,
+and the MIT-licensed DenseNet variant should be measured before choosing.
