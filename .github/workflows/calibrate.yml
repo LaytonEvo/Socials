@@ -1,0 +1,68 @@
+# Runs a real calibration on real images.
+#
+# Exists because the environment this project is developed in blocks
+# huggingface.co, so the DINOv2 weights cannot be downloaded there and no
+# calibration has ever run on anything but synthetic fixtures. A GitHub runner
+# has open egress.
+
+name: Calibration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "spike/data/**"
+      - ".github/workflows/calibrate.yml"
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dinov2]"
+
+      - name: Fetch the face detector
+        run: |
+          python -m scripts.spike.cli fetch-models --backend dinov2 \
+            --dest models --write-config
+
+      - name: Start a run
+        run: python -m scripts.spike.cli init-run --run ci --note "real images, CI"
+
+      - name: Prepare the master set
+        run: |
+          python -m scripts.spike.cli prepare-set spike/data/master \
+            --run ci --which master
+
+      - name: Prepare the control set
+        run: |
+          python -m scripts.spike.cli prepare-set spike/data/control \
+            --run ci --which control
+
+      - name: Calibrate
+        run: python -m scripts.spike.cli calibrate --run ci --target-fpr 0.01
+
+      - name: Dump the calibration record
+        if: always()
+        run: cat spike/runs/ci/calibration.json || echo "(no calibration written)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: calibration
+          path: |
+            spike/runs/ci/calibration.json
+            spike/runs/ci/run.jsonl
+          if-no-files-found: warn
