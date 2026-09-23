@@ -33,10 +33,17 @@ def test_both_candidates_are_registered(cfg):
             load_embedder(cfg.embedder_for(backend))  # blocked on licence, not on lookup
 
 
-def test_dlib_is_still_blocked_until_its_licence_is_recorded(cfg):
-    """DINOv2 was chosen (ADR 0002); dlib remains the unrecorded fallback."""
-    with pytest.raises(EmbedderNotConfigured, match="licence"):
-        cfg.embedder_for("dlib").require_usable()
+def test_dlib_is_blocked_on_its_model_files_not_its_licence(cfg):
+    """dlib's licence was recorded 2026-09-23 so the bake-off could run.
+
+    Like DINOv2, it must now fail on the missing weights rather than on the
+    licence — if it still failed on the licence, the record did not take.
+    """
+    import scripts.spike.embedders as mod
+
+    cfg.embedder_for("dlib").require_usable()  # licence gate: passes
+    with pytest.raises(EmbedderNotConfigured, match="recognition_model"):
+        mod._build_dlib(cfg.embedder_for("dlib"))
 
 
 def test_chosen_backend_is_blocked_on_its_model_path_not_its_licence(cfg):

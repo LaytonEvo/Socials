@@ -46,10 +46,27 @@ def test_shipped_config_records_the_chosen_scorer(cfg):
     assert chosen.dim == 768
 
 
-def test_unchosen_backends_are_still_blocked_on_their_licence(cfg):
-    """Deciding one candidate must not wave the others through."""
+def test_every_configured_backend_has_a_recorded_licence(cfg):
+    """Both candidates now carry one: DINOv2 chosen, dlib recorded for the
+    bake-off. The gate is satisfied by a human having read the text, so this
+    asserts the record exists rather than that the gate is shut."""
+    for backend in ("dinov2", "dlib"):
+        emb = cfg.embedder_for(backend)
+        emb.require_usable()
+        assert emb.licence, backend
+        assert emb.licence_verified_on is not None, backend
+
+
+def test_an_unrecorded_backend_would_still_be_blocked(cfg):
+    """The gate itself must still bite. Deciding one candidate does not
+    wave through a backend nobody has read the terms for."""
+    import dataclasses
+
+    unrecorded = dataclasses.replace(
+        cfg.embedder_for("dlib"), licence=None, licence_verified_on=None
+    )
     with pytest.raises(EmbedderNotConfigured, match="licence"):
-        cfg.embedder_for("dlib").require_usable()
+        unrecorded.require_usable()
 
 
 def test_shipped_config_blocks_real_providers(cfg):

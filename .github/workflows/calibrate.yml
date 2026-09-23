@@ -81,6 +81,34 @@ jobs:
                     f"{c['negatives']['mean']:>9.4f} {c['negatives']['max']:>8.4f}")
           PY
 
+      # ADR 0002 kept dlib wired up as the fallback for exactly the case the
+      # hard control has now produced. dlib builds from source, so the install
+      # is allowed to fail without taking the DINOv2 results down with it.
+      - name: Install dlib
+        id: dlib
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake build-essential
+          pip install dlib
+
+      - name: Fetch the dlib models
+        if: steps.dlib.outcome == 'success'
+        run: |
+          python -m scripts.spike.cli fetch-models --backend dlib \
+            --dest models --write-config
+
+      - name: Bake-off on the HARD control — DINOv2 against dlib
+        if: steps.dlib.outcome == 'success'
+        run: |
+          python -m scripts.spike.cli bake-off --run hard --backends dinov2 dlib
+
+      - name: Report if dlib could not be installed
+        if: steps.dlib.outcome != 'success'
+        run: |
+          echo "dlib did not install; the bake-off did not run."
+          echo "The DINOv2 calibrations above are unaffected."
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -88,4 +116,7 @@ jobs:
           path: |
             spike/runs/easy/calibration.json
             spike/runs/hard/calibration.json
+            spike/runs/hard/calibration_dinov2.json
+            spike/runs/hard/calibration_dlib.json
+            spike/runs/hard/bake_off.json
           if-no-files-found: warn

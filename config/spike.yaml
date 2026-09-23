@@ -66,11 +66,21 @@ embedder:
       # Both need the landmark predictor:
       #        http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2
       dim: 128
-      recognition_model: null
+      recognition_model: null       # written by `fetch-models --write-config`
       shape_predictor: null
       jitter: 1
-      licence: null                 # record verbatim once read
-      licence_verified_on: null
+      # Recorded 2026-09-23 on the owner's authorisation, for EVALUATION.
+      # Verbatim from https://github.com/davisking/dlib-models:
+      #   "This repository contains trained models created by me (Davis King).
+      #    ... As far as I am concerned, anyone can do whatever they want with
+      #    these model files as I've released them into the public domain."
+      # Caveat carried from ADR 0002: part of the training data (FaceScrub) is
+      # non-commercial, and the statement covers the model file rather than the
+      # photographs behind it. Grey area. Low stakes for a measurement; a real
+      # decision if this becomes the production scorer, at which point the
+      # MIT-licensed DenseNet variant is the cleaner alternative.
+      licence: "Public domain (author statement); training-data caveat, see ADR 0002"
+      licence_verified_on: 2026-09-23
 
     dinov2:
       # A general visual embedder on a cropped face. Apache 2.0.
