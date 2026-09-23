@@ -2,10 +2,16 @@
 
 Produces a pass threshold from two measured distributions:
 
-* **positives** -- similarities between images of the same identity (within the
-  master set)
-* **negatives** -- similarities between the master set and a control set of
-  different faces
+* **positives** -- each master image against the centroid of the *other* master
+  images (leave-one-out)
+* **negatives** -- each control image against the master centroid
+
+Both are measured against a centroid rather than pairwise, because that is what
+`score.py` compares a frame to. A threshold only means something in the space it
+was measured in, and this pair was mismatched once: positives were pairwise, and
+because centroid similarity runs higher than pairwise similarity, every
+threshold came out too lenient. No statistic here caught it -- overlap, AUC and
+TPR were all internally consistent inside the wrong space.
 
 The output that matters is not the threshold. It is how much the two
 distributions *overlap*. A threshold drawn across two distributions that sit on

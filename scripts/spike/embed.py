@@ -225,3 +225,44 @@ def pairwise_similarities(vectors: Sequence[np.ndarray]) -> list[float]:
 def cross_similarities(a: Sequence[np.ndarray], b: Sequence[np.ndarray]) -> list[float]:
     """Every pair across two sets."""
     return [cosine(x, y) for x in a for y in b]
+
+
+def leave_one_out_centroid_similarities(vectors: Sequence[np.ndarray]) -> list[float]:
+    """Each vector against the centroid of *the others*.
+
+    This is the positive distribution, and it has to be built this way rather
+    than pairwise, because `score.py` compares every frame to the master
+    centroid. A threshold is only meaningful in the space it was measured in,
+    and centroid similarity is systematically higher than pairwise similarity:
+    averaging cancels the noise that a single other image still carries. Mixing
+    the two makes the threshold too lenient by exactly that gap.
+
+    Leave-one-out, because a vector included in its own reference centroid is
+    partly being compared to itself, which inflates the positives and would
+    flatter the instrument for the same reason.
+    """
+    if len(vectors) < 2:
+        return []
+    stacked = np.stack([np.asarray(v, dtype=np.float64) for v in vectors])
+    total = stacked.sum(axis=0)
+    n = len(stacked)
+    return [
+        cosine(
+            l2_normalise(stacked[i].astype(np.float32)),
+            l2_normalise((total - stacked[i]) / (n - 1)),
+        )
+        for i in range(n)
+    ]
+
+
+def centroid_similarities(
+    vectors: Sequence[np.ndarray], centroid: np.ndarray | None
+) -> list[float]:
+    """Each vector against a fixed centroid — the negative distribution.
+
+    No leave-one-out here: a control image never contributed to the master
+    centroid in the first place.
+    """
+    if centroid is None:
+        return []
+    return [cosine(v, centroid) for v in vectors]

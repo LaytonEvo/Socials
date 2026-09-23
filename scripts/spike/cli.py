@@ -31,7 +31,13 @@ from .config import (
     write_threshold,
 )
 from .contactsheet import build_contact_sheet, worst_first
-from .embed import EmbeddingSet, cross_similarities, embed_images, load_embedder
+from .embed import (
+    EmbeddingSet,
+    centroid_similarities,
+    embed_images,
+    leave_one_out_centroid_similarities,
+    load_embedder,
+)
 from .embedders import DETECTORS
 from .errors import SpikeError
 from .frames import ImageSequenceFrames
@@ -246,8 +252,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     control_stills = _stills_in(run_dir / "control", "control")
     control = embed_images(embedder, control_stills, label="control")
 
-    positives = _pairwise(master)
-    negatives = cross_similarities(list(master.vectors), list(control.vectors))
+    positives, negatives = _calibration_distributions(master, control)
     cal = calibrate(positives, negatives, embedder.info, target_fpr=args.target_fpr)
 
     log.write_artifact("calibration.json", cal.to_json())
@@ -271,10 +276,23 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _pairwise(es: EmbeddingSet) -> list[float]:
-    from .embed import pairwise_similarities
+def _calibration_distributions(
+    master: EmbeddingSet, control: EmbeddingSet
+) -> tuple[list[float], list[float]]:
+    """The two distributions a threshold is drawn between.
 
-    return pairwise_similarities(list(es.vectors))
+    Both are measured in the space `score.py` scores in — cosine against the
+    master centroid — because a threshold is only meaningful in the space it
+    was measured in. This was pairwise once, and the mismatch made every
+    threshold systematically too lenient: centroid similarity runs higher than
+    pairwise similarity, so a cut point drawn on pairwise numbers sits below
+    where the scorer reads. Every calibration path goes through here so the
+    two cannot drift apart again.
+    """
+    return (
+        leave_one_out_centroid_similarities(list(master.vectors)),
+        centroid_similarities(list(control.vectors), master.centroid()),
+    )
 
 
 def _generate_and_score(
@@ -640,12 +658,8 @@ def _calibrate_with(
     _require_usable_embeddings(master, "master", backend)
     _require_usable_embeddings(control, "control", backend)
 
-    return calibrate(
-        _pairwise(master),
-        cross_similarities(list(master.vectors), list(control.vectors)),
-        embedder.info,
-        target_fpr=target_fpr,
-    )
+    positives, negatives = _calibration_distributions(master, control)
+    return calibrate(positives, negatives, embedder.info, target_fpr=target_fpr)
 
 
 def cmd_check_embedder(args: argparse.Namespace) -> int:
