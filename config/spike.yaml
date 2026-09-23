@@ -157,11 +157,16 @@ providers:
       price_usd_per_second: 0.0
       verified_on: 1970-01-01
     flagship:            # face-forward hero shots
-      backend: null
-      model: null
-      endpoint: null
-      price_usd_per_second: null
-      verified_on: null
+      backend: fal
+      model: fal-ai/veo3.1/image-to-video
+      endpoint: null     # the adapter builds it from the model id (ADR 0006)
+      # $0.20/s at 720p or 1080p with audio OFF. Audio doubles it to $0.40/s,
+      # and 4k is $0.40 / $0.60. Read from the model's own page on fal,
+      # 2026-09-23. Audio is off for the identity run on purpose: S0.5 asks
+      # whether her face survives, and paying double for a soundtrack nobody
+      # scores would be spending on the wrong question.
+      price_usd_per_second: 0.20
+      verified_on: 2026-09-23
     budget:              # volume / B-roll
       backend: null
       model: null

@@ -73,6 +73,25 @@ These are the reason rule 1 exists, and each is load-bearing:
 4. **The response carries no price.** It reports `metrics.inference_time`, not
    a charge.
 
+## Verified prices, read from each model's own page 2026-09-23
+
+Attributed to a model id rather than lifted from the page, because a fal model
+page carries several models' prices in the same payload and the first number
+you find is often a different variant's.
+
+| Model id | Price | Notes |
+|---|---|---|
+| `fal-ai/veo3.1/image-to-video` | **$0.20/s** no audio, **$0.40/s** with, at 720p/1080p | 4k is $0.40 / $0.60. fal's own worked example: 5s at 1080p with audio = $2.00 |
+| `fal-ai/veo3.1/fast` | $0.10/s no audio, $0.15/s with | Draft tier of the same family |
+| `fal-ai/kling-video/v2.5-turbo/pro/image-to-video` | $0.35 per 5s, then $0.07/s | ≈ $0.07/s |
+| `fal-ai/kling-video/v2.5-turbo/standard/image-to-video` | $0.21 per 5s, then $0.042/s | ≈ $0.042/s |
+
+**Audio is off for the S0.5 identity run.** It doubles the rate and the
+question being asked is whether her face survives, which no soundtrack
+affects. Whether native audio can replace the lip-sync stage is a separate
+question, worth a handful of clips at $0.40/s once identity is settled — not
+worth paying double across the whole matrix to find out early.
+
 ## The cost-ledger consequence, which needs a decision later
 
 `CLAUDE.md` requires every paid call to write a `cost_ledger` row in USD in the
@@ -85,8 +104,14 @@ That is an estimate wearing the clothes of a record. It is acceptable for Spike
 it must not silently become the production accounting. Two follow-ups, neither
 due now:
 
-- Check whether fal's platform API exposes per-request billing that could be
-  reconciled against the ledger.
+- fal **does** expose pricing programmatically:
+  `GET https://api.fal.ai/v1/models/pricing?endpoint_id=...` returns unit
+  pricing per endpoint id, and there is a cost-estimate endpoint alongside it.
+  That is a better source than a config figure a human transcribed, and it
+  could check config against the provider at run time rather than trusting a
+  `verified_on` date not to go stale. Not used yet: `api.fal.ai` is blocked by
+  this environment's network policy, and the ledger's correctness is not a
+  Spike 0 blocker.
 - Until then, the ledger should be read as "what we believe we spent", and the
   spike report should compare it against the actual invoice once one exists.
 
@@ -95,8 +120,7 @@ a reconciliation step, and neither is a Spike 0 concern.
 
 ## Not verified
 
-- Per-model pricing. Each model's page carries its own rate; those go into
-  `config/spike.yaml` per model with their own `verified_on`, read at the time
-  the model is chosen.
 - Whether an internally-retried request is billed once or per attempt.
+- The upload API, needed to send a local keyframe. Until it is read,
+  `FalVideoProvider.resolve_keyframe` refuses rather than guesses.
 - Rate limits and concurrency caps.

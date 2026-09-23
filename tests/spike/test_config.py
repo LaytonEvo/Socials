@@ -80,10 +80,27 @@ def test_an_unrecorded_backend_would_still_be_blocked(cfg):
         unrecorded.require_usable()
 
 
-def test_shipped_config_blocks_real_providers(cfg):
+def test_no_shipped_slot_is_half_configured(cfg):
+    """Every real slot is either an untouched placeholder or fully verified.
+
+    This used to assert that the shipped config blocked *every* real provider,
+    which was really asserting "we have not configured anything yet" -- true
+    until fal was, and then the test failed for the wrong reason. The invariant
+    worth protecting is narrower and survives slots being filled: a slot must
+    never be usable on a half-filled entry, because the dangerous state is a
+    backend with a price nobody dated, not a backend that exists.
+    """
     for kind, slot in (("video", "flagship"), ("video", "budget"), ("image", "primary")):
-        with pytest.raises(ProviderNotConfigured):
-            cfg.provider(kind, slot).require_usable(TODAY, cfg.price_max_age_days)
+        entry = cfg.provider(kind, slot)
+        if entry.backend is None:
+            with pytest.raises(ProviderNotConfigured):
+                entry.require_usable(TODAY, cfg.price_max_age_days)
+            continue
+        # Configured: then it must carry a price and a fresh verification date.
+        entry.require_usable(entry.verified_on or TODAY, cfg.price_max_age_days)
+        assert entry.model, f"{kind}.{slot} has a backend but no model id"
+        assert entry.price is not None, f"{kind}.{slot} has a backend but no price"
+        assert entry.verified_on is not None, f"{kind}.{slot} has a price but no verified_on"
 
 
 def test_fake_slots_are_usable(cfg):
