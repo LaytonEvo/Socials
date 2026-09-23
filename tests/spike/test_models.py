@@ -276,3 +276,33 @@ def test_all_three_backends_are_registered():
     from scripts.spike.embed import _REGISTRY
 
     assert {"dlib", "dlib-densenet", "dinov2"} <= set(_REGISTRY)
+
+
+def test_backend_choices_are_derived_not_listed():
+    """Regression: --backend carried a hardcoded ["dlib", "dinov2"], so adding
+    a third backend everywhere else left the CLI refusing it. Anything in
+    MODELS must be selectable without a second edit."""
+    import argparse
+    import contextlib
+    import io
+
+    from scripts.spike.cli import build_parser
+
+    parser = build_parser()
+    for backend in {m.backend for m in MODELS}:
+        args = parser.parse_args(["fetch-models", "--backend", backend])
+        assert args.backend == backend
+
+    with contextlib.redirect_stderr(io.StringIO()), pytest.raises(SystemExit):
+        parser.parse_args(["fetch-models", "--backend", "not-a-backend"])
+    assert argparse  # keep the import meaningful
+
+
+def test_detector_choices_are_derived_not_listed():
+    from scripts.spike.cli import build_parser
+    from scripts.spike.embedders import DETECTORS
+
+    parser = build_parser()
+    for detector in DETECTORS:
+        args = parser.parse_args(["check-embedder", "--detector", detector])
+        assert args.detector == detector

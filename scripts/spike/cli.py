@@ -32,7 +32,7 @@ from .config import (
 )
 from .contactsheet import build_contact_sheet, worst_first
 from .embed import EmbeddingSet, cross_similarities, embed_images, load_embedder
-from .embedders import DETECTORS  # noqa: F401  (import registers dlib + dinov2)
+from .embedders import DETECTORS
 from .errors import SpikeError
 from .frames import ImageSequenceFrames
 from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
@@ -986,7 +986,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_embedder(sp)
     sp.add_argument(
         "--detector",
-        choices=["yunet", "dlib-hog", "whole-image"],
+        choices=sorted(DETECTORS),
         help="override the detector. 'whole-image' skips detection, which tests the "
         "model on its own.",
     )
@@ -996,7 +996,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("fetch-models", help="download the ADR 0002 candidate weights")
     sp.add_argument("--dest", default="models", help="where to put them (default: models/)")
-    sp.add_argument("--backend", choices=["dlib", "dinov2"], help="just one candidate")
+    # Derived, not listed. A hardcoded pair here silently refused
+    # `--backend dlib-densenet` after that backend was added everywhere else.
+    sp.add_argument(
+        "--backend",
+        choices=sorted({m.backend for m in MODELS}),
+        help="just one candidate",
+    )
     sp.add_argument("--force", action="store_true", help="re-download existing files")
     sp.add_argument(
         "--write-config",
