@@ -779,7 +779,11 @@ def cmd_bake_off(args: argparse.Namespace) -> int:
         try:
             cal = _calibrate_with(cfg, run_dir, backend, args.target_fpr)
         except SpikeError as exc:
-            print(f"  {backend:<10} unavailable: {exc}", file=sys.stderr)
+            # Reported in the table below, not to stderr. A candidate that
+            # could not run is a RESULT of the bake-off -- "dlib-densenet is
+            # unusable as configured" is exactly what you came to find out --
+            # and on a CI runner stderr is buried under pages of unrelated
+            # library warnings.
             results[backend] = {"error": str(exc)}
             continue
         results[backend] = cal.to_json()
@@ -787,20 +791,29 @@ def cmd_bake_off(args: argparse.Namespace) -> int:
 
     usable = {k: v for k, v in results.items() if "error" not in v}
     print(
-        f"\n{'backend':<10} {'verdict':<10} {'overlap':>8} {'auc':>8} "
+        f"\n{'backend':<14} {'verdict':<11} {'overlap':>8} {'auc':>8} "
         f"{'thr':>8} {'tpr':>7} {'dim':>5}"
     )
-    print("-" * 62)
+    print("-" * 67)
     for name, cal in usable.items():
         mark = "   (STUB - not a candidate)" if cal["embedder_is_stub"] else ""
         print(
-            f"{name:<10} {cal['verdict']:<10} {cal['overlap']:>8.3f} {cal['auc']:>8.4f} "
+            f"{name:<14} {cal['verdict']:<11} {cal['overlap']:>8.3f} {cal['auc']:>8.4f} "
             f"{cal['threshold']:>8.4f} {cal['tpr_at_threshold']:>7.3f} "
             f"{cal['embedder_key'].rsplit('d', 1)[-1]:>5}{mark}"
         )
 
+    failed = {k: v for k, v in results.items() if "error" in v}
+    for name in failed:
+        print(f"{name:<14} {'DID NOT RUN'}")
+
+    if failed:
+        print("\nWhy they did not run:\n")
+        for name, row in failed.items():
+            print(f"  {name}:\n    {' '.join(str(row['error']).split())}\n")
+
     if not usable:
-        print("\nNo candidate ran. Fill in the model paths in config/spike.yaml first.")
+        print("No candidate ran. Fill in the model paths in config/spike.yaml first.")
         return 2
 
     # A stub can post a perfect score on fixtures it was never going to fail.

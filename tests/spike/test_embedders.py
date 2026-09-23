@@ -190,8 +190,9 @@ def test_bake_off_reports_unconfigured_candidates_without_crashing(tmp_path, cap
     main(["--config", str(cfg_path), "make-fixtures"])
 
     assert main(["--config", str(cfg_path), "bake-off", "--backends", "dlib", "dinov2"]) == 2
-    err = capsys.readouterr().err
-    assert "dlib" in err and "dinov2" in err
+    out = capsys.readouterr().out
+    assert "dlib" in out and "dinov2" in out
+    assert "DID NOT RUN" in out
 
 
 # --- contact sheet legibility ---------------------------------------------
@@ -307,3 +308,41 @@ def test_calibration_accepts_a_set_with_usable_embeddings():
     vec = l2_normalise(np.ones(768, dtype=np.float32))
     ok = EmbeddingSet([FrameEmbedding(0, 0.0, "ok", faces=1, vector=vec)], info)
     _require_usable_embeddings(ok, "master", "dinov2")  # must not raise
+
+
+def test_bake_off_reports_failures_in_the_table_not_to_stderr(tmp_path, capsys):
+    """A candidate that could not run is a result of the bake-off.
+
+    "dlib-densenet is unusable as configured" is exactly what you came to find
+    out, and on a CI runner stderr is buried under pages of unrelated library
+    warnings — so the reason has to reach stdout.
+    """
+    from scripts.spike.cli import main
+
+    cfg_path = tmp_path / "spike.yaml"
+    cfg_path.write_text(
+        Path("config/spike.yaml")
+        .read_text()
+        .replace("run_root: spike/runs", f"run_root: {tmp_path / 'runs'}")
+    )
+    main(["--config", str(cfg_path), "init-run"])
+    main(["--config", str(cfg_path), "make-fixtures"])
+    capsys.readouterr()
+
+    main(["--config", str(cfg_path), "bake-off", "--backends", "dlib", "stub"])
+    out = capsys.readouterr().out
+    assert "DID NOT RUN" in out
+    assert "Why they did not run" in out
+    assert "recognition_model" in out  # the actual reason, on stdout
+
+
+def test_dlib_errors_name_the_backend_being_configured(cfg):
+    """Regression: _build_dlib is registered under two names and hardcoded
+    "dlib" in its error messages, so anyone configuring the DenseNet was sent
+    to the wrong config block."""
+    import scripts.spike.embedders as mod
+
+    for backend in ("dlib", "dlib-densenet"):
+        with pytest.raises(EmbedderNotConfigured) as excinfo:
+            mod._build_dlib(cfg.embedder_for(backend))
+        assert f"embedder.backends.{backend}.recognition_model" in str(excinfo.value)

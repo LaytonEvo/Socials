@@ -385,12 +385,16 @@ class DinoV2Embedder:
 
 
 def _build_dlib(cfg: EmbedderConfig) -> DlibEmbedder:
+    # cfg.backend, not the literal "dlib". This factory is registered under two
+    # names, and a hardcoded one sent anyone configuring the DenseNet to the
+    # wrong config block.
+    name = cfg.backend or "dlib"
     return DlibEmbedder(
         recognition_model=_require_path(
-            cfg.options, "recognition_model", "dlib", "dlib's face descriptor weights."
+            cfg.options, "recognition_model", name, "dlib's face descriptor weights."
         ),
         shape_predictor=_require_path(
-            cfg.options, "shape_predictor", "dlib", "dlib's facial landmark predictor."
+            cfg.options, "shape_predictor", name, "dlib's facial landmark predictor."
         ),
         licence=cfg.licence,
         jitter=int(cfg.options.get("jitter", 1)),
@@ -401,7 +405,7 @@ def _build_dlib(cfg: EmbedderConfig) -> DlibEmbedder:
 def _build_dinov2(cfg: EmbedderConfig) -> DinoV2Embedder:
     return DinoV2Embedder(
         hf_model=str(cfg.options.get("hf_model") or cfg.model),
-        detector=build_detector(cfg.options, "dinov2"),
+        detector=build_detector(cfg.options, cfg.backend or "dinov2"),
         licence=cfg.licence,
         crop_margin=float(cfg.options.get("crop_margin", 0.25)),
         dim=int(cfg.dim or 768),
