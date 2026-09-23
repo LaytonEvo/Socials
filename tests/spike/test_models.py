@@ -163,13 +163,15 @@ def test_no_two_models_contend_for_one_slot():
     assert clashing_slots({m.key: Path(m.final_name) for m in MODELS}) == []
 
 
-def test_densenet_note_records_that_the_public_domain_statement_misses_it():
-    """The dlib-models statement is scoped to its author's own models; the
-    densenet is a third-party contribution, so it is not covered by it."""
-    densenet = next(m for m in MODELS if m.key == "dlib-densenet")
-    assert "does NOT cover it" in densenet.licence_note
-    assert "BAREL" in densenet.licence_note
-    assert densenet.licence_where == "https://github.com/Cydral/BAREL"
+def test_densenet_licence_and_provenance_are_recorded_in_config():
+    """The densenet is shipped rather than fetched — its URL was inferred and
+    404'd — so its licence and origin live in config, not in MODELS."""
+    text = Path("config/spike.yaml").read_text()
+    block = text[text.index("dlib-densenet:") : text.index("dinov2:")]
+    assert "MIT" in block
+    assert "BAREL" in block
+    assert "NOT on dlib.net" in block
+    assert "spike/models/face_recognition_densenet_model_v1.dat" in block
 
 
 def test_a_contended_slot_would_be_flagged(monkeypatch):
@@ -234,11 +236,14 @@ def test_the_two_dlib_variants_are_separate_backends():
     could be swapped but never compared. The ResNet's licence carries a
     training-data caveat the DenseNet's does not, so measuring one against
     the other is the whole point."""
-    resnet = next(m for m in MODELS if m.key == "dlib-recognition")
-    densenet = next(m for m in MODELS if m.key == "dlib-densenet")
-    assert resnet.backend == "dlib"
-    assert densenet.backend == "dlib-densenet"
-    assert resnet.config_key == densenet.config_key  # same slot, different block
+    from scripts.spike.config import load_config
+
+    cfg = load_config()
+    resnet = cfg.embedder_for("dlib")
+    densenet = cfg.embedder_for("dlib-densenet")
+    assert resnet.backend != densenet.backend
+    assert resnet.options["recognition_model"] != densenet.options["recognition_model"]
+    assert resnet.licence != densenet.licence
 
 
 def test_write_paths_does_not_cross_backend_blocks(tmp_path):
@@ -252,23 +257,21 @@ def test_write_paths_does_not_cross_backend_blocks(tmp_path):
         "embedder:\n"
         "  backends:\n"
         "    dlib:\n"
-        "      recognition_model: null\n"
+        "      shape_predictor: null\n"
         "    dlib-densenet:\n"
-        "      recognition_model: null\n"
+        "      shape_predictor: null\n"
     )
     write_paths(
         cfg,
         {
-            "dlib-recognition": Path("models/resnet.dat"),
-            "dlib-densenet": Path("models/densenet.dat"),
+            "dlib-landmarks": Path("models/resnet-lm.dat"),
+            "dlib-densenet-landmarks": Path("models/densenet-lm.dat"),
         },
     )
     text = cfg.read_text()
-    resnet_block = text.index("dlib:")
     densenet_block = text.index("dlib-densenet:")
-    assert text.index("models/resnet.dat") > resnet_block
-    assert text.index("models/resnet.dat") < densenet_block
-    assert text.index("models/densenet.dat") > densenet_block
+    assert text.index("models/resnet-lm.dat") < densenet_block
+    assert text.index("models/densenet-lm.dat") > densenet_block
 
 
 def test_all_three_backends_are_registered():

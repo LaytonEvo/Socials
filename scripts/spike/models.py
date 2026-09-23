@@ -69,25 +69,6 @@ MODELS: tuple[ModelFile, ...] = (
         compressed=True,
     ),
     ModelFile(
-        key="dlib-densenet",
-        backend="dlib-densenet",
-        url="http://dlib.net/files/face_recognition_densenet_model_v1.dat.bz2",
-        filename="face_recognition_densenet_model_v1.dat.bz2",
-        config_key="recognition_model",
-        licence_where="https://github.com/Cydral/BAREL",
-        licence_note=(
-            "The cleaner-licensed alternative to dlib-recognition, wired as its own "
-            "backend so the two can be measured against each other. Third-party "
-            "contribution from the BAREL project, so the "
-            "dlib-models public-domain statement does NOT cover it: that statement is "
-            "scoped to 'trained models created by me (Davis King)'. BAREL licenses it "
-            "MIT, which is a cleaner grant (explicit, from the actual author) but its "
-            "recognition training set is undocumented. Weaker too: 96.1% LFW against "
-            "the ResNet's 99.38%. Set backends.dlib.dim to its real output size."
-        ),
-        compressed=True,
-    ),
-    ModelFile(
         key="dlib-landmarks",
         backend="dlib",
         url="http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2",

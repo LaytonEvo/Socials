@@ -719,16 +719,19 @@ def cmd_fetch_models(args: argparse.Namespace) -> int:
             path = fetch(model, dest_dir, force=args.force)
         except SpikeError as exc:
             failures.append(f"{model.key}: {exc}")
-            print(f"  {'':<18} FAILED — see below", file=sys.stderr)
+            print(f"  {'':<18} FAILED — see below")
             continue
         fetched[model.key] = path
         print(f"  {'':<18} -> {path}  ({path.stat().st_size:,} bytes)")
         print(f"  {'':<18}    sha256 {sha256_of(path)}")
 
     if failures:
-        print("\nSome files did not download:", file=sys.stderr)
+        # stdout, not stderr. A download that quietly failed left a config
+        # field null and the command still exited 0, so the next step reported
+        # "not set" with no trace of why — twice.
+        print("\nSome files did not download:")
         for failure in failures:
-            print(f"\n  {failure}", file=sys.stderr)
+            print(f"\n  {failure}")
 
     if not fetched:
         return 2

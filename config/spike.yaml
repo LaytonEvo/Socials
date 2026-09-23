@@ -105,7 +105,12 @@ embedder:
       # refuses on a mismatch, naming the real size, so a wrong value here
       # fails loudly rather than producing nonsense.
       dim: 128
-      recognition_model: null
+      # Committed, not fetched. This model is NOT on dlib.net — its URL was
+      # inferred from the ResNet's filename pattern, 404'd in CI, and the
+      # failure was invisible because fetch-models reported it on stderr.
+      # BAREL hosts it on its own repository; the file here came from there.
+      # MIT permits redistribution, with attribution recorded below.
+      recognition_model: spike/models/face_recognition_densenet_model_v1.dat
       shape_predictor: null
       jitter: 1
       licence: "MIT (BAREL project, https://github.com/Cydral/BAREL)"

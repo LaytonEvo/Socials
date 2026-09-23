@@ -342,7 +342,7 @@ def test_dlib_errors_name_the_backend_being_configured(cfg):
     to the wrong config block."""
     import scripts.spike.embedders as mod
 
-    for backend in ("dlib", "dlib-densenet"):
+    for backend, missing in (("dlib", "recognition_model"), ("dlib-densenet", "shape_predictor")):
         with pytest.raises(EmbedderNotConfigured) as excinfo:
             mod._build_dlib(cfg.embedder_for(backend))
-        assert f"embedder.backends.{backend}.recognition_model" in str(excinfo.value)
+        assert f"embedder.backends.{backend}.{missing}" in str(excinfo.value)
