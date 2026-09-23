@@ -48,6 +48,13 @@ class IngestReport:
     which: str
     candidates: list[Candidate] = field(default_factory=list)
     copied: list[Path] = field(default_factory=list)
+    #: prepared filename -> the source image it came from. Ingest renames images
+    #: to a contiguous index over the *usable* ones, so a single rejected file
+    #: shifts every name after it. Without this, a report naming
+    #: "control_005.jpg" cannot be traced back to a file on disk -- which is
+    #: exactly what happened when the per-image check asked a human to go and
+    #: look at two specific images.
+    sources: dict[str, str] = field(default_factory=dict)
 
     @property
     def usable(self) -> list[Candidate]:
@@ -99,6 +106,7 @@ def ingest(
             target = dest / f"{which}_{i:03d}{candidate.path.suffix.lower()}"
             shutil.copy2(candidate.path, target)
             report.copied.append(target)
+            report.sources[target.name] = str(candidate.path)
     return report
 
 

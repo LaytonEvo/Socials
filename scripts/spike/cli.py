@@ -230,7 +230,14 @@ def cmd_prepare_set(args: argparse.Namespace) -> int:
     report = ingest(source, dest, args.which, embedder, copy=not args.dry_run)
     print(format_report(report, dest))
 
-    RunLog(run_dir).event(
+    log = RunLog(run_dir)
+    if report.sources:
+        # Merged, not overwritten: master and control are prepared by separate
+        # invocations and both belong in the same map.
+        merged = {**_read_sources(run_dir), **report.sources}
+        log.write_artifact(SOURCES_ARTIFACT, merged)
+
+    log.event(
         "set_prepared",
         which=args.which,
         source=str(source),
@@ -274,6 +281,26 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     elif args.write_config:
         print("  (refusing to write a stub-derived threshold to config)")
     return 0
+
+
+SOURCES_ARTIFACT = "sources.json"
+
+
+def _read_sources(run_dir: Path) -> dict[str, str]:
+    """Prepared filename -> the image it was copied from.
+
+    Absent for runs prepared before this was recorded, and for fixture runs.
+    Missing entries degrade to bare filenames rather than failing: a run you
+    cannot fully trace is still worth inspecting.
+    """
+    path = run_dir / SOURCES_ARTIFACT
+    if not path.exists():
+        return {}
+    try:
+        loaded = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {str(k): str(v) for k, v in loaded.items()} if isinstance(loaded, dict) else {}
 
 
 def _calibration_distributions(
@@ -795,6 +822,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         embedder,
         _stills_in(run_dir / "master", "master"),
         _stills_in(run_dir / "control", "control"),
+        _read_sources(run_dir),
     )
     print(format_inspection(ins, show=args.show))
 

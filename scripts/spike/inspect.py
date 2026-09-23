@@ -12,7 +12,7 @@ closest call in each direction and look at it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .embed import Embedder, EmbeddingSet, cosine, embed_images
@@ -34,6 +34,10 @@ class SetInspection:
     master: list[ImageScore]
     control: list[ImageScore]
     embedder_key: str
+    #: prepared filename -> source image, written by prepare-set. Without it
+    #: the names below are unfindable: ingest renumbers over usable images, so
+    #: control_005.jpg is the sixth image that survived, not the sixth file.
+    sources: dict[str, str] = field(default_factory=dict)
 
     @property
     def scored_master(self) -> list[ImageScore]:
@@ -70,7 +74,10 @@ class SetInspection:
 
 
 def inspect_sets(
-    embedder: Embedder, master_paths: list[Path], control_paths: list[Path]
+    embedder: Embedder,
+    master_paths: list[Path],
+    control_paths: list[Path],
+    sources: dict[str, str] | None = None,
 ) -> SetInspection:
     master: EmbeddingSet = embed_images(embedder, master_paths, label="master")
     centroid = master.centroid()
@@ -88,10 +95,15 @@ def inspect_sets(
         return out
 
     control: EmbeddingSet = embed_images(embedder, control_paths, label="control")
-    return SetInspection(score(master), score(control), embedder.info.key())
+    return SetInspection(score(master), score(control), embedder.info.key(), sources or {})
 
 
 def format_inspection(ins: SetInspection, show: int = 8) -> str:
+    def origin(score: ImageScore) -> str:
+        """The file a human can actually open, when we know it."""
+        src = ins.sources.get(score.name)
+        return f"{score.name}  <- {src}" if src else score.name
+
     lines = [f"\nper-image similarity to the master centroid — {ins.embedder_key}", ""]
 
     m = sorted(ins.scored_master, key=lambda s: s.similarity or 0.0)
@@ -99,28 +111,28 @@ def format_inspection(ins: SetInspection, show: int = 8) -> str:
 
     lines.append(f"  MASTER, weakest first ({len(m)} scored):")
     for s in m[:show]:
-        lines.append(f"    {s.similarity:.4f}  {s.name}")
+        lines.append(f"    {s.similarity:.4f}  {origin(s)}")
     if len(m) > show:
         lines.append(f"    ...  ({len(m) - show} more, up to {m[-1].similarity:.4f})")
 
     lines += ["", f"  CONTROL, closest first ({len(c)} scored):"]
     for s in c[:show]:
-        lines.append(f"    {s.similarity:.4f}  {s.name}")
+        lines.append(f"    {s.similarity:.4f}  {origin(s)}")
     if len(c) > show:
         lines.append(f"    ...  ({len(c) - show} more, down to {c[-1].similarity:.4f})")
 
     unusable = [s for s in ins.master + ins.control if s.similarity is None]
     if unusable:
         lines += ["", f"  {len(unusable)} image(s) produced no embedding:"]
-        lines += [f"    {s.status:<12} {s.name}" for s in unusable]
+        lines += [f"    {s.status:<12} {origin(s)}" for s in unusable]
 
     margin = ins.margin
     weakest, closest = ins.weakest_master, ins.closest_control
     lines += ["", "  The two images that decide whether the separation is real:"]
     if weakest and closest and margin is not None:
         lines += [
-            f"    her weakest    {weakest.similarity:.4f}  {weakest.name}",
-            f"    closest other  {closest.similarity:.4f}  {closest.name}",
+            f"    her weakest    {weakest.similarity:.4f}  {origin(weakest)}",
+            f"    closest other  {closest.similarity:.4f}  {origin(closest)}",
             f"    margin         {margin:+.4f}",
             "",
         ]

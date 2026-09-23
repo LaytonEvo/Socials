@@ -92,3 +92,45 @@ def test_empty_master_is_refused(tmp_path):
     master = make_stills(tmp_path / "m", "look-a", 3, "m")
     with pytest.raises(ValueError, match="no usable embeddings"):
         inspect_sets(Blind(), master, master)
+
+
+def test_the_names_inspect_prints_can_be_traced_to_real_files(tmp_path, embedder):
+    """Regression: the per-image check named two images nobody could find.
+
+    Ingest renumbers over the *usable* images, so one rejected file shifts every
+    name after it: "control_005.jpg" is the sixth image that survived, not the
+    sixth file in the folder. A check that asks a human to go and look at two
+    specific images has to tell them which two.
+    """
+    import json
+
+    from scripts.spike.cli import SOURCES_ARTIFACT, _read_sources
+    from scripts.spike.ingest import ingest
+
+    source = tmp_path / "src"
+    make_stills(source, "look-a", 4, "photo")
+    run = tmp_path / "run"
+    report = ingest(source, run / "master", "master", embedder)
+
+    assert report.sources, "ingest must record where each prepared image came from"
+    for prepared, origin in report.sources.items():
+        assert prepared.startswith("master_")
+        assert Path(origin).exists(), f"{prepared} points at a file that is not there"
+
+    (run / SOURCES_ARTIFACT).write_text(json.dumps(report.sources))
+    assert _read_sources(run) == report.sources
+
+    ins = inspect_sets(embedder, sorted((run / "master").iterdir()), [], report.sources)
+    text = format_inspection(ins)
+    assert "<-" in text, "the prepared name alone is not findable"
+    assert "photo" in text, "the source filename must appear"
+
+
+def test_a_run_without_a_source_map_still_inspects(tmp_path):
+    """Older runs and fixture runs have no map. Degrade, do not fail."""
+    from scripts.spike.cli import _read_sources
+
+    assert _read_sources(tmp_path) == {}
+    text = format_inspection(_inspection([0.9], [0.4]))
+    assert "m0.png" in text
+    assert "<-" not in text
