@@ -262,14 +262,37 @@ def test_without_a_key_no_authorization_header_is_sent(monkeypatch):
     assert headers["Content-Type"] == "application/json"
 
 
-def test_a_401_explains_both_routes_rather_than_just_failing():
+def test_a_401_explains_both_auth_routes_rather_than_just_failing():
     c = _client([(401, {"detail": "Unauthorized"})])
     with pytest.raises(ProviderNotConfigured) as excinfo:
         c.submit(MODEL, {"prompt": "x"})
     message = str(excinfo.value)
     assert "FAL_KEY" in message
-    assert "injected" in message
     assert "not both" in message
+
+
+def test_a_403_leads_with_fals_own_reason_not_our_guess():
+    """Regression: fal returns 403 for an exhausted balance too, and the first
+    version of this message diagnosed authentication — sending the reader to
+    the wrong settings page for a problem that was about money."""
+    c = _client([(403, {"detail": "User is locked. Reason: Exhausted balance."})])
+    with pytest.raises(ProviderNotConfigured) as excinfo:
+        c.submit(MODEL, {"prompt": "x"})
+    message = str(excinfo.value)
+    assert "Exhausted balance" in message
+    assert message.index("Exhausted balance") < message.index("FAL_KEY"), (
+        "fal's own reason must come before our authentication guess"
+    )
+
+
+def test_a_refused_call_is_marked_unbillable():
+    """It never reached a runner, so it must not consume the run's budget."""
+    from scripts.spike.errors import ProviderRefused
+
+    c = _client([(403, {"detail": "nope"})])
+    with pytest.raises(ProviderRefused) as excinfo:
+        c.submit(MODEL, {"prompt": "x"})
+    assert excinfo.value.billable is False
 
 
 def test_the_adapter_never_retries_a_submission_itself():

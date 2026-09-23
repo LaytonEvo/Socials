@@ -107,13 +107,20 @@ class FalClient:
                 f"fal returned {status} with a body that is not JSON: {raw[:200]!r}"
             ) from None
         if status in (401, 403):
+            # fal returns 403 for an exhausted balance as well as for bad
+            # credentials, and its own `detail` is the only thing that tells
+            # them apart. Leading with an auth diagnosis when the real problem
+            # was an empty account sends people to the wrong settings page --
+            # which it did, once. So: fal's words first, ours second.
+            detail = parsed.get("detail") if isinstance(parsed, dict) else None
             raise ProviderRefused(
-                f"fal rejected the request ({status}). Neither authentication route is "
-                f"working: {API_KEY_ENV} is "
-                f"{'set' if self.api_key else 'NOT set'} in this process, and no "
-                "credential appears to be injected in front of it. Set the environment "
-                "variable, or configure header injection for *.fal.run — but not both, "
-                "since two Authorization headers is its own failure."
+                f"fal refused the request ({status}): {detail or 'no detail given'}\n"
+                f"  If that is about credentials: {API_KEY_ENV} is "
+                f"{'set' if self.api_key else 'NOT set'} in this process, so either set "
+                "it or inject the header in front — not both, since two Authorization "
+                "headers is its own failure.\n"
+                "  If it is about balance or a lock, nothing here will fix it: the "
+                "account needs attention before any call can run."
             )
         if status >= 400:
             detail = parsed.get("detail") if isinstance(parsed, dict) else parsed
