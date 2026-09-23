@@ -218,11 +218,29 @@ it centred, clamped so a subject near an edge still yields a full-size window
 rather than a smaller one — a shrunken crop would change her scale in frame,
 which moves the embedding for a second unrelated reason.
 
-**Still open, and larger:** the master set is embedded uncropped while what
-gets animated is cropped. The honest fix is to calibrate on the same framing
-that gets sent, which means re-preparing the master set at 9:16 and
-re-calibrating — amendment A3 territory, and not a change to make in the
-middle of a run.
+**Measured, and smaller than feared.** The concern was that the master set is
+embedded uncropped while what gets animated is cropped, so the reference and
+the subject would be framed differently. Re-preparing both sets at 9:16 and
+re-calibrating gives:
+
+| | Uncropped | 9:16 cropped |
+|---|---|---|
+| Threshold | 0.9748 | 0.9749 |
+| Overlap | 0.000 | 0.000 |
+| AUC | 1.0000 | 1.0000 |
+| d′ | 5.79 | 5.85 |
+| Usable controls | 16 | 17 |
+
+One ten-thousandth on the threshold. **The crop does not move the
+instrument**, so re-calibrating is not required and the existing threshold
+stands. Cropping made one more control image detectable and improved d′
+slightly, so if anything the tighter framing helps.
+
+The risk was never our crop versus no crop. It was *fal's* blind crop versus a
+deliberate one — an off-centre cut nobody chose and nothing could reproduce —
+and that is fixed at the source. Worth recording that the worry was
+proportionate but the measurement disposed of it: guessing at the size of a
+confound is not the same as checking.
 
 ## The content checker blocks legitimate prompts, and not consistently
 
