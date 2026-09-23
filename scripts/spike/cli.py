@@ -40,7 +40,7 @@ from .embed import (
     load_embedder,
 )
 from .embedders import DETECTORS
-from .errors import SpikeError
+from .errors import BudgetExceeded, BudgetNotSet, SpikeError
 from .frames import ImageSequenceFrames
 from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
 from .inspect import format_inspection, inspect_sets
@@ -441,6 +441,11 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
     log.event("matrix_sampled", cells=n, coverage=coverage(conditions))
 
     scores: list[ClipScore] = []
+    #: Cells the provider would not produce. Reported separately from failures:
+    #: a clip that was never generated is not a clip that scored badly, and
+    #: conflating them would understate the identity result.
+    skipped: list[tuple[str, str]] = []
+    max_skips = max(3, n // 3)
     for i, cond in enumerate(conditions):
         ref = f"matrix-{i:03d}-{cond.cell_id}"
         prompt = f"{args.subject}, {cond.prompt_fragment()}"
@@ -461,13 +466,44 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
                 condition=cond.as_dict(),
                 keyframe=keyframes[i % len(keyframes)] if keyframes else None,
             )
-        except SpikeError as exc:
+        except (BudgetExceeded, BudgetNotSet) as exc:
+            # The one thing that must stop the run. Carrying on past the cap is
+            # the failure the guard exists to prevent.
             log.event("matrix_halted", ref=ref, error=str(exc))
             print(f"halted at clip {i + 1}/{n}: {exc}", file=sys.stderr)
             break
+        except SpikeError as exc:
+            # One cell the provider would not produce must not end the matrix.
+            # fal's content checker is non-deterministic (ADR 0006), so halting
+            # on the first refusal means a matrix rarely finishes -- and the
+            # cells that do finish are not a random sample of those attempted,
+            # which is a biased result wearing the clothes of a partial one.
+            skipped.append((ref, str(exc)))
+            log.event("matrix_cell_skipped", ref=ref, error=str(exc))
+            first = str(exc).splitlines()[0]
+            print(f"  [{i + 1:>3}/{n}] {cond.cell_id:<44} SKIPPED ({first[:80]})")
+            if len(skipped) >= max_skips:
+                log.event("matrix_halted", ref=ref, error=f"{len(skipped)} cells skipped")
+                print(
+                    f"stopping: {len(skipped)} cells could not be generated. "
+                    "Something systematic is wrong, and burning budget discovering "
+                    "that one cell at a time helps nobody.",
+                    file=sys.stderr,
+                )
+                break
+            continue
         scores.append(score)
         flag = "pass" if score.passed else f"FAIL ({score.failure_reason})"
         print(f"  [{i + 1:>3}/{n}] {cond.cell_id:<44} {flag}")
+
+    if skipped:
+        print(f"\n{len(skipped)} cell(s) never generated — not scored, not failures:")
+        for ref, err in skipped:
+            print(f"  {ref}: {err.splitlines()[0][:100]}")
+        print(
+            "  A cell the provider refused is missing evidence, not bad evidence. "
+            "Read the pass rate below as being over the cells that ran."
+        )
 
     _save_scores(run_dir, scores)
     log.write_artifact("ledger_summary.json", ledger.summary())
