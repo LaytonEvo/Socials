@@ -59,7 +59,7 @@ jobs:
       - name: Self-check — model only, detection skipped
         run: |
           python -m scripts.spike.cli check-embedder \
-            --backend dinov2 --detector whole-image
+            --embedder dinov2 --detector whole-image
 
       - name: Self-check — full path, with face detection
         run: |
@@ -81,7 +81,7 @@ jobs:
           # shapes, not photographs. That is the detector working, not the model
           # failing, so it must not fail the job.
           python -m scripts.spike.cli --config ci-spike.yaml \
-            check-embedder --backend dinov2 || true
+            check-embedder --embedder dinov2 || true
 
       - name: Offline demo, end to end
         run: make demo

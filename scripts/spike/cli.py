@@ -951,8 +951,14 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--run", help="run id (default: most recent)")
 
     def add_embedder(sp: argparse.ArgumentParser) -> None:
+        # --backend is an accepted alias. bake-off takes --backends, everything
+        # else took --embedder, and the mismatch is a foot-gun: a CI step that
+        # named the wrong one failed with "unrecognized arguments" rather than
+        # doing the obvious thing. One concept, either spelling.
         sp.add_argument(
             "--embedder",
+            "--backend",
+            dest="embedder",
             help="override embedder backend. Use 'stub' for offline work; it is "
             "pixel statistics, not face recognition.",
         )
