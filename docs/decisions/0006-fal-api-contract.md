@@ -86,6 +86,28 @@ you find is often a different variant's.
 | `fal-ai/kling-video/v2.5-turbo/pro/image-to-video` | $0.35 per 5s, then $0.07/s | ≈ $0.07/s |
 | `fal-ai/kling-video/v2.5-turbo/standard/image-to-video` | $0.21 per 5s, then $0.042/s | ≈ $0.042/s |
 
+### The page and the API disagree, so the guard takes the higher number
+
+Queried `api.fal.ai/v1/models/pricing` on 2026-09-23, now that the host is
+reachable:
+
+| Endpoint | API `unit_price` | Model page |
+|---|---|---|
+| `fal-ai/veo3.1/image-to-video` | **0.40 / second** | $0.20 without audio, $0.40 with |
+| `fal-ai/veo3.1/fast/image-to-video` | 0.15 / second | $0.10 without audio, $0.15 with |
+| `fal-ai/kling-video/v2.5-turbo/pro/image-to-video` | 0.07 / second | ~$0.07/s |
+
+The API reports what looks like the with-audio rate as the single unit price.
+Whether turning audio off actually halves the bill is not something either
+source states outright.
+
+**`config/spike.yaml` therefore carries the API figure, not the page figure.**
+A cost guard that understates is worse than no cost guard: it lets a run pass
+the cap while reporting it is inside one. Over-reserving means spending less
+than budgeted, which is the safe direction to be wrong in. The open question —
+does audio-off halve it — resolves against a real invoice, not against a
+marketing page.
+
 **Audio is off for the S0.5 identity run.** It doubles the rate and the
 question being asked is whether her face survives, which no soundtrack
 affects. Whether native audio can replace the lip-sync stage is a separate

@@ -160,12 +160,16 @@ providers:
       backend: fal
       model: fal-ai/veo3.1/image-to-video
       endpoint: null     # the adapter builds it from the model id (ADR 0006)
-      # $0.20/s at 720p or 1080p with audio OFF. Audio doubles it to $0.40/s,
-      # and 4k is $0.40 / $0.60. Read from the model's own page on fal,
-      # 2026-09-23. Audio is off for the identity run on purpose: S0.5 asks
-      # whether her face survives, and paying double for a soundtrack nobody
-      # scores would be spending on the wrong question.
-      price_usd_per_second: 0.20
+      # $0.40/s, from fal's own pricing API (api.fal.ai/v1/models/pricing),
+      # queried 2026-09-23. The model's marketing page says $0.20/s with audio
+      # off and $0.40/s with; the API reports 0.4 flat as the unit price.
+      #
+      # The guard takes the HIGHER figure deliberately. A cost guard that
+      # understates is worse than none: it lets a run sail past the cap while
+      # reporting it is inside it. If audio-off really does halve the rate we
+      # over-reserve and spend less than budgeted, which is the safe direction
+      # to be wrong in. Revisit once a real invoice can be compared (ADR 0006).
+      price_usd_per_second: 0.40
       verified_on: 2026-09-23
     budget:              # volume / B-roll
       backend: null
