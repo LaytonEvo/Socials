@@ -32,18 +32,29 @@ def _slot(**over) -> ProviderConfig:
 
 
 def test_shipped_config_records_the_chosen_scorer(cfg):
-    """ADR 0002 was decided on 2026-09-22: DINOv2, Apache 2.0.
+    """dlib, switched 2026-09-23 after the bake-off.
 
-    The licence gate is satisfied for this one backend and no other. Changing
-    the scorer later invalidates every stored vector and the calibrated
-    threshold with it, so this assertion is here to make a silent swap loud.
+    DINOv2 was chosen on 2026-09-22 and measured MARGINAL against a realistic
+    control the next day; dlib measured EXCELLENT on identical data. Changing
+    the scorer invalidates every stored vector and the calibrated threshold
+    with it, so this assertion exists to make a silent swap loud.
     """
-    assert cfg.embedder.backend == "dinov2"
-    chosen = cfg.embedder_for("dinov2")
+    assert cfg.embedder.backend == "dlib"
+    chosen = cfg.embedder_for("dlib")
     chosen.require_usable()
-    assert chosen.licence == "Apache-2.0"
+    assert chosen.licence
     assert chosen.licence_verified_on is not None
-    assert chosen.dim == 768
+    assert chosen.dim == 128
+
+
+def test_the_losing_candidates_stay_configured(cfg):
+    """Neither is deleted. DINOv2 may yet earn a place as a drift signal,
+    because it notices what a face recogniser ignores; the DenseNet is the
+    cleaner-licensed dlib variant and is measured against the ResNet."""
+    for backend in ("dinov2", "dlib-densenet"):
+        emb = cfg.embedder_for(backend)
+        emb.require_usable()
+        assert emb.dim
 
 
 def test_every_configured_backend_has_a_recorded_licence(cfg):

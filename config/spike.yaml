@@ -14,16 +14,26 @@ run_root: spike/runs
 price_max_age_days: 90
 
 # --- Identity scorer -------------------------------------------------------
-# DECIDED: dinov2. See docs/decisions/0002-face-embedding-model-licence.md.
-# Apache 2.0 for both the embedder and its detector, confirmed by the owner
-# on 2026-09-22.
+# DECIDED: dlib, 2026-09-23. See docs/decisions/0002-face-embedding-model-licence.md
+# and docs/reports/calibration-2026-09-23.md.
+#
+# DINOv2 was chosen on 2026-09-22 and measured MARGINAL the next day against a
+# realistic control (overlap 0.297, only 66% of the persona's own images
+# clearing the threshold). dlib measured EXCELLENT on identical data: overlap
+# 0.000, 100%. A general visual embedder was distracted by the styling the two
+# sets share; a face recogniser is invariant to it and is forced onto facial
+# geometry.
+#
+# Still open: whether dlib's invariance makes it too forgiving of drift in HER,
+# which is the opposite failure and cannot be measured until Phase 1 video.
+# DINOv2 stays configured as a possible secondary signal for exactly that.
 #
 # Changing this later invalidates every stored vector and the calibrated
 # threshold with them (BUILD_ORDER amendment A3), so it is not a setting to
 # flip casually. The code enforces that: scoring with a calibration from a
 # different model raises rather than comparing incomparable numbers.
 embedder:
-  backend: dinov2          # DECIDED 2026-09-22, see ADR 0002
+  backend: dlib            # SWITCHED 2026-09-23 after the bake-off, see ADR 0002
   model: null              # exact weights identifier
   version: null            # weights version/revision, pinned
   dim: null                # embedding dimension
@@ -80,6 +90,25 @@ embedder:
       # decision if this becomes the production scorer, at which point the
       # MIT-licensed DenseNet variant is the cleaner alternative.
       licence: "Public domain (author statement); training-data caveat, see ADR 0002"
+      licence_verified_on: 2026-09-23
+
+    dlib-densenet:
+      # The cleaner-licensed dlib alternative, measured against the ResNet
+      # because the ResNet's public-domain statement carries the FaceScrub
+      # training-data caveat (ADR 0002) and this one does not.
+      #
+      # MIT, from the BAREL project, which is the model's actual author — an
+      # explicit grant rather than a blanket line that does not reach it.
+      # Weaker on paper: 96.1% LFW against the ResNet's 99.38%.
+      #
+      # dim is a GUESS. The embedder checks the descriptor it gets back and
+      # refuses on a mismatch, naming the real size, so a wrong value here
+      # fails loudly rather than producing nonsense.
+      dim: 128
+      recognition_model: null
+      shape_predictor: null
+      jitter: 1
+      licence: "MIT (BAREL project, https://github.com/Cydral/BAREL)"
       licence_verified_on: 2026-09-23
 
     dinov2:

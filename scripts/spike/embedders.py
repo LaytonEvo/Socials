@@ -409,4 +409,7 @@ def _build_dinov2(cfg: EmbedderConfig) -> DinoV2Embedder:
 
 
 register_embedder("dlib", _build_dlib)
+# Same code path, different weights and licence. Its own backend so the two
+# can be calibrated against each other rather than silently swapped.
+register_embedder("dlib-densenet", _build_dlib)
 register_embedder("dinov2", _build_dinov2)

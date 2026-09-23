@@ -70,14 +70,15 @@ MODELS: tuple[ModelFile, ...] = (
     ),
     ModelFile(
         key="dlib-densenet",
-        backend="dlib",
+        backend="dlib-densenet",
         url="http://dlib.net/files/face_recognition_densenet_model_v1.dat.bz2",
         filename="face_recognition_densenet_model_v1.dat.bz2",
         config_key="recognition_model",
         licence_where="https://github.com/Cydral/BAREL",
         licence_note=(
-            "ALTERNATIVE to dlib-recognition, not an addition -- both fill the same "
-            "config slot. Third-party contribution from the BAREL project, so the "
+            "The cleaner-licensed alternative to dlib-recognition, wired as its own "
+            "backend so the two can be measured against each other. Third-party "
+            "contribution from the BAREL project, so the "
             "dlib-models public-domain statement does NOT cover it: that statement is "
             "scoped to 'trained models created by me (Davis King)'. BAREL licenses it "
             "MIT, which is a cleaner grant (explicit, from the actual author) but its "
@@ -85,7 +86,6 @@ MODELS: tuple[ModelFile, ...] = (
             "the ResNet's 99.38%. Set backends.dlib.dim to its real output size."
         ),
         compressed=True,
-        optional=True,
     ),
     ModelFile(
         key="dlib-landmarks",
@@ -95,6 +95,19 @@ MODELS: tuple[ModelFile, ...] = (
         config_key="shape_predictor",
         licence_where="https://github.com/davisking/dlib-models/blob/master/README.md",
         licence_note="Landmark predictor. Same README, check its own licence line (CC0).",
+        compressed=True,
+    ),
+    ModelFile(
+        # Same file as dlib-landmarks. Listed twice because the two dlib
+        # backends each need the path in their own config block, and fetch()
+        # skips a file that is already on disk, so nothing downloads twice.
+        key="dlib-densenet-landmarks",
+        backend="dlib-densenet",
+        url="http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2",
+        filename="shape_predictor_5_face_landmarks.dat.bz2",
+        config_key="shape_predictor",
+        licence_where="https://github.com/davisking/dlib-models/blob/master/README.md",
+        licence_note="Landmark predictor, shared with the dlib backend.",
         compressed=True,
     ),
     ModelFile(
@@ -247,16 +260,29 @@ def write_paths(config_path: Path, fetched: dict[str, Path]) -> list[str]:
     """
     config_path = Path(config_path)
     lines = config_path.read_text().splitlines()
-    wanted = {m.config_key: fetched[m.key] for m in MODELS if m.key in fetched}
+    #: (backend, config_key) -> path. Keyed by backend because more than one
+    #: backend has a `recognition_model:` line, and a flat scan would write a
+    #: path into whichever block it reached first.
+    wanted = {(m.backend, m.config_key): fetched[m.key] for m in MODELS if m.key in fetched}
     written: list[str] = []
+    backend: str | None = None
+    known = {m.backend for m in MODELS}
 
     for i, line in enumerate(lines):
         stripped = line.strip()
-        for key, path in wanted.items():
+        name = stripped[:-1]
+        if stripped.endswith(":") and name in known:
+            backend = name
+            continue
+        if backend is None:
+            continue
+        for (owner, key), path in wanted.items():
+            if owner != backend:
+                continue
             if stripped.startswith(f"{key}:") and "null" in stripped:
                 indent = line[: len(line) - len(line.lstrip())]
                 lines[i] = f"{indent}{key}: {path}"
-                written.append(f"{key} -> {path}")
+                written.append(f"{backend}.{key} -> {path}")
                 break
 
     config_path.write_text("\n".join(lines) + "\n")

@@ -6,6 +6,7 @@ error page as a .dat and discovering it at calibration time costs a day.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -150,17 +151,16 @@ def test_config_snippet_leaves_the_licence_blank():
     assert "detector_model:" in snippet
 
 
-def test_densenet_is_an_alternative_not_an_addition():
-    """Both dlib descriptors fill the same config slot.
+def test_no_two_models_contend_for_one_slot():
+    """Every (backend, slot) pair is claimed by exactly one file.
 
-    Fetching both by default would leave you with two files for one setting and
-    no way to tell which the config meant.
+    The dlib variants used to share a backend, which meant fetching both left
+    two files for one setting. They are separate backends now, so nothing
+    contends — and this asserts that stays true as models are added.
     """
-    densenet = next(m for m in MODELS if m.key == "dlib-densenet")
-    resnet = next(m for m in MODELS if m.key == "dlib-recognition")
-    assert densenet.config_key == resnet.config_key
-    assert densenet.optional is True
-    assert resnet.optional is False
+    from scripts.spike.models import clashing_slots
+
+    assert clashing_slots({m.key: Path(m.final_name) for m in MODELS}) == []
 
 
 def test_densenet_note_records_that_the_public_domain_statement_misses_it():
@@ -172,14 +172,16 @@ def test_densenet_note_records_that_the_public_domain_statement_misses_it():
     assert densenet.licence_where == "https://github.com/Cydral/BAREL"
 
 
-def test_clashing_slots_are_flagged_in_the_snippet():
-    from scripts.spike.models import clashing_slots
+def test_a_contended_slot_would_be_flagged(monkeypatch):
+    """The guard must still bite if two files are ever pointed at one slot."""
+    import scripts.spike.models as mod
 
-    fetched = {m.key: Path(f"models/{m.final_name}") for m in MODELS}
-    assert "dlib.recognition_model" in clashing_slots(fetched)
-    snippet = config_snippet(fetched)
-    assert "alternatives" in snippet
-    assert "delete the other line" in snippet
+    a, b = MODELS[0], MODELS[1]
+    twins = (a, dataclasses.replace(b, key="twin", backend=a.backend, config_key=a.config_key))
+    monkeypatch.setattr(mod, "MODELS", twins)
+    clashes = mod.clashing_slots({"twin": Path("x"), a.key: Path("y")})
+    assert clashes == [f"{a.backend}.{a.config_key}"]
+    assert "alternatives" in mod.config_snippet({"twin": Path("x"), a.key: Path("y")})
 
 
 def test_write_paths_fills_paths_only(tmp_path):
@@ -206,7 +208,7 @@ def test_write_paths_fills_paths_only(tmp_path):
     assert "detector_model: models/yunet.onnx" in text
     assert "licence: null" in text
     assert "licence_verified_on: null" in text
-    assert written == ["detector_model -> models/yunet.onnx"]
+    assert written == ["dinov2.detector_model -> models/yunet.onnx"]
 
 
 def test_write_paths_leaves_an_already_set_path_alone(tmp_path):
@@ -225,3 +227,52 @@ def test_write_paths_preserves_indentation(tmp_path):
     cfg.write_text("embedder:\n  backends:\n    dinov2:\n      detector_model: null\n")
     write_paths(cfg, {"yunet": Path("m/y.onnx")})
     assert "      detector_model: m/y.onnx" in cfg.read_text()
+
+
+def test_the_two_dlib_variants_are_separate_backends():
+    """They were one backend with two alternative files, which meant they
+    could be swapped but never compared. The ResNet's licence carries a
+    training-data caveat the DenseNet's does not, so measuring one against
+    the other is the whole point."""
+    resnet = next(m for m in MODELS if m.key == "dlib-recognition")
+    densenet = next(m for m in MODELS if m.key == "dlib-densenet")
+    assert resnet.backend == "dlib"
+    assert densenet.backend == "dlib-densenet"
+    assert resnet.config_key == densenet.config_key  # same slot, different block
+
+
+def test_write_paths_does_not_cross_backend_blocks(tmp_path):
+    """Regression risk introduced by the split: both dlib backends have a
+    `recognition_model:` line, and a flat scan would write one path into
+    whichever block it reached first."""
+    from scripts.spike.models import write_paths
+
+    cfg = tmp_path / "spike.yaml"
+    cfg.write_text(
+        "embedder:\n"
+        "  backends:\n"
+        "    dlib:\n"
+        "      recognition_model: null\n"
+        "    dlib-densenet:\n"
+        "      recognition_model: null\n"
+    )
+    write_paths(
+        cfg,
+        {
+            "dlib-recognition": Path("models/resnet.dat"),
+            "dlib-densenet": Path("models/densenet.dat"),
+        },
+    )
+    text = cfg.read_text()
+    resnet_block = text.index("dlib:")
+    densenet_block = text.index("dlib-densenet:")
+    assert text.index("models/resnet.dat") > resnet_block
+    assert text.index("models/resnet.dat") < densenet_block
+    assert text.index("models/densenet.dat") > densenet_block
+
+
+def test_all_three_backends_are_registered():
+    import scripts.spike.embedders  # noqa: F401 — importing is what registers them
+    from scripts.spike.embed import _REGISTRY
+
+    assert {"dlib", "dlib-densenet", "dinov2"} <= set(_REGISTRY)
