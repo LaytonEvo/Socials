@@ -36,6 +36,12 @@ class ModelFile:
     config_key: str
     licence_where: str
     licence_note: str
+    #: A second source for the identical file, tried when the first is
+    #: unreachable. dlib.net is blocked by a good number of corporate and
+    #: sandbox egress policies, and the author mirrors the same files in the
+    #: dlib-models GitHub repository — so a blocked host becomes a retry rather
+    #: than a dead end. Not a different model: same bytes, checked the same way.
+    fallback_url: str | None = None
     compressed: bool = False
     #: sha256 of the file as downloaded (before any decompression). Pinned
     #: where it is known, so a silently-changed or truncated file is caught
@@ -57,6 +63,7 @@ MODELS: tuple[ModelFile, ...] = (
         key="dlib-recognition",
         backend="dlib",
         url="http://dlib.net/files/dlib_face_recognition_resnet_model_v1.dat.bz2",
+        fallback_url="https://raw.githubusercontent.com/davisking/dlib-models/master/dlib_face_recognition_resnet_model_v1.dat.bz2",
         filename="dlib_face_recognition_resnet_model_v1.dat.bz2",
         config_key="recognition_model",
         licence_where="https://github.com/davisking/dlib-models/blob/master/README.md",
@@ -72,6 +79,7 @@ MODELS: tuple[ModelFile, ...] = (
         key="dlib-landmarks",
         backend="dlib",
         url="http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2",
+        fallback_url="https://raw.githubusercontent.com/davisking/dlib-models/master/shape_predictor_5_face_landmarks.dat.bz2",
         filename="shape_predictor_5_face_landmarks.dat.bz2",
         config_key="shape_predictor",
         licence_where="https://github.com/davisking/dlib-models/blob/master/README.md",
@@ -85,6 +93,7 @@ MODELS: tuple[ModelFile, ...] = (
         key="dlib-densenet-landmarks",
         backend="dlib-densenet",
         url="http://dlib.net/files/shape_predictor_5_face_landmarks.dat.bz2",
+        fallback_url="https://raw.githubusercontent.com/davisking/dlib-models/master/shape_predictor_5_face_landmarks.dat.bz2",
         filename="shape_predictor_5_face_landmarks.dat.bz2",
         config_key="shape_predictor",
         licence_where="https://github.com/davisking/dlib-models/blob/master/README.md",
@@ -156,19 +165,26 @@ def fetch(model: ModelFile, dest_dir: Path, force: bool = False) -> Path:
         return final
 
     download_to = dest_dir / model.filename
-    request = urllib.request.Request(model.url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            download_to.write_bytes(response.read())
-    except urllib.error.HTTPError as exc:
-        raise SpikeError(
-            f"{model.key}: HTTP {exc.code} fetching {model.url}\n"
-            f"  If this is 403 from a network proxy, the host needs allowing in your "
-            f"egress settings. If it is 404, the upstream filename moved -- check "
-            f"{model.licence_where} for the current one."
-        ) from exc
-    except urllib.error.URLError as exc:
-        raise SpikeError(f"{model.key}: could not reach {model.url} ({exc.reason})") from exc
+    sources = [u for u in (model.url, model.fallback_url) if u]
+    problems: list[str] = []
+    for i, url in enumerate(sources):
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                download_to.write_bytes(response.read())
+            break
+        except urllib.error.HTTPError as exc:
+            problems.append(f"HTTP {exc.code} from {url}")
+        except urllib.error.URLError as exc:
+            problems.append(f"{exc.reason} from {url}")
+        if i == len(sources) - 1:
+            raise SpikeError(
+                f"{model.key}: could not fetch it from any known source.\n"
+                + "".join(f"  - {p}\n" for p in problems)
+                + "  A 403 usually means a network proxy blocked the host: allow it in "
+                "your egress settings. A 404 means the upstream filename moved -- check "
+                f"{model.licence_where} for the current one."
+            )
 
     complaint = _looks_like_a_model(download_to)
     if complaint:

@@ -337,18 +337,30 @@ def _generate_and_score(
     image_slot: str,
     video_slot: str,
     condition: dict[str, str] | None = None,
+    keyframe: Path | None = None,
 ) -> ClipScore:
-    """Keyframe -> clip -> score, with every paid step through the ledger."""
-    image_cfg = cfg.provider("image", image_slot)
+    """Keyframe -> clip -> score, with every paid step through the ledger.
+
+    ``keyframe`` supplies an existing still instead of generating one. That is
+    the S0.5 shape: the question is whether a still of her survives being
+    animated, and the keyframe generator it would otherwise use is the LoRA
+    from S0.4, which does not exist yet. Supplying one skips the image
+    provider entirely, so no image slot needs configuring and no image cost is
+    incurred.
+    """
     video_cfg = cfg.provider("video", video_slot)
-    image_provider = load_provider(image_cfg)
     video_provider = load_provider(video_cfg)
     duration = float(cfg.generation.get("clip_duration_s", 5))
 
-    keyframe_path = run_dir / "keyframes" / f"{ref}.png"
-    with ledger.paid_call(image_cfg, 1, ref=f"{ref}:keyframe", prompt=prompt) as outcome:
-        image_provider.generate(ImageRequest(prompt=prompt, seed=seed, ref=ref), keyframe_path)
-        outcome.ok = True
+    if keyframe is not None:
+        keyframe_path = keyframe
+    else:
+        image_cfg = cfg.provider("image", image_slot)
+        image_provider = load_provider(image_cfg)
+        keyframe_path = run_dir / "keyframes" / f"{ref}.png"
+        with ledger.paid_call(image_cfg, 1, ref=f"{ref}:keyframe", prompt=prompt) as outcome:
+            image_provider.generate(ImageRequest(prompt=prompt, seed=seed, ref=ref), keyframe_path)
+            outcome.ok = True
 
     clip_path = run_dir / "clips" / ref
     with ledger.paid_call(video_cfg, duration, ref=f"{ref}:clip", prompt=prompt) as outcome:
@@ -391,6 +403,14 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
     master = _master_set(run_dir, embedder)
     cal = _load_calibration(run_dir)
 
+    # getattr, not args.keyframes: `demo` reuses this function through its own
+    # parser, which has no such option. A test caught it.
+    keyframe_dir = getattr(args, "keyframes", None)
+    keyframes: list[Path] = []
+    if keyframe_dir:
+        keyframes = _stills_in(Path(keyframe_dir), "keyframes")
+        print(f"using {len(keyframes)} existing keyframes from {keyframe_dir}")
+
     n = args.cells or int(cfg.generation.get("identity_matrix_cells", 24))
     seed = int(cfg.generation.get("seed", 0))
     conditions: list[Condition] = sample_matrix(n, seed=seed)
@@ -418,6 +438,7 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
                 image_slot=args.image_slot,
                 video_slot=args.video_slot,
                 condition=cond.as_dict(),
+                keyframe=keyframes[i % len(keyframes)] if keyframes else None,
             )
         except SpikeError as exc:
             log.event("matrix_halted", ref=ref, error=str(exc))
@@ -1043,6 +1064,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--subject", default="the persona")
     sp.add_argument("--image-slot", default="primary")
     sp.add_argument("--video-slot", default="flagship")
+    sp.add_argument(
+        "--keyframes",
+        help="a directory of existing stills to animate, instead of generating "
+        "keyframes. The S0.5 shape: the generator would be the S0.4 LoRA, which "
+        "does not exist yet, and these are the images the question is about.",
+    )
     sp.set_defaults(func=cmd_run_matrix)
 
     sp = sub.add_parser("battery", help="S0.7 golf format battery + rating sheet")

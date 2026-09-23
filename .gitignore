@@ -10,3 +10,10 @@ __pycache__/
 # Gate report is promoted to docs/reports/ by hand.
 spike/runs/
 ci-spike.yaml
+
+# Fetched model weights. Downloadable from their upstream source, so they are
+# not source: `fetch-models` gets them and verifies the bytes. The one
+# exception is committed on purpose -- face_recognition_densenet_model_v1.dat
+# has no working download (ADR 0002), so the file itself is the only copy.
+spike/models/*.dat
+!spike/models/face_recognition_densenet_model_v1.dat
