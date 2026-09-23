@@ -92,6 +92,69 @@ not a commitment — unspent budget is not spent.
 Given the sizing above, a few hundred dollars covers Spike 0 comfortably
 including re-runs. You set the figure; I will not choose it for you.
 
+## Where to look — go and judge these yourself
+
+I could not open any of these pages (the environment's network policy blocks
+them), so treat the links as signposts, not as verified. If one 404s, say so.
+
+### Start here: one aggregator account covers both decisions
+
+Both slots that are due now — LoRA training and a flagship video model — can
+be served by a single account at either of these. That matters more than the
+per-second rate: you get Veo, Kling, Runway, Wan and others behind one key and
+one bill, so you can **compare models on your own persona** instead of
+committing to one before you have seen it hold her face.
+
+| Site | Why look | Link |
+|---|---|---|
+| fal.ai | Many video models + FLUX LoRA training in one place; each model page shows its own price | https://fal.ai/models |
+| Replicate | Same idea, different catalogue and billing | https://replicate.com/explore |
+
+Two more fal pages worth opening: pricing per model at
+https://fal.ai/docs/documentation/model-apis/pricing and the FLUX LoRA trainer
+at https://fal.ai/models/fal-ai/flux-lora-fast-training — that second one is
+the S0.4 slot. Replicate's rates are at https://replicate.com/pricing.
+
+**My recommendation: pick one of these two, not a direct provider.** The spike
+question is "which model holds her face", and an aggregator is the only way to
+ask that without five signups. Go direct later, once you know which model won.
+
+### Direct providers, if you would rather deal with the source
+
+| Provider | Note | Link |
+|---|---|---|
+| Google Veo | Premium tier; generates native audio and lip-sync, which may delete the lipsync slot entirely | https://ai.google.dev/gemini-api/docs/video |
+| Runway | Gen-4 family, developer API | https://dev.runwayml.com |
+| Kling | Sells prepaid resource packs rather than pay-as-you-go | https://klingai.com |
+| Luma | Dream Machine / Ray, billed separately from the consumer plan | https://lumalabs.ai/dream-machine/api |
+
+### Lip-sync, only if the video model does not do it natively
+
+| Provider | Note | Link |
+|---|---|---|
+| Hedra | Character models aimed at talking-head from a still | https://www.hedra.com |
+| Sync.so | API-first, usage-based | https://sync.so |
+
+**Check the commercial terms, not just the price.** Some plans restrict
+commercial use to paid tiers, and this persona is a commercial use.
+
+### The base model licence — read these two before anything is trained
+
+| What | Why | Link |
+|---|---|---|
+| FLUX.1 [dev] non-commercial terms | The restriction that would sink a LoRA trained on it | https://bfl.ai/legal/non-commercial-license-terms |
+| FLUX.1 [schnell] | Apache 2.0, the free commercial-safe route | https://huggingface.co/black-forest-labs/FLUX.1-schnell |
+
+### GPU hosts, only if you train outside an aggregator
+
+| Provider | Link |
+|---|---|
+| RunPod | https://runpod.io/pricing |
+| Modal | https://modal.com/pricing |
+
+Training through fal or Replicate avoids needing one of these at all, which is
+the other reason to start with an aggregator.
+
 ## What is NOT on this list
 
 - **Text-to-speech.** There is no slot for it in the config and there should
