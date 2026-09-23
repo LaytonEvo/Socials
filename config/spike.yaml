@@ -200,7 +200,7 @@ lora:
 
 # --- Generation defaults ---------------------------------------------------
 generation:
-  clip_duration_s: 5
+  clip_duration_s: 4        # veo3.1 accepts 4s, 6s or 8s only (ADR 0006)
   identity_matrix_cells: 24         # >= 20 required by BUILD_PLAN task 1.6
   takes_per_battery_prompt: 2
   seed: 20260922

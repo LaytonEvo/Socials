@@ -220,7 +220,7 @@ def test_generate_runs_submit_wait_result_then_downloads(tmp_path):
         VideoRequest(
             keyframe=tmp_path / "her.jpg",
             prompt="a swing",
-            duration_s=5.0,
+            duration_s=4.0,
             seed=1,
             ref="t1",
         ),
@@ -257,7 +257,7 @@ def test_generate_refuses_a_slot_with_no_model_id():
     with pytest.raises(ProviderNotConfigured, match="no model id"):
         provider.generate(
             VideoRequest(
-                keyframe=Path("https://x/y.jpg"), prompt="p", duration_s=5, seed=1, ref="t1"
+                keyframe=Path("https://x/y.jpg"), prompt="p", duration_s=4, seed=1, ref="t1"
             ),
             Path("out.mp4"),
         )
@@ -409,7 +409,7 @@ def test_generate_inlines_a_local_keyframe_by_default(tmp_path):
         VideoRequest(
             keyframe=_jpeg(tmp_path / "her.jpg"),
             prompt="a swing",
-            duration_s=5.0,
+            duration_s=4.0,
             seed=1,
             ref="t1",
         ),
@@ -554,7 +554,79 @@ def test_the_request_id_is_surfaced_the_moment_money_is_committed(tmp_path):
     )
     with pytest.raises(ProviderFailed):
         provider.generate(
-            VideoRequest(keyframe=tmp_path / "k.jpg", prompt="p", duration_s=5, seed=1, ref="t"),
+            VideoRequest(keyframe=tmp_path / "k.jpg", prompt="p", duration_s=4, seed=1, ref="t"),
             tmp_path / "o.mp4",
         )
     assert seen == ["xyz"], "the id must be recorded before anything can go wrong"
+
+
+# --- per-model argument shape ------------------------------------------------
+
+
+def test_duration_is_sent_as_the_literal_the_model_accepts():
+    from scripts.spike.fal import veo_duration
+
+    assert veo_duration(4) == "4s"
+    assert veo_duration(6.0) == "6s"
+
+
+def test_an_unsupported_duration_is_refused_not_rounded():
+    """Snapping 5s to 4s would change both the measurement and the bill, and
+    would do it invisibly."""
+    from scripts.spike.fal import veo_duration
+
+    with pytest.raises(ProviderNotConfigured) as excinfo:
+        veo_duration(5.0)
+    assert "4s, 6s, 8s" in str(excinfo.value)
+
+
+def test_audio_is_off_and_duration_is_a_literal_in_the_submitted_body(tmp_path):
+    """Regression: sending duration=5.0 was rejected 422, and generate_audio
+    defaults to true on this model, which doubles the per-second rate."""
+    c = _client(
+        [
+            (200, {"request_id": "x", "status_url": "https://q/s", "response_url": "https://q/r"}),
+            (200, {"status": "COMPLETED"}),
+            (200, {"video": {"url": "https://v3.fal.media/x.mp4"}}),
+        ]
+    )
+    provider = FalVideoProvider(
+        _cfg(),
+        client=c,
+        download=lambda _u, d: d,
+        resolve_keyframe=lambda _p: "https://example.com/k.jpg",
+    )
+    provider.generate(
+        VideoRequest(keyframe=tmp_path / "k.jpg", prompt="p", duration_s=4, seed=1, ref="t"),
+        tmp_path / "o.mp4",
+    )
+    _u, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body is not None
+    assert body["duration"] == "4s"
+    assert body["generate_audio"] is False
+    assert body["resolution"] == "720p"
+
+
+def test_extra_arguments_can_override_the_defaults(tmp_path):
+    """Every fal model has its own schema; this is the seam for one that wants
+    something else."""
+    c = _client(
+        [
+            (200, {"request_id": "x", "status_url": "https://q/s", "response_url": "https://q/r"}),
+            (200, {"status": "COMPLETED"}),
+            (200, {"video": {"url": "https://v3.fal.media/x.mp4"}}),
+        ]
+    )
+    provider = FalVideoProvider(
+        _cfg(),
+        client=c,
+        download=lambda _u, d: d,
+        resolve_keyframe=lambda _p: "https://example.com/k.jpg",
+        extra_arguments={"resolution": "1080p"},
+    )
+    provider.generate(
+        VideoRequest(keyframe=tmp_path / "k.jpg", prompt="p", duration_s=4, seed=1, ref="t"),
+        tmp_path / "o.mp4",
+    )
+    _u, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body is not None and body["resolution"] == "1080p"

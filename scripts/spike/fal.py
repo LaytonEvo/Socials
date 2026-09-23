@@ -299,6 +299,10 @@ class FalVideoProvider:
     #: worth recording: if everything after this fails, that id is the only way
     #: to find what was paid for.
     on_submit: Callable[[QueuedRequest], None] | None = None
+    #: Per-model input fields. Every fal model has its own schema — the queue
+    #: contract is shared, the arguments are not — so this is the seam for a
+    #: model that wants something the defaults above do not cover.
+    extra_arguments: dict[str, Any] | None = None
     name: str = field(default="fal-video", init=False)
 
     def __post_init__(self) -> None:
@@ -326,9 +330,16 @@ class FalVideoProvider:
         arguments: dict[str, Any] = {
             "prompt": req.prompt,
             "image_url": self.resolve_keyframe(req.keyframe),
-            "duration": req.duration_s,
-            "seed": req.seed,
+            "duration": veo_duration(req.duration_s),
+            # Audio defaults to TRUE on this model and doubles the per-second
+            # rate. S0.5 asks whether her face survives being animated, which no
+            # soundtrack affects, so paying double across the matrix would be
+            # spending on the wrong question. Whether native audio can replace
+            # the lip-sync stage is a separate run (ADR 0005).
+            "generate_audio": False,
+            "resolution": "720p",
         }
+        arguments.update(self.extra_arguments or {})
         queued = self.client.submit(self.cfg.model, arguments)
         # Surfaced so a run whose polling fails can still be reconciled against
         # fal: without the id, a job that was queued and billed is unfindable.
@@ -347,6 +358,32 @@ class FalVideoProvider:
 #: spike volumes the inefficiency costs nothing that matters. The cap exists so
 #: the trade stays small — past it, the answer is the CDN, not a bigger payload.
 MAX_DATA_URI_BYTES = 4 * 1024 * 1024
+
+#: veo3.1 image-to-video takes `duration` as one of these literals, not a
+#: number, and `generate_audio` defaults to TRUE. Read from the model's API
+#: reference 2026-09-23. The queue docs say nothing about either: every model
+#: carries its own input schema, and only a real call or its reference page
+#: reveals it. Sending 5.0 seconds was rejected with a 422 naming these values.
+VEO_DURATIONS = ("4s", "6s", "8s")
+
+
+def veo_duration(seconds: float, allowed: tuple[str, ...] = VEO_DURATIONS) -> str:
+    """Express a duration the way this model wants it, or refuse.
+
+    Deliberately not "snap to the nearest allowed value": silently turning a
+    requested 5 seconds into 4 changes both what is measured and what is
+    billed, and would do so invisibly. A mismatch is a configuration error and
+    says so.
+    """
+    literal = f"{seconds:g}s"
+    if literal not in allowed:
+        raise ProviderNotConfigured(
+            f"this model accepts durations {', '.join(allowed)}, not {literal}. "
+            "Set generation.clip_duration_s to one of them — it is not rounded for "
+            "you, because a silently shortened clip changes the measurement and the "
+            "bill."
+        )
+    return literal
 
 
 def data_uri_keyframe(keyframe: Path, max_bytes: int = MAX_DATA_URI_BYTES) -> str:

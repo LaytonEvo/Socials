@@ -173,6 +173,39 @@ results in fal's own examples use `v3.fal.media`; the SDK falls back to
 `queue.fal.run` and `api.fal.ai`. Allow-listing the apex domains alone does not
 cover them, which this environment demonstrated.
 
+## The queue contract is shared; the arguments are not
+
+Read from the model's own API reference, 2026-09-23, after a 422 rejected a
+submission that looked fine against the queue documentation.
+
+`fal-ai/veo3.1/image-to-video` takes:
+
+| Field | Allowed | Default |
+|---|---|---|
+| `duration` | `4s`, `6s`, `8s` — **string literals, not numbers** | `8s` |
+| `resolution` | `720p`, `1080p`, `4k` | `720p` |
+| `generate_audio` | boolean | **`true`** |
+| `image_url` | required; 720p+, 16:9 or 9:16 or it is cropped | — |
+
+**`generate_audio` defaults to true, and that resolves the pricing question
+from earlier in this ADR.** fal's pricing API reports 0.40/second flat because
+that is the with-audio rate for the default configuration. Setting the flag
+false is what makes the model page's $0.20/s apply. The config keeps 0.40 as
+the reserve anyway: over-reserving is the safe direction, and being pleasantly
+surprised by an invoice is better than the reverse.
+
+Two lessons worth keeping:
+
+**Duration is not rounded.** `veo_duration` refuses a value the model does not
+accept rather than snapping to the nearest one, because silently turning a
+requested 5 seconds into 4 changes both what is measured and what is billed.
+
+**The keyframe aspect ratio matters.** Inputs outside 16:9 or 9:16 are cropped
+to fit. Midjourney stills are frequently neither, so a crop may move her face
+within the frame before the model ever sees it — a confound for an identity
+measurement, and one that would look like drift. Not yet checked against the
+master set.
+
 ## The cost-ledger consequence, which needs a decision later
 
 `CLAUDE.md` requires every paid call to write a `cost_ledger` row in USD in the
