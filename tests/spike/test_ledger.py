@@ -96,3 +96,53 @@ def test_summary_breaks_down_by_provider(ledger, priced):
     summary = ledger.summary()
     assert summary["by_provider"]["video/flagship"]["calls"] == 1
     assert summary["spent_usd"] == "2.000000"
+
+
+# --- refused calls cost nothing ---------------------------------------------
+
+
+def test_a_call_the_provider_refused_does_not_consume_budget(ledger, priced):
+    """Regression from the first live run.
+
+    A 403 recorded the full estimate as spend. Seven of them would have
+    exhausted the run's budget having spent nothing, and the run would then
+    have reported a budget error instead of the auth failure that caused it.
+    """
+    from scripts.spike.errors import ProviderRefused
+
+    with pytest.raises(ProviderRefused), ledger.paid_call(priced, 5.0, ref="t1"):
+        raise ProviderRefused("401: no credential")
+
+    assert ledger.spent == Decimal("0")
+
+
+def test_a_call_that_failed_after_starting_work_still_counts(ledger, priced):
+    """The safe default. A provider that took the work usually charged for it,
+    and a ledger that under-records lets a run pass its cap believing it has
+    not."""
+    from scripts.spike.errors import ProviderFailed
+
+    with pytest.raises(ProviderFailed), ledger.paid_call(priced, 5.0, ref="t1"):
+        raise ProviderFailed("completed with an error")
+
+    assert ledger.spent > Decimal("0")
+
+
+def test_an_unknown_exception_is_assumed_billable(ledger, priced):
+    """Anything without the marker is charged. Assuming otherwise would make
+    every unexpected bug look free."""
+    with pytest.raises(RuntimeError), ledger.paid_call(priced, 5.0, ref="t1"):
+        raise RuntimeError("something nobody anticipated")
+
+    assert ledger.spent > Decimal("0")
+
+
+def test_a_refused_call_is_still_written_to_the_ledger(ledger, priced, run_log):
+    """Zero cost, but not invisible: the attempt has to be reconcilable."""
+    from scripts.spike.errors import ProviderRefused
+
+    with pytest.raises(ProviderRefused), ledger.paid_call(priced, 5.0, ref="refused-1"):
+        raise ProviderRefused("403")
+
+    rows = ledger.entries
+    assert any(r["ref"] == "refused-1" for r in rows), "a refused call must still be recorded"

@@ -131,6 +131,14 @@ class CostLedger:
         except Exception as exc:
             outcome.ok = False
             outcome.error = f"{type(exc).__name__}: {exc}"
+            # A call the provider refused before starting work cost nothing, and
+            # charging for it would exhaust a budget on calls that never ran --
+            # then report a budget error instead of the auth failure that caused
+            # it. Anything else is assumed billed: over-recording is the safe
+            # direction, under-recording lets a run sail past its cap.
+            if not getattr(exc, "billable", True):
+                outcome.units = 0.0
+                outcome.actual_usd = Decimal("0")
             self._record(provider, outcome, estimated, ref, context)
             raise
         self._record(provider, outcome, estimated, ref, context)

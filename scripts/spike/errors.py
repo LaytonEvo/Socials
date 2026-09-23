@@ -9,7 +9,17 @@ from __future__ import annotations
 
 
 class SpikeError(Exception):
-    """Base class for every deliberate refusal in the harness."""
+    """Base class for every deliberate refusal in the harness.
+
+    ``billable`` says whether a call that failed with this error may still have
+    cost money. It defaults to True on purpose: a provider that accepted work
+    and then failed has usually charged for it, and a ledger that under-records
+    is worse than one that over-records — it lets a run pass its cap believing
+    it is inside one. Only an error that is *known* to have been refused before
+    any work began sets it False.
+    """
+
+    billable: bool = True
 
 
 class ConfigError(SpikeError):
@@ -39,6 +49,19 @@ class EmbedderNotConfigured(ConfigError):
     is the measuring instrument for the whole spike; it cannot be picked
     provisionally and swapped later without invalidating every measurement.
     """
+
+
+class ProviderRefused(ProviderNotConfigured):
+    """The provider rejected the request before doing any work.
+
+    An authentication or authorisation rejection: no runner started, no compute
+    ran, nothing was billed. Distinct from ProviderFailed, where the provider
+    took the work and then failed at it, and from ProviderTimeout, where it may
+    still be running. Recording these as spend would burn a budget on calls
+    that cost nothing and hide the real failure behind a budget error.
+    """
+
+    billable = False
 
 
 class BudgetExceeded(SpikeError):

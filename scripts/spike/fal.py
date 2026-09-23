@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import ProviderConfig
-from .errors import ProviderFailed, ProviderNotConfigured, ProviderTimeout
+from .errors import ProviderFailed, ProviderNotConfigured, ProviderRefused, ProviderTimeout
 from .providers import VideoRequest
 
 QUEUE_ROOT = "https://queue.fal.run"
@@ -107,7 +107,7 @@ class FalClient:
                 f"fal returned {status} with a body that is not JSON: {raw[:200]!r}"
             ) from None
         if status in (401, 403):
-            raise ProviderNotConfigured(
+            raise ProviderRefused(
                 f"fal rejected the request ({status}). Neither authentication route is "
                 f"working: {API_KEY_ENV} is "
                 f"{'set' if self.api_key else 'NOT set'} in this process, and no "
