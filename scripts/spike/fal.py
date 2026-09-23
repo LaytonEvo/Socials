@@ -177,6 +177,11 @@ class FalClient:
                 # them apart. Ours go second, and conditionally: leading with an
                 # auth diagnosis once sent the reader to the wrong settings page
                 # for a problem that was about money.
+                error_type = None
+                if isinstance(parsed, dict):
+                    error_type = parsed.get("type")
+                elif isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                    error_type = parsed[0].get("type")
                 raise ProviderRefused(
                     f"fal refused the request ({status}): {said}\n"
                     f"  If that is about credentials: {API_KEY_ENV} is "
@@ -184,7 +189,8 @@ class FalClient:
                     "set it or inject the header in front — not both, since two "
                     "Authorization headers is its own failure.\n"
                     "  If it is about balance, a lock, or the request shape, nothing in "
-                    "this process will fix it."
+                    "this process will fix it.",
+                    error_type=error_type,
                 )
             raise ProviderFailed(f"fal returned {status}: {said}")
 
@@ -378,6 +384,14 @@ class FalVideoProvider:
 #: spike volumes the inefficiency costs nothing that matters. The cap exists so
 #: the trade stays small — past it, the answer is the CDN, not a bigger payload.
 MAX_DATA_URI_BYTES = 4 * 1024 * 1024
+
+#: Refusals worth trying again. fal documents content_policy_violation as
+#: `Retryable: false`, and measurement contradicts that: the same image and
+#: prompt, submitted back to back, were refused and then accepted (ADR 0006).
+#: no_media_generated is NOT here, because measurement supports the
+#: documentation there -- one master still failed four times out of four, so it
+#: is a property of the input and retrying only spends time.
+RETRYABLE_REFUSALS = frozenset({"content_policy_violation"})
 
 #: veo3.1 image-to-video takes `duration` as one of these literals, not a
 #: number, and `generate_audio` defaults to TRUE. Read from the model's API

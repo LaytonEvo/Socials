@@ -69,3 +69,60 @@ def test_skipped_cells_are_not_counted_as_failures():
     assert len(scored) == 3
     assert len(skipped) == 1
     assert set(scored).isdisjoint(skipped)
+
+
+# --- retry the refusals the provider is inconsistent about, and only those ---
+
+
+def _retrying(outcomes: list[object], attempts: int = 3) -> tuple[int, str]:
+    """The retry policy, exercised without a provider.
+
+    Mirrors _generate_with_retry: re-attempt a refusal on the retryable list,
+    raise anything else immediately.
+    """
+    from scripts.spike.fal import RETRYABLE_REFUSALS
+
+    calls = 0
+    last: Exception | None = None
+    for attempt in range(attempts):
+        calls += 1
+        outcome = outcomes[min(attempt, len(outcomes) - 1)]
+        if not isinstance(outcome, Exception):
+            return calls, "generated"
+        if getattr(outcome, "error_type", None) not in RETRYABLE_REFUSALS:
+            return calls, "raised-immediately"
+        last = outcome
+    assert last is not None
+    return calls, "gave-up"
+
+
+def test_a_content_policy_refusal_is_retried():
+    """Measured, not assumed: the same image and prompt were refused and then
+    accepted moments later, so one refusal says little."""
+    refusal = ProviderRefused("flagged", error_type="content_policy_violation")
+    calls, outcome = _retrying([refusal, refusal, None])
+    assert calls == 3
+    assert outcome == "generated"
+
+
+def test_no_media_generated_is_not_retried():
+    """A property of the input: one master still failed four times out of four.
+    Retrying spends time to learn nothing."""
+    refusal = ProviderRefused("no media", error_type="no_media_generated")
+    calls, outcome = _retrying([refusal])
+    assert calls == 1
+    assert outcome == "raised-immediately"
+
+
+def test_a_refusal_with_no_error_type_is_not_retried():
+    """Absent a reason, assume the provider meant it."""
+    calls, outcome = _retrying([ProviderRefused("something")])
+    assert calls == 1
+    assert outcome == "raised-immediately"
+
+
+def test_retrying_gives_up_rather_than_looping():
+    refusal = ProviderRefused("flagged", error_type="content_policy_violation")
+    calls, outcome = _retrying([refusal], attempts=3)
+    assert calls == 3
+    assert outcome == "gave-up"

@@ -263,6 +263,36 @@ animating a photo of a woman will meet this repeatedly, and a production run
 that silently loses cells to it produces a biased matrix — the conditions that
 survive are not a random sample of the conditions attempted.
 
+### Two different failures, measured apart
+
+Six controlled trials, holding the prompt bland and varying only the keyframe,
+after nine trials on `m_000` produced no refusal at all:
+
+| Keyframe | Trials | Outcome |
+|---|---|---|
+| `m_000` | 9 | generated 9/9 |
+| `m_001` | 3 | generated, **refused**, generated |
+| `m_004` | 3 | **refused 3/3** (4/4 including the matrix run) |
+
+These are not the same phenomenon, and conflating them cost most of a day:
+
+**`content_policy_violation` is stochastic.** `m_001` was accepted, refused and
+accepted again on identical input submitted back to back. Nothing about the
+image, the prompt or their combination predicts it. **fal documents this error
+as `Retryable: false`, and that is wrong** — or at least not true of Veo's
+filter. It is a re-roll cost, and since a refused call is never billed,
+retrying is close to free.
+
+**`no_media_generated` is deterministic per image.** `m_004` failed every time
+it was tried. Here the documentation's `Retryable: false` matches the
+measurement: something about that specific still the model cannot work with,
+and retrying spends time to learn nothing. This class is **screenable** — run
+each master still once and drop the ones that fail.
+
+`RETRYABLE_REFUSALS` therefore contains `content_policy_violation` and
+deliberately excludes `no_media_generated`, with the evidence for each recorded
+above rather than inherited from the provider's own retry advice.
+
 Two relevant parameters, both now stated explicitly rather than inherited:
 
 **`auto_fix` is off and must stay off.** fal offers to "fix prompts that fail

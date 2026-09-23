@@ -40,7 +40,7 @@ from .embed import (
     load_embedder,
 )
 from .embedders import DETECTORS
-from .errors import BudgetExceeded, BudgetNotSet, SpikeError
+from .errors import BudgetExceeded, BudgetNotSet, ProviderRefused, SpikeError
 from .frames import ImageSequenceFrames
 from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
 from .inspect import format_inspection, inspect_sets
@@ -323,6 +323,35 @@ def _calibration_distributions(
     )
 
 
+def _generate_with_retry(*, attempts: int = 3, **kwargs: Any) -> ClipScore:
+    """Retry a refusal the provider is measurably inconsistent about.
+
+    fal's content checker refused an image-and-prompt pair and then accepted
+    the identical pair moments later, so a single refusal says little (ADR
+    0006). Retrying is close to free: a refused call is never billed, and the
+    alternative is losing the cell and biasing the matrix towards whichever
+    conditions the checker happened to allow that minute.
+
+    Only refusals on the provider's own retryable list are re-attempted. A
+    no_media_generated is a property of the input -- one master still failed
+    four times out of four -- so retrying it spends time to learn nothing.
+    """
+    from .fal import RETRYABLE_REFUSALS
+
+    last: ProviderRefused | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return _generate_and_score(**kwargs)
+        except ProviderRefused as exc:
+            if exc.error_type not in RETRYABLE_REFUSALS:
+                raise
+            last = exc
+            if attempt + 1 < attempts:
+                print(f"      retrying after {exc.error_type} ({attempt + 1}/{attempts - 1})")
+    assert last is not None
+    raise last
+
+
 def _generate_and_score(
     *,
     cfg: SpikeConfig,
@@ -446,11 +475,12 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
     #: conflating them would understate the identity result.
     skipped: list[tuple[str, str]] = []
     max_skips = max(3, n // 3)
+    retries = int(cfg.generation.get("refusal_retries", 3))
     for i, cond in enumerate(conditions):
         ref = f"matrix-{i:03d}-{cond.cell_id}"
         prompt = f"{args.subject}, {cond.prompt_fragment()}"
         try:
-            score = _generate_and_score(
+            score = _generate_with_retry(
                 cfg=cfg,
                 run_dir=run_dir,
                 log=log,
@@ -465,6 +495,7 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
                 video_slot=args.video_slot,
                 condition=cond.as_dict(),
                 keyframe=keyframes[i % len(keyframes)] if keyframes else None,
+                attempts=retries,
             )
         except (BudgetExceeded, BudgetNotSet) as exc:
             # The one thing that must stop the run. Carrying on past the cap is

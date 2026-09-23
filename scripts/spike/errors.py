@@ -54,14 +54,23 @@ class EmbedderNotConfigured(ConfigError):
 class ProviderRefused(ProviderNotConfigured):
     """The provider rejected the request before doing any work.
 
-    An authentication or authorisation rejection: no runner started, no compute
-    ran, nothing was billed. Distinct from ProviderFailed, where the provider
-    took the work and then failed at it, and from ProviderTimeout, where it may
-    still be running. Recording these as spend would burn a budget on calls
-    that cost nothing and hide the real failure behind a budget error.
+    An authentication, moderation or validation rejection: no runner started,
+    no compute ran, nothing was billed. Distinct from ProviderFailed, where the
+    provider took the work and then failed at it, and from ProviderTimeout,
+    where it may still be running. Recording these as spend would burn a budget
+    on calls that cost nothing and hide the real failure behind a budget error.
+
+    ``error_type`` carries the provider's own machine-readable reason where it
+    gave one, because whether a refusal is worth retrying depends entirely on
+    which refusal it is, and the provider's documentation is not always right
+    about that (ADR 0006).
     """
 
     billable = False
+
+    def __init__(self, message: str, error_type: str | None = None) -> None:
+        super().__init__(message)
+        self.error_type = error_type
 
 
 class BudgetExceeded(SpikeError):
