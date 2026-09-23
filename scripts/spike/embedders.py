@@ -417,3 +417,47 @@ register_embedder("dlib", _build_dlib)
 # can be calibrated against each other rather than silently swapped.
 register_embedder("dlib-densenet", _build_dlib)
 register_embedder("dinov2", _build_dinov2)
+
+
+#: Aspect ratios fal's video models accept. Anything else is cropped by the
+#: provider, blind to where the subject is (ADR 0006).
+ASPECT_16_9 = 16 / 9
+ASPECT_9_16 = 9 / 16
+
+
+def crop_to_aspect(image: Image.Image, aspect: float, box: FaceBox | None = None) -> Image.Image:
+    """Crop to a target aspect ratio, keeping a face centred if one is given.
+
+    The provider will do this anyway if we do not: veo crops an off-ratio input
+    to fit, with no idea where the subject is. Doing it here means the crop is
+    deliberate and reproducible, and the image that gets embedded is the image
+    that gets animated -- which matters, because the master centroid is built
+    from the originals, and a reframing the provider applied silently would
+    read as identity drift without being any such thing.
+
+    Without a box this centres on the image, which is the best available guess
+    and no worse than the provider's.
+    """
+    width, height = image.size
+    current = width / height
+    if abs(current - aspect) < 1e-3:
+        return image
+
+    if current > aspect:  # too wide: take a full-height slice
+        new_w, new_h = round(height * aspect), height
+    else:  # too tall: take a full-width slice
+        new_w, new_h = width, round(width / aspect)
+
+    if box is not None:
+        cx = (box.left + box.right) / 2
+        cy = (box.top + box.bottom) / 2
+    else:
+        cx, cy = width / 2, height / 2
+
+    left = round(cx - new_w / 2)
+    top = round(cy - new_h / 2)
+    # Clamp so the window stays inside the image rather than shrinking it: a
+    # face near an edge must still yield a full-size crop.
+    left = max(0, min(left, width - new_w))
+    top = max(0, min(top, height - new_h))
+    return image.crop((left, top, left + new_w, top + new_h))

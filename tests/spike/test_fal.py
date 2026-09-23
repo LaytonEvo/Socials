@@ -356,25 +356,42 @@ def _jpeg(path: Path, size: tuple[int, int] = (64, 64)) -> Path:
     return path
 
 
-def test_a_keyframe_becomes_a_data_uri_with_its_real_media_type(tmp_path):
+def test_a_keyframe_becomes_a_data_uri_cropped_to_the_ratio_veo_accepts(tmp_path):
+    """Not byte-identical any more, on purpose: an off-ratio still is cropped
+    here so the provider does not crop it blindly (ADR 0006)."""
+    import base64
+    import io
+
+    from PIL import Image
+
     from scripts.spike.fal import data_uri_keyframe
 
-    uri = data_uri_keyframe(_jpeg(tmp_path / "her.jpg"))
+    uri = data_uri_keyframe(_jpeg(tmp_path / "her.jpg", size=(928, 1232)))
     assert uri.startswith("data:image/jpeg;base64,")
-    # And it round-trips to the bytes on disk, rather than to something plausible.
+    out = Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1])))
+    assert abs(out.width / out.height - 9 / 16) < 1e-3
+    assert out.height == 1232, "a full-height slice, not a shrunken image"
+
+
+def test_a_keyframe_already_at_the_right_ratio_is_sent_untouched(tmp_path):
+    """No re-encode when none is needed: re-saving a JPEG loses quality for
+    nothing, and the bytes on disk are what the master set was built from."""
     import base64
 
-    assert base64.b64decode(uri.split(",", 1)[1]) == (tmp_path / "her.jpg").read_bytes()
+    from scripts.spike.fal import data_uri_keyframe
+
+    path = _jpeg(tmp_path / "her.jpg", size=(1080, 1920))
+    uri = data_uri_keyframe(path)
+    assert base64.b64decode(uri.split(",", 1)[1]) == path.read_bytes()
 
 
 def test_an_oversized_keyframe_is_refused_not_truncated(tmp_path):
     """A silently shortened keyframe would generate a video of something else."""
     from scripts.spike.fal import data_uri_keyframe
 
-    big = tmp_path / "big.jpg"
-    big.write_bytes(b"\xff\xd8" + b"x" * 5000)
+    big = _jpeg(tmp_path / "big.jpg", size=(1080, 1920))
     with pytest.raises(ProviderNotConfigured, match="data-URI cap"):
-        data_uri_keyframe(big, max_bytes=1000)
+        data_uri_keyframe(big, max_bytes=200)
 
 
 def test_a_keyframe_of_unknown_type_is_refused(tmp_path):
@@ -383,7 +400,7 @@ def test_a_keyframe_of_unknown_type_is_refused(tmp_path):
     odd = tmp_path / "keyframe.unknownext"
     odd.write_bytes(b"\x00\x01")
     with pytest.raises(ProviderNotConfigured, match="what image type"):
-        data_uri_keyframe(odd)
+        data_uri_keyframe(odd, aspect=None)  # aspect=None: not a decodable image
 
 
 def test_a_missing_keyframe_says_so_plainly(tmp_path):

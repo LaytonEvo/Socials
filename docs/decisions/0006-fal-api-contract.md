@@ -200,11 +200,29 @@ Two lessons worth keeping:
 accept rather than snapping to the nearest one, because silently turning a
 requested 5 seconds into 4 changes both what is measured and what is billed.
 
-**The keyframe aspect ratio matters.** Inputs outside 16:9 or 9:16 are cropped
-to fit. Midjourney stills are frequently neither, so a crop may move her face
-within the frame before the model ever sees it — a confound for an identity
-measurement, and one that would look like drift. Not yet checked against the
-master set.
+**The keyframe aspect ratio matters, and it bit us.** Inputs outside 16:9 or
+9:16 are cropped to fit. **All 28 master stills are 928x1232 — a ratio of
+0.753, which is neither.** Reaching 9:16 means cropping the width from 928 to
+693: a quarter of the frame discarded by the provider, blind to where she is
+in it.
+
+That is a confound in the worst possible place. The master centroid is built
+from the uncropped originals while the clips are generated from cropped ones,
+so any reframing shifts the embedding and reads as identity drift without
+being any such thing. It is a candidate explanation for the first near-miss
+measured (0.9638 against a 0.9748 threshold).
+
+`data_uri_keyframe` now crops to 9:16 itself, so the crop is deliberate,
+reproducible, and ours. `crop_to_aspect` takes an optional face box and keeps
+it centred, clamped so a subject near an edge still yields a full-size window
+rather than a smaller one — a shrunken crop would change her scale in frame,
+which moves the embedding for a second unrelated reason.
+
+**Still open, and larger:** the master set is embedded uncropped while what
+gets animated is cropped. The honest fix is to calibrate on the same framing
+that gets sent, which means re-preparing the master set at 9:16 and
+re-calibrating — amendment A3 territory, and not a change to make in the
+middle of a run.
 
 ## The content checker blocks legitimate prompts, and not consistently
 

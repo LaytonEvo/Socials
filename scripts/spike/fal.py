@@ -26,6 +26,7 @@ adapter is testable without a network or a key.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import mimetypes
 import os
@@ -37,7 +38,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from .config import ProviderConfig
+from .embedders import ASPECT_9_16, crop_to_aspect
 from .errors import ProviderFailed, ProviderNotConfigured, ProviderRefused, ProviderTimeout
 from .providers import VideoRequest
 
@@ -402,7 +406,11 @@ def veo_duration(seconds: float, allowed: tuple[str, ...] = VEO_DURATIONS) -> st
     return literal
 
 
-def data_uri_keyframe(keyframe: Path, max_bytes: int = MAX_DATA_URI_BYTES) -> str:
+def data_uri_keyframe(
+    keyframe: Path,
+    max_bytes: int = MAX_DATA_URI_BYTES,
+    aspect: float | None = ASPECT_9_16,
+) -> str:
     """Inline a local keyframe as a `data:` URI.
 
     One of three documented ways to give fal a file (ADR 0006): the SDK's CDN
@@ -416,7 +424,19 @@ def data_uri_keyframe(keyframe: Path, max_bytes: int = MAX_DATA_URI_BYTES) -> st
     """
     if not keyframe.is_file():
         raise ProviderNotConfigured(f"keyframe does not exist: {keyframe}")
+
     raw = keyframe.read_bytes()
+    if aspect is not None:
+        # veo crops an off-ratio input to fit, blind to where the subject is.
+        # Doing it here makes the crop deliberate and reproducible, and means
+        # the image that gets animated is one we chose the framing of.
+        with Image.open(io.BytesIO(raw)) as img:
+            cropped = crop_to_aspect(img.convert("RGB"), aspect)
+            if cropped.size != img.size:
+                buf = io.BytesIO()
+                cropped.save(buf, format="JPEG", quality=95)
+                raw = buf.getvalue()
+                keyframe = keyframe.with_suffix(".jpg")  # for the media type below
     if len(raw) > max_bytes:
         raise ProviderNotConfigured(
             f"{keyframe.name} is {len(raw) / 1024 / 1024:.1f}MB, over the "
