@@ -303,6 +303,11 @@ class FalVideoProvider:
     #: contract is shared, the arguments are not — so this is the seam for a
     #: model that wants something the defaults above do not cover.
     extra_arguments: dict[str, Any] | None = None
+    #: Content-moderation strictness, 1 (most strict) to 6 (least). Left at
+    #: fal's own default: loosening a provider's safety setting is an owner
+    #: decision, not an engineering convenience, and this project's whole
+    #: posture is that such choices get made deliberately and written down.
+    safety_tolerance: str = "4"
     name: str = field(default="fal-video", init=False)
 
     def __post_init__(self) -> None:
@@ -338,6 +343,17 @@ class FalVideoProvider:
             # the lip-sync stage is a separate run (ADR 0005).
             "generate_audio": False,
             "resolution": "720p",
+            # NEVER true. auto_fix rewrites a prompt that trips the content
+            # checker and runs the rewrite instead. In a condition matrix the
+            # prompt IS the variable, so a silent rewrite means the cell you
+            # recorded is not the cell that ran -- the same class of error as
+            # calibrating in a space the scorer does not read. Explicit rather
+            # than inherited, so a change of provider default cannot turn it on.
+            "auto_fix": False,
+            # 1 strictest, 6 loosest; fal's default is 4. Stated explicitly for
+            # the same reason: a moderation setting that moves because someone
+            # changed a default is a silent change to what the run measured.
+            "safety_tolerance": self.safety_tolerance,
         }
         arguments.update(self.extra_arguments or {})
         queued = self.client.submit(self.cfg.model, arguments)

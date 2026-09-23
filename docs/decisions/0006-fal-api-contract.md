@@ -206,6 +206,45 @@ within the frame before the model ever sees it — a confound for an identity
 measurement, and one that would look like drift. Not yet checked against the
 master set.
 
+## The content checker blocks legitimate prompts, and not consistently
+
+2026-09-23. A request generated a clip successfully, and the **identical**
+request — same prompt, same keyframe, same cell — was refused minutes later:
+
+```
+422 content_policy_violation
+"The content could not be processed because it contained material flagged
+ by a content checker."
+prompt: "a 25 year old english woman on a golf course, medium shot from the
+         waist up, facing the camera straight on, walking steadily, warm low
+         golden hour light"
+```
+
+Nothing in that prompt is objectionable, and the same input passed minutes
+earlier, so the checker is either non-deterministic or stateful. **This is a
+material risk to the concept, not a nuisance**: a pipeline that depends on
+animating a photo of a woman will meet this repeatedly, and a production run
+that silently loses cells to it produces a biased matrix — the conditions that
+survive are not a random sample of the conditions attempted.
+
+Two relevant parameters, both now stated explicitly rather than inherited:
+
+**`auto_fix` is off and must stay off.** fal offers to "fix prompts that fail
+content policy by rewriting them" and run the rewrite. In a condition matrix
+the prompt *is* the variable, so a silent rewrite means the cell recorded is
+not the cell that ran. That is the same class of error as calibrating in a
+space the scorer does not read: self-consistent, plausible, and measuring
+something other than what it claims.
+
+**`safety_tolerance` is left at fal's default of 4** (range 1–6, 6 loosest).
+Loosening a provider's moderation setting is an owner decision, not an
+engineering convenience, and it is exactly the kind of choice this project
+expects to be made deliberately and written down. Flagged for the owner; not
+changed.
+
+Both are sent explicitly so that a change to fal's defaults cannot silently
+change what a run measured.
+
 ## The cost-ledger consequence, which needs a decision later
 
 `CLAUDE.md` requires every paid call to write a `cost_ledger` row in USD in the

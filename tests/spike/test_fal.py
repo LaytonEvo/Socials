@@ -630,3 +630,30 @@ def test_extra_arguments_can_override_the_defaults(tmp_path):
     )
     _u, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
     assert body is not None and body["resolution"] == "1080p"
+
+
+def test_auto_fix_is_always_off(tmp_path):
+    """auto_fix rewrites a prompt that trips the content checker and runs the
+    rewrite. In a condition matrix the prompt is the variable, so the cell
+    recorded would not be the cell that ran."""
+    c = _client(
+        [
+            (200, {"request_id": "x", "status_url": "https://q/s", "response_url": "https://q/r"}),
+            (200, {"status": "COMPLETED"}),
+            (200, {"video": {"url": "https://v3.fal.media/x.mp4"}}),
+        ]
+    )
+    provider = FalVideoProvider(
+        _cfg(),
+        client=c,
+        download=lambda _u, d: d,
+        resolve_keyframe=lambda _p: "https://example.com/k.jpg",
+    )
+    provider.generate(
+        VideoRequest(keyframe=tmp_path / "k.jpg", prompt="p", duration_s=4, seed=1, ref="t"),
+        tmp_path / "o.mp4",
+    )
+    _u, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body is not None
+    assert body["auto_fix"] is False
+    assert body["safety_tolerance"] == "4", "provider default, stated explicitly"
