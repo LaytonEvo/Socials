@@ -98,6 +98,13 @@ jobs:
           python -m scripts.spike.cli bake-off --run hard \
             --backends dlib dlib-densenet dinov2
 
+      - name: Is dlib's perfect separation real? (per-image, hard control)
+        if: steps.dlib.outcome == 'success'
+        run: |
+          python -m scripts.spike.cli inspect --run hard --embedder dlib
+          echo "--- the same images under DINOv2, for contrast ---"
+          python -m scripts.spike.cli inspect --run hard --embedder dinov2 || true
+
       - name: Report if dlib could not be installed
         if: steps.dlib.outcome != 'success'
         run: |

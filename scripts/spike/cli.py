@@ -36,6 +36,7 @@ from .embedders import DETECTORS
 from .errors import SpikeError
 from .frames import ImageSequenceFrames
 from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
+from .inspect import format_inspection, inspect_sets
 from .ledger import CostLedger
 from .matrix import FAILURE_TAGS, GOLF_BATTERY, Condition, coverage, coverage_gaps, sample_matrix
 from .models import MODELS, config_snippet, fetch, sha256_of, write_paths
@@ -765,6 +766,42 @@ def cmd_fetch_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_inspect(args: argparse.Namespace) -> int:
+    """Per-image view of a calibration, for checking a headline against your eye.
+
+    A distribution cannot tell you whether a clean separation is real or an
+    artefact of how the sets were built. For that you need the closest call in
+    each direction, and to go and look at those two images.
+    """
+    cfg = load_config(args.config)
+    run_dir = _run_dir(cfg, args.run)
+    embedder = _embedder(cfg, args.embedder)
+
+    ins = inspect_sets(
+        embedder,
+        _stills_in(run_dir / "master", "master"),
+        _stills_in(run_dir / "control", "control"),
+    )
+    print(format_inspection(ins, show=args.show))
+
+    RunLog(run_dir).write_artifact(
+        f"inspection_{embedder.info.backend}.json",
+        {
+            "embedder_key": ins.embedder_key,
+            "margin": ins.margin,
+            "master": [
+                {"name": s.name, "similarity": s.similarity, "status": s.status} for s in ins.master
+            ],
+            "control": [
+                {"name": s.name, "similarity": s.similarity, "status": s.status}
+                for s in ins.control
+            ],
+        },
+    )
+    margin = ins.margin
+    return 0 if margin is not None and margin > 0 else 1
+
+
 def cmd_bake_off(args: argparse.Namespace) -> int:
     """Calibrate several embedder backends on the same data and compare.
 
@@ -1036,6 +1073,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="also fetch an alternative file, e.g. dlib-densenet",
     )
     sp.set_defaults(func=cmd_fetch_models)
+
+    sp = sub.add_parser(
+        "inspect", help="per-image similarities, to check a calibration against your eye"
+    )
+    add_run(sp)
+    add_embedder(sp)
+    sp.add_argument("--show", type=int, default=8, help="rows per set (default 8)")
+    sp.set_defaults(func=cmd_inspect)
 
     sp = sub.add_parser("bake-off", help="ADR 0002: calibrate several backends side by side")
     add_run(sp)
