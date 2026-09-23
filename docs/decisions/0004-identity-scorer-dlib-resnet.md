@@ -104,6 +104,10 @@ use the caveat is about.
   registered and the bake-off compares them in one command.
 - Every threshold measured under DINOv2 is void (amendment A3, enforced in
   code, not by discipline).
+- **The separation is thin but verified.** The owner confirmed by eye on
+  2026-09-23 that the closest stranger (`h_005.jpg`, 0.9523) is clearly a
+  different woman. The scorer and the eye agree on the hardest case, which is
+  what "EXCELLENT" needed before it could be relied on.
 - **Perfect separation on 45 images is a claim under test, not a result.**
   `cli.py inspect` reports every image's similarity to the master centroid and
   names the two that decide it — her weakest frame and the closest stranger.

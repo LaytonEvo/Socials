@@ -130,9 +130,17 @@ warning now fires where it should.
 - **The master set is synthetic,** so within-set similarity partly measures the
   generator's consistency, not identity (ADR 0002 Finding 3).
 - **Stills, not video.** No temporal drift, no lip-sync, no compression.
-- **The worst-frame contact sheet has still not been looked at by a human.**
-  A scorer that agrees with the statistics and disagrees with your eye is still
-  the wrong scorer.
+- **The decisive control image has now been checked by eye.** The owner
+  confirmed 2026-09-23 that `h_005.jpg` — the stranger scoring 0.9523, closest
+  of the 15 — is clearly a different woman. That is the check the statistics
+  could not do: the scorer and the eye agree on the hardest case, so the
+  0.0243 margin is measuring identity rather than an artefact of how the two
+  sets were built.
+- **The master side of that pair has not been checked.** `m_026.jpg` is her
+  weakest image at 0.9766 and the threshold sits 0.0018 under it. If that
+  render is slightly off-model, the threshold is anchored to a bad image and
+  should be higher; if it is a good likeness, the anchor is honest. Worth two
+  minutes before the threshold is written to config.
 
 ## What would change the verdict
 
