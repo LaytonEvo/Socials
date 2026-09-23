@@ -1,0 +1,270 @@
+"""The fal adapter, against the contract recorded in ADR 0006.
+
+Every fixture response here is shaped from fal's own documented examples, read
+2026-09-23. No network, no key: the transport is injected, which is the point
+of it being injectable.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from scripts.spike.config import ProviderConfig
+from scripts.spike.errors import ProviderFailed, ProviderNotConfigured, ProviderTimeout
+from scripts.spike.fal import (
+    FalClient,
+    FalVideoProvider,
+    first_media_url,
+    raise_if_failed,
+)
+from scripts.spike.providers import VideoRequest
+
+MODEL = "fal-ai/some-video-model"
+
+
+class FakeTransport:
+    """Records calls and replays queued responses."""
+
+    def __init__(self, responses: list[tuple[int, dict[str, object]]]):
+        self._responses = list(responses)
+        self.calls: list[tuple[str, str, dict[str, object] | None, dict[str, str]]] = []
+
+    def __call__(self, url, method, body, headers):
+        self.calls.append((url, method, json.loads(body) if body else None, headers))
+        if not self._responses:
+            raise AssertionError(f"unexpected extra call to {url}")
+        status, payload = self._responses.pop(0)
+        return status, json.dumps(payload).encode()
+
+
+def _client(responses, **kw) -> FalClient:
+    return FalClient(
+        api_key="test-key",
+        transport=FakeTransport(responses),
+        poll_interval_s=0,
+        sleep=lambda _s: None,
+        **kw,
+    )
+
+
+def _cfg() -> ProviderConfig:
+    import datetime as dt
+
+    return ProviderConfig(
+        slot="flagship",
+        kind="video",
+        backend="fal",
+        model=MODEL,
+        endpoint=None,
+        price=0.10,
+        price_unit="second",
+        verified_on=dt.date(2026, 9, 23),
+    )
+
+
+def test_auth_header_is_Key_not_Bearer():
+    """Verified 2026-09-23. Getting this wrong is a 401 on the first live call."""
+    c = _client([(200, {"request_id": "abc"})])
+    c.submit(MODEL, {"prompt": "x"})
+    _url, _m, _b, headers = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert headers["Authorization"] == "Key test-key"
+
+
+def test_submit_posts_arguments_unwrapped_to_the_queue_host():
+    """REST takes the arguments directly; `input:` is a client-library shape."""
+    c = _client([(200, {"request_id": "abc"})])
+    assert c.submit(MODEL, {"prompt": "a swing"}) == "abc"
+    url, method, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert url == f"https://queue.fal.run/{MODEL}"
+    assert method == "POST"
+    assert body == {"prompt": "a swing"}
+    assert "input" not in body
+
+
+def test_completed_carrying_an_error_is_a_failure():
+    """THE one a guessed adapter gets wrong. COMPLETED is terminal, not good."""
+    with pytest.raises(ProviderFailed, match="content_policy"):
+        raise_if_failed(
+            {"status": "COMPLETED", "error": "blocked", "error_type": "content_policy"}, "abc"
+        )
+
+
+def test_completed_without_an_error_passes():
+    raise_if_failed({"status": "COMPLETED", "metrics": {"inference_time": 3.4}}, "abc")
+
+
+def test_wait_polls_through_queue_and_progress_to_completed():
+    c = _client(
+        [
+            (200, {"status": "IN_QUEUE", "queue_position": 2}),
+            (200, {"status": "IN_PROGRESS", "logs": []}),
+            (200, {"status": "COMPLETED", "metrics": {"inference_time": 3.4}}),
+        ]
+    )
+    assert c.wait(MODEL, "abc")["status"] == "COMPLETED"
+
+
+def test_a_timeout_carries_the_request_id():
+    """A timed-out request may still have been billed, so it must stay traceable."""
+    ticks = iter([0.0, 0.0, 999.0, 999.0])
+    c = _client(
+        [(200, {"status": "IN_QUEUE", "queue_position": 1})] * 4,
+        timeout_s=10.0,
+    )
+    c.now = lambda: next(ticks)
+    with pytest.raises(ProviderTimeout) as excinfo:
+        c.wait(MODEL, "abc")
+    assert excinfo.value.request_id == "abc"
+    assert "reconcile" in str(excinfo.value)
+
+
+def test_an_unknown_status_stops_rather_than_guessing():
+    """ADR 0006 records three states. A fourth means the contract moved."""
+    c = _client([(200, {"status": "SOMETHING_NEW"})])
+    with pytest.raises(ProviderFailed, match="unrecognised status"):
+        c.wait(MODEL, "abc")
+
+
+def test_an_http_error_surfaces_the_status_and_detail():
+    c = _client([(401, {"detail": "Unauthorized"})])
+    with pytest.raises(ProviderFailed, match="401"):
+        c.submit(MODEL, {"prompt": "x"})
+
+
+def test_a_non_json_body_does_not_crash_with_a_decode_error():
+    def transport(url, method, body, headers):
+        return 502, b"<html>bad gateway</html>"
+
+    c = FalClient(api_key="k", transport=transport)
+    with pytest.raises(ProviderFailed, match="not JSON"):
+        c.submit(MODEL, {"prompt": "x"})
+
+
+def test_submission_without_a_request_id_is_refused():
+    c = _client([(200, {"queue_position": 0})])
+    with pytest.raises(ProviderFailed, match="no request_id"):
+        c.submit(MODEL, {"prompt": "x"})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"video": {"url": "https://v3.fal.media/x.mp4"}},
+        {"videos": [{"url": "https://v3.fal.media/x.mp4"}]},
+        {"images": [{"url": "https://v3.fal.media/x.mp4"}]},
+        {"url": "https://v3.fal.media/x.mp4"},
+        {"outputs": ["https://v3.fal.media/x.mp4"]},
+    ],
+)
+def test_media_url_is_found_across_per_model_output_shapes(payload):
+    assert first_media_url(payload) == "https://v3.fal.media/x.mp4"
+
+
+def test_an_unrecognisable_result_names_its_keys():
+    """So the next person knows which model page to go and read."""
+    with pytest.raises(ProviderFailed, match="no recognisable media URL"):
+        first_media_url({"weird": 1, "other": 2})
+
+
+def test_generate_runs_submit_wait_result_then_downloads(tmp_path):
+    c = _client(
+        [
+            (200, {"request_id": "abc"}),
+            (200, {"status": "COMPLETED", "metrics": {"inference_time": 5.0}}),
+            (200, {"video": {"url": "https://v3.fal.media/clip.mp4"}}),
+        ]
+    )
+    downloaded: list[str] = []
+
+    def fake_download(url: str, dest: Path) -> Path:
+        downloaded.append(url)
+        dest.write_bytes(b"MP4")
+        return dest
+
+    provider = FalVideoProvider(
+        _cfg(),
+        client=c,
+        download=fake_download,
+        resolve_keyframe=lambda _p: "https://example.com/her.jpg",
+    )
+    dest = tmp_path / "clip.mp4"
+    out = provider.generate(
+        VideoRequest(
+            keyframe=tmp_path / "her.jpg",
+            prompt="a swing",
+            duration_s=5.0,
+            seed=1,
+            ref="t1",
+        ),
+        dest,
+    )
+    assert out.read_bytes() == b"MP4"
+    assert downloaded == ["https://v3.fal.media/clip.mp4"]
+    # The resolved URL is what actually got submitted, not the local path.
+    _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body is not None and body["image_url"] == "https://example.com/her.jpg"
+    # And the resolved keyframe URL is what was submitted.
+    _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body["image_url"] == "https://example.com/her.jpg"
+
+
+def test_generate_refuses_a_local_keyframe_rather_than_inventing_an_upload(tmp_path):
+    """fal's upload API is in ADR 0006's 'not verified' list. Do not guess it."""
+    provider = FalVideoProvider(_cfg(), client=_client([]), download=lambda u, d: d)
+    with pytest.raises(ProviderNotConfigured, match="not yet verified"):
+        provider.generate(
+            VideoRequest(
+                keyframe=tmp_path / "local.jpg", prompt="p", duration_s=5, seed=1, ref="t1"
+            ),
+            tmp_path / "out.mp4",
+        )
+
+
+def test_generate_refuses_a_slot_with_no_model_id():
+    import dataclasses
+
+    cfg = dataclasses.replace(_cfg(), model=None)
+    provider = FalVideoProvider(cfg, client=_client([]), download=lambda u, d: d)
+    with pytest.raises(ProviderNotConfigured, match="no model id"):
+        provider.generate(
+            VideoRequest(
+                keyframe=Path("https://x/y.jpg"), prompt="p", duration_s=5, seed=1, ref="t1"
+            ),
+            Path("out.mp4"),
+        )
+
+
+def test_no_api_key_in_the_environment_is_refused(monkeypatch):
+    monkeypatch.delenv("FAL_KEY", raising=False)
+    with pytest.raises(ProviderNotConfigured, match="FAL_KEY"):
+        FalVideoProvider(_cfg())
+
+
+def test_the_adapter_never_retries_a_submission_itself():
+    """fal retries internally up to 10 times (ADR 0006). Stacking would multiply spend."""
+    c = _client([(500, {"detail": "boom"})])
+    with pytest.raises(ProviderFailed):
+        c.submit(MODEL, {"prompt": "x"})
+    assert len(c.transport.calls) == 1  # type: ignore[attr-defined]
+
+
+def test_the_fal_backend_is_reachable_through_the_registry(monkeypatch):
+    """Registration is lazy to avoid a circular import; prove it still resolves."""
+    from scripts.spike.providers import load_provider
+
+    monkeypatch.setenv("FAL_KEY", "k")
+    provider = load_provider(_cfg())
+    assert provider.name == "fal-video"
+
+
+def test_an_unregistered_video_backend_lists_what_is_registered():
+    import dataclasses
+
+    from scripts.spike.errors import ProviderNotConfigured as PNC
+    from scripts.spike.providers import load_provider
+
+    with pytest.raises(PNC, match="fal"):
+        load_provider(dataclasses.replace(_cfg(), backend="nope"))

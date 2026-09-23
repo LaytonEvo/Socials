@@ -6,11 +6,14 @@ one of them through the cost ledger, with no pretence of being the production
 abstraction. The real protocols are designed in Phase 0, informed by what this
 spike learns about polling, failure modes and cost reporting.
 
-Real backends are unimplemented on purpose. Implementing one means first
-verifying the provider's current API, auth and parameters against its official
-documentation and recording the result in docs/decisions/ -- CLAUDE.md
-non-negotiable rule 1. A stub that guessed at an endpoint would violate exactly
-the rule the project cares most about.
+Implementing a real backend means first verifying the provider's current API,
+auth and parameters against its official documentation and recording the result
+in docs/decisions/ -- CLAUDE.md non-negotiable rule 1. A stub that guessed at an
+endpoint would violate exactly the rule the project cares most about.
+
+fal.ai is implemented on that basis in `fal.py`, against the contract recorded
+in docs/decisions/0006-fal-api-contract.md. Every other backend is still
+unimplemented on purpose.
 
 The fake backends generate offline fixture media so the whole pipeline can be
 run and validated before a penny is spent.
@@ -273,6 +276,20 @@ class FakeLipSyncProvider:
         return Image.fromarray(arr.astype(np.uint8))
 
 
+def _fal_video(cfg: ProviderConfig) -> Any:
+    """Built on demand so this module imports no backend.
+
+    fal.py imports the request types defined above, so importing it at module
+    level here would be circular. Deferring to call time removes the cycle
+    entirely rather than relying on import ordering, which is the kind of thing
+    that works until someone moves a line.
+    """
+    from .fal import FalVideoProvider
+
+    return FalVideoProvider(cfg)
+
+
+register_provider("video", "fal", _fal_video)
 register_provider("image", "fake", lambda cfg: FakeImageProvider(cfg))
 register_provider("video", "fake", lambda cfg: FakeVideoProvider(cfg))
 register_provider("lipsync", "fake", lambda cfg: FakeLipSyncProvider(cfg))

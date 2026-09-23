@@ -74,3 +74,25 @@ class FakeDataInReport(SpikeError):
 
 class FfmpegMissing(SpikeError):
     """Frame extraction from video needs ffmpeg on PATH."""
+
+
+class ProviderFailed(SpikeError):
+    """A provider accepted a request, took the money, and did not deliver.
+
+    Distinct from a configuration error: nothing is wrong with the setup, the
+    generation itself failed. On fal this is a request that reaches COMPLETED
+    carrying an ``error`` -- a terminal state that is not success (ADR 0006).
+    """
+
+
+class ProviderTimeout(SpikeError):
+    """A queued request did not reach a terminal state in the time allowed.
+
+    The money may still have been spent, so this is never treated as "nothing
+    happened": the request id is carried on the exception so the run can be
+    reconciled against the provider later.
+    """
+
+    def __init__(self, message: str, request_id: str | None = None) -> None:
+        super().__init__(message)
+        self.request_id = request_id
