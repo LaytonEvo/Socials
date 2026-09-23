@@ -1,8 +1,7 @@
-# Runs a real calibration on real images.
+# Calibration on real images.
 #
 # Exists because the environment this project is developed in blocks
-# huggingface.co, so the DINOv2 weights cannot be downloaded there and no
-# calibration has ever run on anything but synthetic fixtures. A GitHub runner
+# huggingface.co and dlib.net, so no calibration can run there. A GitHub runner
 # has open egress.
 
 name: Calibration
@@ -14,12 +13,13 @@ on:
     paths:
       - "spike/data/**"
       - "scripts/spike/**"
+      - "config/spike.yaml"
       - ".github/workflows/calibrate.yml"
 
 jobs:
   calibrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
@@ -27,63 +27,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install
+      - name: Install the harness and DINOv2
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dinov2]"
 
-      - name: Fetch the face detector
-        run: |
-          python -m scripts.spike.cli fetch-models --backend dinov2 \
-            --dest models --write-config
-
-      # Two calibrations against the SAME master set, differing only in what
-      # counts as "a different person". The easy control is mixed ages and
-      # sexes; the hard one is young women of the same type. The gap between
-      # them is the measurement that matters, because the drift a video model
-      # actually produces looks like the hard control, not the easy one.
-
-      - name: Calibrate against the EASY control (mixed ages and sexes)
-        run: |
-          python -m scripts.spike.cli init-run --run easy --note "easy control"
-          python -m scripts.spike.cli prepare-set spike/data/master --run easy --which master
-          python -m scripts.spike.cli prepare-set spike/data/control --run easy --which control
-          python -m scripts.spike.cli calibrate --run easy --target-fpr 0.01
-
-      - name: Calibrate against the HARD control (young women, same type)
-        if: always()
-        run: |
-          python -m scripts.spike.cli init-run --run hard --note "hard control"
-          python -m scripts.spike.cli prepare-set spike/data/master --run hard --which master
-          python -m scripts.spike.cli prepare-set spike/data/control_hard --run hard --which control
-          python -m scripts.spike.cli calibrate --run hard --target-fpr 0.01
-
-      - name: Side by side
-        if: always()
-        run: |
-          python - <<'PY'
-          import json, pathlib
-          rows = []
-          for name in ("easy", "hard"):
-              p = pathlib.Path(f"spike/runs/{name}/calibration.json")
-              if not p.exists():
-                  print(f"{name}: no calibration"); continue
-              c = json.loads(p.read_text())
-              rows.append((name, c))
-          print(f"\n{'control':<8} {'verdict':<10} {'overlap':>8} {'auc':>8} "
-                f"{'thresh':>8} {'tpr':>7} {'neg mean':>9} {'neg max':>8}")
-          print("-" * 70)
-          for name, c in rows:
-              print(f"{name:<8} {c['verdict']:<10} {c['overlap']:>8.4f} {c['auc']:>8.4f} "
-                    f"{c['threshold']:>8.4f} {c['tpr_at_threshold']:>7.4f} "
-                    f"{c['negatives']['mean']:>9.4f} {c['negatives']['max']:>8.4f}")
-          PY
-
-      # ADR 0002 kept dlib wired up as the fallback for exactly the case the
-      # hard control has now produced. dlib builds from source, so the install
-      # is allowed to fail without taking the DINOv2 results down with it.
+      # dlib builds from source, so it is allowed to fail without taking the
+      # DINOv2 results down with it.
       - name: Install dlib
         id: dlib
         continue-on-error: true
@@ -92,14 +44,53 @@ jobs:
           sudo apt-get install -y -qq cmake build-essential
           pip install dlib
 
-      - name: Fetch the dlib models (both variants)
-        if: steps.dlib.outcome == 'success'
+      # Every model is fetched BEFORE anything runs. Fetching them between
+      # calibration steps made the job depend on which backend config happened
+      # to name as default, and switching that default broke the steps above it.
+      - name: Fetch every model
         run: |
-          python -m scripts.spike.cli fetch-models --backend dlib \
-            --dest models --write-config
-          python -m scripts.spike.cli fetch-models --backend dlib-densenet \
-            --dest models --write-config
-          grep -n "recognition_model:\|shape_predictor:" config/spike.yaml
+          python -m scripts.spike.cli fetch-models --backend dinov2 --dest models --write-config
+          if [ "${{ steps.dlib.outcome }}" = "success" ]; then
+            python -m scripts.spike.cli fetch-models --backend dlib --dest models --write-config
+            python -m scripts.spike.cli fetch-models --backend dlib-densenet \
+              --dest models --write-config
+          fi
+          grep -n "recognition_model:\|shape_predictor:\|detector_model:" config/spike.yaml
+
+      # Sets are prepared with DINOv2/YuNet in both runs so that every backend
+      # is scored on an identical selection of images. Preparing with each
+      # backend's own detector would let them disagree about which images are
+      # usable, and the comparison would no longer be like for like.
+      - name: Build the two runs
+        run: |
+          for run in easy hard; do
+            python -m scripts.spike.cli init-run --run $run --note "$run control"
+            python -m scripts.spike.cli prepare-set spike/data/master \
+              --run $run --which master --embedder dinov2
+          done
+          python -m scripts.spike.cli prepare-set spike/data/control \
+            --run easy --which control --embedder dinov2
+          python -m scripts.spike.cli prepare-set spike/data/control_hard \
+            --run hard --which control --embedder dinov2
+
+      - name: How much did control difficulty matter? (DINOv2, easy vs hard)
+        run: |
+          python -m scripts.spike.cli calibrate --run easy --embedder dinov2 --target-fpr 0.01
+          python -m scripts.spike.cli calibrate --run hard --embedder dinov2 --target-fpr 0.01
+          python - <<'PY'
+          import json, pathlib
+          print(f"\n{'control':<8} {'verdict':<10} {'overlap':>8} {'auc':>8} "
+                f"{'thresh':>8} {'tpr':>7} {'neg mean':>9}")
+          print("-" * 62)
+          for name in ("easy", "hard"):
+              p = pathlib.Path(f"spike/runs/{name}/calibration.json")
+              if not p.exists():
+                  print(f"{name}: none"); continue
+              c = json.loads(p.read_text())
+              print(f"{name:<8} {c['verdict']:<10} {c['overlap']:>8.4f} {c['auc']:>8.4f} "
+                    f"{c['threshold']:>8.4f} {c['tpr_at_threshold']:>7.4f} "
+                    f"{c['negatives']['mean']:>9.4f}")
+          PY
 
       - name: Bake-off on the HARD control — all three candidates
         if: steps.dlib.outcome == 'success'
@@ -110,18 +101,12 @@ jobs:
       - name: Report if dlib could not be installed
         if: steps.dlib.outcome != 'success'
         run: |
-          echo "dlib did not install; the bake-off did not run."
+          echo "dlib did not install, so the bake-off did not run."
           echo "The DINOv2 calibrations above are unaffected."
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: calibration
-          path: |
-            spike/runs/easy/calibration.json
-            spike/runs/hard/calibration.json
-            spike/runs/hard/calibration_dinov2.json
-            spike/runs/hard/calibration_dlib.json
-            spike/runs/hard/calibration_dlib-densenet.json
-            spike/runs/hard/bake_off.json
+          path: spike/runs/*/*.json
           if-no-files-found: warn
