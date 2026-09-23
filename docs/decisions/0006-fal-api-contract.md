@@ -56,6 +56,29 @@ There is also a synchronous `https://fal.run/{model_id}`, and a `subscribe`
 helper in the client libraries that polls for you. The queue is what fal
 recommends for production and is what the adapter uses.
 
+## COMPLETED can also mean "never validated", and the status does not say so
+
+Found by accident on 2026-09-23, by submitting a request with a missing
+required field. The documented behaviour is that a failed request reaches
+`COMPLETED` carrying `error` and `error_type`. This one reached `COMPLETED`
+with **`error: None`**, `metrics.inference_time` of 0.049s, and nothing else to
+suggest a problem. The validation failure appeared only when the *result* was
+fetched:
+
+```
+GET .../requests/{id}   ->  422
+{"detail":[{"type":"missing","loc":["body","image_url"],"msg":"Field required"}]}
+```
+
+So a clean-looking status is not sufficient to conclude a request worked.
+`raise_if_failed` on the status remains necessary and is not sufficient; the
+result fetch is the second gate, and the adapter treats **422 as free
+everywhere** rather than only on submit, because a body fal rejected was never
+run no matter which call reports it.
+
+The near-zero `inference_time` is the tell, and it is worth remembering as a
+smoke test: a five-second clip that took 0.05s to infer did not happen.
+
 ## Four things a guessed implementation would have got wrong
 
 These are the reason rule 1 exists, and each is load-bearing:

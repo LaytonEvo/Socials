@@ -459,3 +459,23 @@ def test_an_error_body_that_uses_error_instead_of_detail_is_still_surfaced():
     c = _client([(403, {"error": {"type": "authorization_error"}})])
     with pytest.raises(ProviderRefused, match="authorization_error"):
         c.submit(MODEL, {"prompt": "x"})
+
+
+def test_a_422_is_free_even_when_it_surfaces_late():
+    """fal validates late: a request missing a required field reaches
+    COMPLETED with error: None, and only the result fetch returns 422. Nothing
+    ran either way, so it must not be charged."""
+    from scripts.spike.errors import ProviderRefused
+
+    c = _client([(422, {"detail": [{"type": "missing", "loc": ["body", "image_url"]}]})])
+    with pytest.raises(ProviderRefused) as excinfo:
+        c.result(MODEL, "abc")
+    assert excinfo.value.billable is False
+
+
+def test_a_completed_status_with_no_error_does_not_prove_success():
+    """It passed raise_if_failed and was still a validation failure. The
+    result fetch is the second gate, not a formality."""
+    raise_if_failed(
+        {"status": "COMPLETED", "error": None, "metrics": {"inference_time": 0.049}}, "a"
+    )

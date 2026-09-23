@@ -129,7 +129,11 @@ class FalClient:
             if detail is None and isinstance(parsed, dict):
                 detail = parsed.get("error") or parsed.get("message")
             said = detail or (raw[:200].decode("utf-8", "replace") or "(empty body)")
-            if 400 <= status < 500 and refusal_is_free:
+            # 422 means the request body itself was rejected, so nothing ran
+            # whichever call surfaces it -- and fal surfaces it late: a request
+            # with a missing field reaches COMPLETED with error: None, and only
+            # the result fetch returns the 422. See ADR 0006.
+            if status == 422 or (400 <= status < 500 and refusal_is_free):
                 # fal uses 403 for an exhausted balance as well as for bad
                 # credentials, and its own words are the only thing that tells
                 # them apart. Ours go second, and conditionally: leading with an
