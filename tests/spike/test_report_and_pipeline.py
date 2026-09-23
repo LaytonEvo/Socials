@@ -224,3 +224,29 @@ def test_budget_is_mandatory_on_every_spending_command():
     for command in ("run-matrix", "battery", "lipsync-probe"):
         with pytest.raises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             main([command])
+
+
+def test_a_rerun_replaces_output_of_a_different_shape(tmp_path, cfg_path=None):
+    """Regression: a paid clip was lost to IsADirectoryError.
+
+    The fake provider writes a clip as a directory of stills so it needs no
+    encoder; a hosted provider writes a single file. Re-running a ref after
+    switching provider therefore finds the wrong kind of thing in the way, and
+    the download died *after* the video had been generated and billed.
+    """
+    import shutil
+
+    clips = tmp_path / "clips"
+    stale = clips / "matrix-000"
+    stale.mkdir(parents=True)
+    (stale / "frame_000.png").write_bytes(b"old")
+
+    # What _generate_and_score now does before handing the path to a provider.
+    if stale.is_dir():
+        shutil.rmtree(stale)
+    elif stale.exists():
+        stale.unlink()
+
+    assert not stale.exists()
+    stale.write_bytes(b"MP4")  # the write that previously raised
+    assert stale.read_bytes() == b"MP4"

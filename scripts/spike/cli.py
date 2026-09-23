@@ -17,6 +17,7 @@ import csv
 import dataclasses
 import datetime as dt
 import json
+import shutil
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -363,6 +364,17 @@ def _generate_and_score(
             outcome.ok = True
 
     clip_path = run_dir / "clips" / ref
+    # Clear whatever is already there. Providers legitimately disagree about
+    # the shape of a clip -- the fake writes a directory of stills so it needs
+    # no encoder, a hosted one writes a single file -- so a re-run that changes
+    # provider finds the wrong kind of thing in the way. That cost a paid clip
+    # once: the video generated, and the download died on IsADirectoryError
+    # against a directory the previous dry run had left behind.
+    if clip_path.is_dir():
+        shutil.rmtree(clip_path)
+    elif clip_path.exists():
+        clip_path.unlink()
+
     # Record the provider's own id for the job the instant it is queued. A run
     # that dies between submitting and downloading has still been billed, and
     # without this the paid-for clip is unfindable -- which happened once, for
