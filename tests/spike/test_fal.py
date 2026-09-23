@@ -136,9 +136,24 @@ def test_an_http_error_surfaces_the_status_and_detail():
         c.submit(MODEL, {"prompt": "x"})
 
 
-def test_a_non_json_body_does_not_crash_with_a_decode_error():
+def test_an_error_with_an_html_body_reports_the_status_and_the_snippet():
+    """A gateway page is not JSON, but the status is the useful part and the
+    body is the detail. Reporting only "not JSON" buried both."""
+
     def transport(url, method, body, headers):
         return 502, b"<html>bad gateway</html>"
+
+    c = FalClient(api_key="k", transport=transport)
+    with pytest.raises(ProviderFailed, match="502") as excinfo:
+        c.submit(MODEL, {"prompt": "x"})
+    assert "bad gateway" in str(excinfo.value)
+
+
+def test_a_success_with_a_non_json_body_still_complains_about_the_body():
+    """Here the status says nothing is wrong, so the body is the whole story."""
+
+    def transport(url, method, body, headers):
+        return 200, b"not json at all"
 
     c = FalClient(api_key="k", transport=transport)
     with pytest.raises(ProviderFailed, match="not JSON"):
@@ -395,3 +410,52 @@ def test_generate_inlines_a_local_keyframe_by_default(tmp_path):
     _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
     assert body is not None
     assert str(body["image_url"]).startswith("data:image/jpeg;base64,")
+
+
+# --- who wasted what: refusals on submit are free, later failures are not ----
+
+
+def test_a_405_with_an_empty_body_is_free_not_billed():
+    """Regression from the second live run.
+
+    An empty-bodied 405 was reported as "a body that is not JSON" -- true,
+    useless, and charged $2 as though a runner had done the work. The status
+    classifies it; the body is only ever extra detail.
+    """
+    from scripts.spike.errors import ProviderRefused
+
+    def transport(url, method, body, headers):
+        return 405, b""
+
+    c = FalClient(transport=transport)
+    with pytest.raises(ProviderRefused) as excinfo:
+        c.submit(MODEL, {"prompt": "x"})
+    assert excinfo.value.billable is False
+    assert "405" in str(excinfo.value)
+    assert "empty body" in str(excinfo.value)
+
+
+def test_a_4xx_while_polling_is_billable_because_the_work_may_have_run():
+    """The submission already succeeded by then, so a later 4xx says nothing
+    about whether compute was spent. Assume it was."""
+    c = _client([(404, {"detail": "unknown request"})])
+    with pytest.raises(ProviderFailed) as excinfo:
+        c.wait(MODEL, "abc")
+    assert getattr(excinfo.value, "billable", True) is True
+
+
+def test_a_5xx_on_submit_is_billable_even_though_submit_refusals_are_free():
+    """Free applies to refusals, not to fal breaking. A 500 may mean a runner
+    started and then died, so it is charged."""
+    c = _client([(500, {"detail": "internal"})])
+    with pytest.raises(ProviderFailed) as excinfo:
+        c.submit(MODEL, {"prompt": "x"})
+    assert getattr(excinfo.value, "billable", True) is True
+
+
+def test_an_error_body_that_uses_error_instead_of_detail_is_still_surfaced():
+    from scripts.spike.errors import ProviderRefused
+
+    c = _client([(403, {"error": {"type": "authorization_error"}})])
+    with pytest.raises(ProviderRefused, match="authorization_error"):
+        c.submit(MODEL, {"prompt": "x"})

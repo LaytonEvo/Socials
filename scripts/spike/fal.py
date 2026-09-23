@@ -97,39 +97,65 @@ class FalClient:
             headers["Authorization"] = f"Key {self.api_key}"
         return headers
 
-    def _json(self, url: str, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
+    def _json(
+        self,
+        url: str,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
+        *,
+        refusal_is_free: bool = False,
+    ) -> Any:
+        """One request, with the failure classified by who wasted what.
+
+        ``refusal_is_free`` says whether a 4xx on *this* call means no work was
+        done. True for submitting: fal rejected the request, nothing ran, so it
+        costs nothing. False for polling and fetching results: the submission
+        already succeeded by then, so a later 4xx says nothing about whether
+        compute was spent, and the safe assumption is that it was.
+        """
         payload = json.dumps(body).encode() if body is not None else None
         status, raw = self.transport(url, method, payload, self._headers())
+
+        # Parse leniently and classify on the status. Parsing first meant a 405
+        # with an empty body was reported as "not JSON" -- true, useless, and
+        # billed as if a runner had done the work.
         try:
-            parsed = json.loads(raw)
+            parsed: Any = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
+            parsed = None
+
+        if status >= 400:
+            detail = parsed.get("detail") if isinstance(parsed, dict) else None
+            if detail is None and isinstance(parsed, dict):
+                detail = parsed.get("error") or parsed.get("message")
+            said = detail or (raw[:200].decode("utf-8", "replace") or "(empty body)")
+            if 400 <= status < 500 and refusal_is_free:
+                # fal uses 403 for an exhausted balance as well as for bad
+                # credentials, and its own words are the only thing that tells
+                # them apart. Ours go second, and conditionally: leading with an
+                # auth diagnosis once sent the reader to the wrong settings page
+                # for a problem that was about money.
+                raise ProviderRefused(
+                    f"fal refused the request ({status}): {said}\n"
+                    f"  If that is about credentials: {API_KEY_ENV} is "
+                    f"{'set' if self.api_key else 'NOT set'} in this process, so either "
+                    "set it or inject the header in front — not both, since two "
+                    "Authorization headers is its own failure.\n"
+                    "  If it is about balance, a lock, or the request shape, nothing in "
+                    "this process will fix it."
+                )
+            raise ProviderFailed(f"fal returned {status}: {said}")
+
+        if parsed is None:
             raise ProviderFailed(
                 f"fal returned {status} with a body that is not JSON: {raw[:200]!r}"
-            ) from None
-        if status in (401, 403):
-            # fal returns 403 for an exhausted balance as well as for bad
-            # credentials, and its own `detail` is the only thing that tells
-            # them apart. Leading with an auth diagnosis when the real problem
-            # was an empty account sends people to the wrong settings page --
-            # which it did, once. So: fal's words first, ours second.
-            detail = parsed.get("detail") if isinstance(parsed, dict) else None
-            raise ProviderRefused(
-                f"fal refused the request ({status}): {detail or 'no detail given'}\n"
-                f"  If that is about credentials: {API_KEY_ENV} is "
-                f"{'set' if self.api_key else 'NOT set'} in this process, so either set "
-                "it or inject the header in front — not both, since two Authorization "
-                "headers is its own failure.\n"
-                "  If it is about balance or a lock, nothing here will fix it: the "
-                "account needs attention before any call can run."
             )
-        if status >= 400:
-            detail = parsed.get("detail") if isinstance(parsed, dict) else parsed
-            raise ProviderFailed(f"fal returned {status}: {detail!r}")
         return parsed
 
     def submit(self, model_id: str, arguments: dict[str, Any]) -> str:
         """Queue a request and return its id. Does not wait."""
-        res = self._json(f"{QUEUE_ROOT}/{model_id}", "POST", arguments)
+        # A refusal here is free: nothing was queued, so no runner ran.
+        res = self._json(f"{QUEUE_ROOT}/{model_id}", "POST", arguments, refusal_is_free=True)
         request_id = res.get("request_id") if isinstance(res, dict) else None
         if not request_id:
             raise ProviderFailed(f"fal accepted the submission but returned no request_id: {res!r}")
