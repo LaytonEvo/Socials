@@ -234,3 +234,30 @@ def config_snippet(fetched: dict[str, Path]) -> str:
         lines.append("      licence: null            # <- YOU fill this in, verbatim")
         lines.append("      licence_verified_on: null  # <- date you read the text")
     return "\n".join(lines)
+
+
+def write_paths(config_path: Path, fetched: dict[str, Path]) -> list[str]:
+    """Fill the model paths into config, and ONLY the paths.
+
+    `licence` and `licence_verified_on` are left exactly as they are. A file
+    path is mechanical — it says where a file landed. A licence is a decision
+    about whether the terms are acceptable, and the gate in
+    `EmbedderConfig.require_usable` exists so a person makes it. Writing both
+    from here would quietly tick off the one that matters.
+    """
+    config_path = Path(config_path)
+    lines = config_path.read_text().splitlines()
+    wanted = {m.config_key: fetched[m.key] for m in MODELS if m.key in fetched}
+    written: list[str] = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for key, path in wanted.items():
+            if stripped.startswith(f"{key}:") and "null" in stripped:
+                indent = line[: len(line) - len(line.lstrip())]
+                lines[i] = f"{indent}{key}: {path}"
+                written.append(f"{key} -> {path}")
+                break
+
+    config_path.write_text("\n".join(lines) + "\n")
+    return written

@@ -180,3 +180,48 @@ def test_clashing_slots_are_flagged_in_the_snippet():
     snippet = config_snippet(fetched)
     assert "alternatives" in snippet
     assert "delete the other line" in snippet
+
+
+def test_write_paths_fills_paths_only(tmp_path):
+    """The licence gate must survive automation.
+
+    A path is mechanical — it says where a file landed. A licence is a decision
+    about whether the terms are acceptable. Writing both from a fetcher would
+    quietly tick off the one that matters.
+    """
+    from scripts.spike.models import write_paths
+
+    cfg = tmp_path / "spike.yaml"
+    cfg.write_text(
+        "embedder:\n"
+        "  backends:\n"
+        "    dinov2:\n"
+        "      detector_model: null\n"
+        "      licence: null\n"
+        "      licence_verified_on: null\n"
+    )
+    written = write_paths(cfg, {"yunet": Path("models/yunet.onnx")})
+
+    text = cfg.read_text()
+    assert "detector_model: models/yunet.onnx" in text
+    assert "licence: null" in text
+    assert "licence_verified_on: null" in text
+    assert written == ["detector_model -> models/yunet.onnx"]
+
+
+def test_write_paths_leaves_an_already_set_path_alone(tmp_path):
+    from scripts.spike.models import write_paths
+
+    cfg = tmp_path / "spike.yaml"
+    cfg.write_text("      detector_model: models/existing.onnx\n")
+    assert write_paths(cfg, {"yunet": Path("models/new.onnx")}) == []
+    assert "models/existing.onnx" in cfg.read_text()
+
+
+def test_write_paths_preserves_indentation(tmp_path):
+    from scripts.spike.models import write_paths
+
+    cfg = tmp_path / "spike.yaml"
+    cfg.write_text("embedder:\n  backends:\n    dinov2:\n      detector_model: null\n")
+    write_paths(cfg, {"yunet": Path("m/y.onnx")})
+    assert "      detector_model: m/y.onnx" in cfg.read_text()

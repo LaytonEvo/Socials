@@ -38,7 +38,7 @@ from .frames import ImageSequenceFrames
 from .ingest import format_report, ingest
 from .ledger import CostLedger
 from .matrix import FAILURE_TAGS, GOLF_BATTERY, Condition, coverage, coverage_gaps, sample_matrix
-from .models import MODELS, config_snippet, fetch, sha256_of
+from .models import MODELS, config_snippet, fetch, sha256_of, write_paths
 from .providers import (
     ImageRequest,
     LipSyncRequest,
@@ -733,9 +733,22 @@ def cmd_fetch_models(args: argparse.Namespace) -> int:
         print(f"    {model.licence_note}\n")
 
     print("=" * 72)
-    print("Then paste into config/spike.yaml, filling in the two blank fields:\n")
-    print(config_snippet(fetched))
-    print("\nThen: python -m scripts.spike.cli bake-off --backends dlib dinov2")
+    if args.write_config:
+        written = write_paths(Path(args.config), fetched)
+        if written:
+            print(f"Wrote into {args.config}:\n")
+            for line in written:
+                print(f"  {line}")
+            print(
+                "\nLicence fields were NOT touched. A path says where a file landed; a "
+                "\nlicence says the terms are acceptable, and that one is yours to set."
+            )
+        else:
+            print(f"Nothing to write — those paths are already set in {args.config}.")
+    else:
+        print("Then paste into config/spike.yaml, filling in the two blank fields:\n")
+        print(config_snippet(fetched))
+    print("\nThen: python -m scripts.spike.cli bake-off --backends dinov2")
     return 0
 
 
@@ -975,6 +988,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--dest", default="models", help="where to put them (default: models/)")
     sp.add_argument("--backend", choices=["dlib", "dinov2"], help="just one candidate")
     sp.add_argument("--force", action="store_true", help="re-download existing files")
+    sp.add_argument(
+        "--write-config",
+        action="store_true",
+        help="fill the downloaded paths into config. Licence fields are left alone.",
+    )
     sp.add_argument(
         "--include",
         nargs="+",
