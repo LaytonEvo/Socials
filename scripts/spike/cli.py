@@ -771,6 +771,42 @@ def _write_battery_sheet(
     return dest
 
 
+CDN_URLS_ARTIFACT = "cdn_urls.json"
+
+
+def _cdn_resolver(run_dir: Path) -> Any:
+    """Resolve a local clip to the provider CDN URL it came from.
+
+    Not every fal model accepts a data URI. The lip-sync model answers a
+    `data:` video with `file_download_error` on 2026-09-24, so the keyframe
+    trick does not generalise -- but every clip here was *generated* by fal and
+    still sits on its CDN, and a model can fetch it from there. Chaining two
+    fal models therefore needs no upload at all, which is the useful part: the
+    alternative was a vendor SDK dependency or hosting files ourselves (ADR
+    0006).
+
+    Reads a `cdn_urls.json` mapping ref -> URL written when the clips were
+    staged. Returns None when there is none, so callers fall back to whatever
+    the provider's own default is.
+    """
+    path = run_dir / CDN_URLS_ARTIFACT
+    if not path.exists():
+        return None
+    urls: dict[str, str] = json.loads(path.read_text())
+
+    def resolve(clip: Path) -> str:
+        url = urls.get(Path(clip).name)
+        if not url:
+            raise SpikeError(
+                f"No CDN url recorded for {Path(clip).name} in {path}. "
+                f"This provider cannot take a local file; record the url the "
+                f"clip was downloaded from, or host it yourself."
+            )
+        return url
+
+    return resolve
+
+
 def cmd_lipsync_probe(args: argparse.Namespace) -> int:
     """S0.8: does lip sync move the identity score, and by how much?"""
     cfg = load_config(args.config)
@@ -790,6 +826,9 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
 
     lip_cfg = cfg.provider("lipsync", args.lipsync_slot)
     provider = load_provider(lip_cfg)
+    resolver = _cdn_resolver(run_dir)
+    if resolver is not None and hasattr(provider, "resolve_clip"):
+        provider.resolve_clip = resolver
     duration = float(cfg.generation.get("clip_duration_s", 5))
     results: list[dict[str, Any]] = []
     for s in before:
