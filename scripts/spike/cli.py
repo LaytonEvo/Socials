@@ -555,6 +555,14 @@ def cmd_battery(args: argparse.Namespace) -> int:
     cal = _load_calibration(run_dir)
 
     takes = args.takes or int(cfg.generation.get("takes_per_battery_prompt", 2))
+    keyframe_dir = getattr(args, "keyframes", None)
+    keyframes: list[Path] = []
+    if keyframe_dir:
+        keyframes = _stills_in(Path(keyframe_dir), "keyframes")
+        print(f"using {len(keyframes)} existing keyframes from {keyframe_dir}")
+    retries = int(cfg.generation.get("refusal_retries", 3))
+    skipped: list[tuple[str, str]] = []
+    max_skips = max(3, (len(GOLF_BATTERY) * len(args.video_slots) * takes) // 3)
     slots = args.video_slots
     seed = int(cfg.generation.get("seed", 0))
     rows: list[dict[str, Any]] = []
@@ -566,7 +574,8 @@ def cmd_battery(args: argparse.Namespace) -> int:
                 ref = f"battery-{item['id']}-{slot}-{take}"
                 prompt = f"{args.subject}, {item['prompt']}"
                 try:
-                    score = _generate_and_score(
+                    score = _generate_with_retry(
+                        attempts=retries,
                         cfg=cfg,
                         run_dir=run_dir,
                         log=log,
@@ -579,12 +588,29 @@ def cmd_battery(args: argparse.Namespace) -> int:
                         seed=seed + len(rows),
                         image_slot=args.image_slot,
                         video_slot=slot,
+                        keyframe=keyframes[len(rows) % len(keyframes)] if keyframes else None,
                     )
-                except SpikeError as exc:
+                except (BudgetExceeded, BudgetNotSet) as exc:
                     log.event("battery_halted", ref=ref, error=str(exc))
                     print(f"halted: {exc}", file=sys.stderr)
                     _write_battery_sheet(run_dir, rows)
                     return 1
+                except SpikeError as exc:
+                    # Same reasoning as the matrix: one shot the provider will
+                    # not produce must not end the battery, and a shot never
+                    # generated is missing evidence rather than a bad take.
+                    skipped.append((ref, str(exc)))
+                    log.event("battery_cell_skipped", ref=ref, error=str(exc))
+                    print(f"  {ref}: SKIPPED ({str(exc).splitlines()[0][:70]})")
+                    if len(skipped) >= max_skips:
+                        log.event("battery_halted", ref=ref, error=f"{len(skipped)} skipped")
+                        print(
+                            f"stopping: {len(skipped)} shots could not be generated.",
+                            file=sys.stderr,
+                        )
+                        _write_battery_sheet(run_dir, rows)
+                        return 1
+                    continue
                 scores.append(score)
                 rows.append(
                     {
@@ -1169,6 +1195,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--subject", default="the persona")
     sp.add_argument("--image-slot", default="primary")
     sp.add_argument("--video-slots", nargs="+", default=["flagship", "budget"])
+    sp.add_argument(
+        "--keyframes",
+        help="a directory of existing stills to animate, instead of generating "
+        "keyframes from the image provider (which is the S0.4 LoRA, not yet built).",
+    )
     sp.set_defaults(func=cmd_battery)
 
     sp = sub.add_parser("lipsync-probe", help="S0.8 identity drift through lip sync")
