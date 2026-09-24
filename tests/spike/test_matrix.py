@@ -3,6 +3,8 @@ sample actually covers every condition."""
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from scripts.spike.matrix import (
@@ -95,3 +97,62 @@ def test_shot_filter_rejects_an_unknown_id():
     assert [item["id"] for item in picked] == ["glance_back", "point_to_green"]
     with pytest.raises(ValueError, match="typo"):
         select_shots(COVERAGE_PROBE, ["glance_back", "typo"], "coverage")
+
+
+def test_a_refused_keyframe_does_not_jam_the_rest_of_the_run(monkeypatch, tmp_path):
+    """Three coverage-probe shots were refused in a row against one still.
+
+    Indexing advanced only on success, so a keyframe that draws
+    no_media_generated was handed to every subsequent shot for ever. A refusal
+    is free, and is specific to the (keyframe, prompt) pair, so the next still
+    is tried instead.
+    """
+    from scripts.spike import cli
+    from scripts.spike.errors import ProviderRefused
+
+    frames = [tmp_path / f"kf_{i}.png" for i in range(3)]
+    bad = frames[1]
+    seen = []
+
+    def fake_generate(*, keyframe, **kwargs):
+        seen.append(keyframe)
+        if keyframe == bad:
+            raise ProviderRefused("no media", error_type="no_media_generated")
+        return f"score-for-{keyframe.name}"
+
+    monkeypatch.setattr(cli, "_generate_with_retry", fake_generate)
+
+    # Starting on the bad still, it moves on rather than giving up.
+    score, cursor = cli._generate_trying_keyframes(frames, 1)
+    assert cast(str, score) == "score-for-kf_2.png"
+    assert seen == [bad, frames[2]]
+    # And the cursor advances, so the next shot does not start on the same one.
+    assert cursor == 3
+
+
+def test_every_keyframe_refused_still_raises(monkeypatch, tmp_path):
+    from scripts.spike import cli
+    from scripts.spike.errors import ProviderRefused
+
+    frames = [tmp_path / f"kf_{i}.png" for i in range(2)]
+
+    def always_refuse(*, keyframe, **kwargs):
+        raise ProviderRefused("no media", error_type="no_media_generated")
+
+    monkeypatch.setattr(cli, "_generate_with_retry", always_refuse)
+    with pytest.raises(ProviderRefused):
+        cli._generate_trying_keyframes(frames, 0)
+
+
+def test_resuming_a_prompt_set_keeps_the_shots_already_paid_for(tmp_path):
+    """--shots writes a subset; overwriting would discard generated clips."""
+    from scripts.spike.cli import _write_battery_sheet
+
+    _write_battery_sheet(tmp_path, [{"ref": "a", "verdict": "pass"}], "coverage")
+    _write_battery_sheet(tmp_path, [{"ref": "b", "verdict": "fail"}], "coverage")
+
+    import csv as _csv
+
+    with (tmp_path / "coverage_ratings.csv").open(newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    assert [r["ref"] for r in rows] == ["a", "b"]

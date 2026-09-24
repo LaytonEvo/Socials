@@ -558,6 +558,34 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
     return 0
 
 
+def _generate_trying_keyframes(
+    keyframes: list[Path], start: int, **kwargs: Any
+) -> tuple[ClipScore, int]:
+    """Generate a shot, moving to another keyframe if one is refused outright.
+
+    ``no_media_generated`` is deterministic for a given (keyframe, prompt)
+    pair -- one master still failed four times out of four (ADR 0006) -- so
+    retrying it unchanged spends time to learn nothing, but retrying it with a
+    different still is a genuinely different request. Refused calls are never
+    billed, so this costs time only.
+
+    Indexing used to advance only on success, which meant one bad still jammed
+    every shot after it: three of the six coverage-probe shots were refused in
+    a row on 2026-09-24, all against the same keyframe.
+    """
+    if not keyframes:
+        return _generate_with_retry(keyframe=None, **kwargs), start
+    last: ProviderRefused | None = None
+    for offset in range(len(keyframes)):
+        index = (start + offset) % len(keyframes)
+        try:
+            return _generate_with_retry(keyframe=keyframes[index], **kwargs), index + 1
+        except ProviderRefused as exc:
+            last = exc
+    assert last is not None
+    raise last
+
+
 def cmd_battery(args: argparse.Namespace) -> int:
     """Generate the golf battery and emit a rating sheet for manual scoring."""
     cfg = load_config(args.config)
@@ -590,6 +618,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
     seed = int(cfg.generation.get("seed", 0))
     rows: list[dict[str, Any]] = []
     scores: list[ClipScore] = []
+    keyframe_cursor = 0
 
     for item in items:
         for slot in slots:
@@ -597,7 +626,9 @@ def cmd_battery(args: argparse.Namespace) -> int:
                 ref = f"{prefix}-{item['id']}-{slot}-{take}"
                 prompt = f"{args.subject}, {item['prompt']}"
                 try:
-                    score = _generate_with_retry(
+                    score, keyframe_cursor = _generate_trying_keyframes(
+                        keyframes,
+                        keyframe_cursor,
                         attempts=retries,
                         cfg=cfg,
                         run_dir=run_dir,
@@ -611,7 +642,6 @@ def cmd_battery(args: argparse.Namespace) -> int:
                         seed=seed + len(rows),
                         image_slot=args.image_slot,
                         video_slot=slot,
-                        keyframe=keyframes[len(rows) % len(keyframes)] if keyframes else None,
                     )
                 except (BudgetExceeded, BudgetNotSet) as exc:
                     log.event("battery_halted", ref=ref, error=str(exc))
@@ -686,6 +716,15 @@ def _write_battery_sheet(
     dest = run_dir / f"{prefix}_ratings.csv"
     if not rows:
         return dest
+    # --shots runs a subset, so these rows are a subset too. Overwriting would
+    # drop shots already generated and paid for; merge on ref instead, newest
+    # winning, so resuming a part-finished set accumulates.
+    if dest.exists():
+        with dest.open(newline="", encoding="utf-8") as fh:
+            previous = {r["ref"]: r for r in csv.DictReader(fh)}
+        fresh = {r["ref"]: r for r in rows}
+        merged = {**previous, **fresh}
+        rows = [merged[ref] for ref in sorted(merged)]
     with dest.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()

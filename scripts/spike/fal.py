@@ -30,6 +30,7 @@ import io
 import json
 import mimetypes
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -67,6 +68,19 @@ def urllib_transport(
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
+
+
+def _redact_data_uris(detail: Any) -> str:
+    """Strip inlined base64 from anything destined for a log or an exception.
+
+    fal echoes the whole request back in a 422, keyframe included, and that
+    keyframe is a multi-megabyte data URI. Logged verbatim it took a single
+    run's run.jsonl to 3.3 MB and made the actual error unreadable. The bytes
+    are ours already -- the file is on disk -- so nothing is lost by cutting
+    them.
+    """
+    text = detail if isinstance(detail, str) else repr(detail)
+    return re.sub(r"data:[\w./+-]+;base64,[A-Za-z0-9+/=]+", "data:<redacted>", text)
 
 
 @dataclass
@@ -166,7 +180,9 @@ class FalClient:
             detail = parsed.get("detail") if isinstance(parsed, dict) else None
             if detail is None and isinstance(parsed, dict):
                 detail = parsed.get("error") or parsed.get("message")
-            said = detail or (raw[:200].decode("utf-8", "replace") or "(empty body)")
+            said = _redact_data_uris(
+                detail or (raw[:200].decode("utf-8", "replace") or "(empty body)")
+            )
             # 422 means the request body itself was rejected, so nothing ran
             # whichever call surfaces it -- and fal surfaces it late: a request
             # with a missing field reaches COMPLETED with error: None, and only
