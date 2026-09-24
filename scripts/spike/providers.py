@@ -49,6 +49,15 @@ class VideoRequest:
     duration_s: float
     seed: int
     ref: str
+    #: Optional second still pinning the LAST frame. Supplying it asks the
+    #: provider for first/last-frame conditioning: the model interpolates
+    #: between two known states instead of inventing the end of the motion.
+    #: That is the fix for the one reproducible Veo failure measured so far --
+    #: a face that leaves frame and returns comes back reconstructed rather
+    #: than continued (docs/reports/occlusion-return-failure-2026-09-24.md).
+    #: Which model id can accept it is a config question, not a code one; a
+    #: model that cannot returns a free 422 saying so.
+    last_keyframe: Path | None = None
 
 
 @dataclass

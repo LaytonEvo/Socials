@@ -171,6 +171,25 @@ providers:
       # to be wrong in. Revisit once a real invoice can be compared (ADR 0006).
       price_usd_per_second: 0.40
       verified_on: 2026-09-23
+    flf_fast:            # first/last-frame conditioning, Fast tier
+      # Pins BOTH ends of the motion. The one reproducible Veo failure measured
+      # so far is a face that leaves frame and returns: nothing carries the
+      # head's state across the occlusion, so the return is reconstructed
+      # rather than continued (docs/reports/occlusion-return-failure-2026-09-24.md).
+      # Giving the model the last frame removes the thing it was getting wrong.
+      #
+      # Schema verified against fal's OpenAPI 2026-09-24: prompt,
+      # first_frame_url and last_frame_url are required; every other field
+      # matches the image-to-video slot. See docs/decisions/0007-*.
+      backend: fal
+      model: fal-ai/veo3.1/fast/first-last-frame-to-video
+      endpoint: null     # the adapter builds it from the model id (ADR 0006)
+      # $0.10/s audio off, $0.15/s with, from fal's model listing queried
+      # 2026-09-24. The HIGHER figure is recorded, for the same reason as the
+      # flagship slot: a guard that understates lets a run sail past the cap
+      # while reporting it is inside it.
+      price_usd_per_second: 0.15
+      verified_on: 2026-09-24
     budget:              # volume / B-roll
       backend: null
       model: null

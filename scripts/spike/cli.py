@@ -384,6 +384,7 @@ def _generate_and_score(
     video_slot: str,
     condition: dict[str, str] | None = None,
     keyframe: Path | None = None,
+    last_keyframe: Path | None = None,
 ) -> ClipScore:
     """Keyframe -> clip -> score, with every paid step through the ledger.
 
@@ -445,7 +446,12 @@ def _generate_and_score(
     with ledger.paid_call(video_cfg, duration, ref=f"{ref}:clip", prompt=prompt) as outcome:
         video_provider.generate(
             VideoRequest(
-                keyframe=keyframe_path, prompt=prompt, duration_s=duration, seed=seed, ref=ref
+                keyframe=keyframe_path,
+                last_keyframe=last_keyframe,
+                prompt=prompt,
+                duration_s=duration,
+                seed=seed,
+                ref=ref,
             ),
             clip_path,
         )
@@ -581,7 +587,7 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
 
 
 def _generate_trying_keyframes(
-    keyframes: list[Path], start: int, **kwargs: Any
+    keyframes: list[Path], start: int, last_keyframes: list[Path] | None = None, **kwargs: Any
 ) -> tuple[ClipScore, int]:
     """Generate a shot, moving to another keyframe if one is refused outright.
 
@@ -596,12 +602,16 @@ def _generate_trying_keyframes(
     a row on 2026-09-24, all against the same keyframe.
     """
     if not keyframes:
-        return _generate_with_retry(keyframe=None, **kwargs), start
+        return _generate_with_retry(keyframe=None, last_keyframe=None, **kwargs), start
     last: ProviderRefused | None = None
     for offset in range(len(keyframes)):
         index = (start + offset) % len(keyframes)
         try:
-            return _generate_with_retry(keyframe=keyframes[index], **kwargs), index + 1
+            last_frame = last_keyframes[index % len(last_keyframes)] if last_keyframes else None
+            return (
+                _generate_with_retry(keyframe=keyframes[index], last_keyframe=last_frame, **kwargs),
+                index + 1,
+            )
         except ProviderRefused as exc:
             last = exc
     assert last is not None
@@ -633,6 +643,12 @@ def cmd_battery(args: argparse.Namespace) -> int:
     if keyframe_dir:
         keyframes = _stills_in(Path(keyframe_dir), "keyframes")
         print(f"using {len(keyframes)} existing keyframes from {keyframe_dir}")
+    last_keyframes: list[Path] = []
+    last_dir = getattr(args, "last_keyframes", None)
+    if last_dir:
+        last_keyframes = _stills_in(Path(last_dir), "last-keyframes")
+        print(f"using {len(last_keyframes)} last-frame stills from {last_dir}")
+
     retries = int(cfg.generation.get("refusal_retries", 3))
     skipped: list[tuple[str, str]] = []
     max_skips = max(3, (len(items) * len(args.video_slots) * takes) // 3)
@@ -651,6 +667,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                     score, keyframe_cursor = _generate_trying_keyframes(
                         keyframes,
                         keyframe_cursor,
+                        last_keyframes=last_keyframes,
                         attempts=retries,
                         cfg=cfg,
                         run_dir=run_dir,
@@ -1294,6 +1311,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_run_matrix)
 
     sp = sub.add_parser("battery", help="S0.7 golf format battery + rating sheet")
+    sp.add_argument(
+        "--last-keyframes",
+        help="a directory of stills pinning the LAST frame, paired with --keyframes "
+        "by index. Supplying it asks for first/last-frame conditioning, which needs "
+        "a video slot whose model accepts it (ADR 0007).",
+    )
     sp.add_argument(
         "--shots",
         nargs="+",

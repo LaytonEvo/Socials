@@ -358,9 +358,22 @@ class FalVideoProvider:
         assert self.download is not None
         assert self.resolve_keyframe is not None
 
+        # One still or two. Two asks for first/last-frame conditioning, whose
+        # schema takes first_frame_url/last_frame_url in place of image_url
+        # (verified against fal's OpenAPI 2026-09-24, ADR 0007). The request
+        # decides the shape and config decides which model id receives it, so
+        # no model name reaches this file.
+        if req.last_keyframe is not None:
+            frames: dict[str, Any] = {
+                "first_frame_url": self.resolve_keyframe(req.keyframe),
+                "last_frame_url": self.resolve_keyframe(req.last_keyframe),
+            }
+        else:
+            frames = {"image_url": self.resolve_keyframe(req.keyframe)}
+
         arguments: dict[str, Any] = {
             "prompt": req.prompt,
-            "image_url": self.resolve_keyframe(req.keyframe),
+            **frames,
             "duration": veo_duration(req.duration_s),
             # Audio defaults to TRUE on this model and doubles the per-second
             # rate. S0.5 asks whether her face survives being animated, which no
