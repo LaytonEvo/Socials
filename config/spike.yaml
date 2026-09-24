@@ -291,9 +291,13 @@ providers:
       verified_on: 2026-09-24
       options:
         voice: qZNXGnBF6neuAzxagOkO
-        # 0.7-1.2. Raise it if a line overruns its clip -- the glitch on "one
-        # more club" is most likely 64 characters not fitting 4 seconds.
-        speed: 1.0
+        # 0.7-1.2. Owner's choice 2026-09-24: 0.85, "slower and a bit more
+        # relaxed". The line runs 3.58s at this speed, inside a 4s clip.
+        #
+        # Not a fitting workaround: the earlier guess that the glitch on "one
+        # more club" was the line overrunning its clip was WRONG. At speed 1.0
+        # the track was 3.16s in a 4s video, so it always fitted.
+        speed: 0.85
 
 # --- LoRA (S0.4) -----------------------------------------------------------
 lora:
