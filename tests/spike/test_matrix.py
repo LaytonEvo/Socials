@@ -59,3 +59,26 @@ def test_battery_records_the_prediction_before_the_test_runs():
     hard = {i["id"] for i in GOLF_BATTERY if i["hard"]}
     assert {"full_swing_impact", "ball_flight", "putting_stroke"} <= hard
     assert "talking_head_course" not in hard
+
+
+def test_coverage_probe_predicts_a_band_it_could_miss():
+    """The probe exists to pin a floor the current clips only bracket.
+
+    Every shot records the coverage band expected BEFORE generating. A probe
+    whose prediction cannot be wrong measures nothing -- the same reasoning as
+    `hard` in the golf battery -- so the bands must be real intervals strictly
+    inside (0, 1), and they must span the gap the evidence left open.
+    """
+    from scripts.spike.matrix import COVERAGE_PROBE, PROMPT_SETS
+
+    assert PROMPT_SETS["coverage"] is COVERAGE_PROBE
+    assert len({item["id"] for item in COVERAGE_PROBE}) == len(COVERAGE_PROBE)
+    for item in COVERAGE_PROBE:
+        lo, hi = item["expect"]
+        assert 0.0 < lo < hi < 1.0, item["id"]
+        assert item["prompt"], item["id"]
+    # The bracket left open by docs/reports/face-presence-rule-2026-09-24.md.
+    lows = [item["expect"][0] for item in COVERAGE_PROBE]
+    highs = [item["expect"][1] for item in COVERAGE_PROBE]
+    assert min(lows) <= 0.375, "nothing probes the bottom of the open bracket"
+    assert max(highs) >= 0.875, "nothing probes the top of the open bracket"

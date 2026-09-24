@@ -180,6 +180,66 @@ GOLF_BATTERY: tuple[dict[str, Any], ...] = (
     {"id": "ball_flight", "hard": True, "prompt": "ball flight away down the fairway"},
 )
 
+#: Coverage probe. NOT a test of the provider -- a test of *our* scoring rule.
+#:
+#: The face-presence floor is bracketed to (0.375, 0.875] by the 30 clips the
+#: spike has generated, because 29 of them kept the face in nearly every frame
+#: and one lost it entirely (docs/reports/face-presence-rule-2026-09-24.md).
+#: Nothing populates the middle, so no value in that range can be preferred to
+#: another on evidence. These prompts each describe a *transition* -- the face
+#: entering or leaving frame partway through -- which is what produces partial
+#: coverage.
+#:
+#: `expect` is the coverage band predicted BEFORE generating, recorded so the
+#: probe can be wrong. A prediction that cannot fail measures nothing, which is
+#: the same reasoning behind `hard` in the golf battery above.
+COVERAGE_PROBE: tuple[dict[str, Any], ...] = (
+    {
+        "id": "turn_away_hold",
+        "hard": False,
+        "expect": (0.35, 0.55),
+        "prompt": "turning away from camera to look down the fairway, holding that view",
+    },
+    {
+        "id": "glance_back",
+        "hard": False,
+        "expect": (0.25, 0.50),
+        "prompt": "walking away from camera, then glancing back over her shoulder",
+    },
+    {
+        "id": "look_down_and_up",
+        "hard": False,
+        "expect": (0.65, 0.90),
+        "prompt": "looking down to line up a putt, then looking up to camera",
+    },
+    {
+        "id": "approach_camera",
+        "hard": False,
+        "expect": (0.50, 0.80),
+        "prompt": "walking toward camera from the middle distance",
+    },
+    {
+        "id": "profile_to_camera",
+        "hard": False,
+        "expect": (0.40, 0.65),
+        "prompt": "standing in profile looking across the course, then turning to face camera",
+    },
+    {
+        "id": "point_to_green",
+        "hard": False,
+        "expect": (0.60, 0.85),
+        "prompt": "talking to camera, then turning to point down the course",
+    },
+)
+
+#: Prompt sets the `battery` command can run. The golf battery measures the
+#: provider; the coverage probe measures our own scoring rule.
+PROMPT_SETS: dict[str, tuple[dict[str, Any], ...]] = {
+    "golf": GOLF_BATTERY,
+    "coverage": COVERAGE_PROBE,
+}
+
+
 #: Failure tags from BUILD_PLAN task 2.3, used for manual rating in S0.7.
 FAILURE_TAGS = (
     "hands_grip",

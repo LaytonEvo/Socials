@@ -45,7 +45,14 @@ from .frames import ImageSequenceFrames
 from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
 from .inspect import format_inspection, inspect_sets
 from .ledger import CostLedger
-from .matrix import FAILURE_TAGS, GOLF_BATTERY, Condition, coverage, coverage_gaps, sample_matrix
+from .matrix import (
+    FAILURE_TAGS,
+    PROMPT_SETS,
+    Condition,
+    coverage,
+    coverage_gaps,
+    sample_matrix,
+)
 from .models import MODELS, config_snippet, fetch, sha256_of, write_paths
 from .providers import (
     ImageRequest,
@@ -560,6 +567,11 @@ def cmd_battery(args: argparse.Namespace) -> int:
     master = _master_set(run_dir, embedder)
     cal = _load_calibration(run_dir)
 
+    prompt_set = getattr(args, "prompt_set", "golf")
+    items = PROMPT_SETS[prompt_set]
+    # The ref prefix keeps the two sets' artifacts apart in a shared run dir.
+    prefix = "battery" if prompt_set == "golf" else prompt_set
+
     takes = args.takes or int(cfg.generation.get("takes_per_battery_prompt", 2))
     keyframe_dir = getattr(args, "keyframes", None)
     keyframes: list[Path] = []
@@ -568,16 +580,16 @@ def cmd_battery(args: argparse.Namespace) -> int:
         print(f"using {len(keyframes)} existing keyframes from {keyframe_dir}")
     retries = int(cfg.generation.get("refusal_retries", 3))
     skipped: list[tuple[str, str]] = []
-    max_skips = max(3, (len(GOLF_BATTERY) * len(args.video_slots) * takes) // 3)
+    max_skips = max(3, (len(items) * len(args.video_slots) * takes) // 3)
     slots = args.video_slots
     seed = int(cfg.generation.get("seed", 0))
     rows: list[dict[str, Any]] = []
     scores: list[ClipScore] = []
 
-    for item in GOLF_BATTERY:
+    for item in items:
         for slot in slots:
             for take in range(takes):
-                ref = f"battery-{item['id']}-{slot}-{take}"
+                ref = f"{prefix}-{item['id']}-{slot}-{take}"
                 prompt = f"{args.subject}, {item['prompt']}"
                 try:
                     score = _generate_with_retry(
@@ -623,6 +635,13 @@ def cmd_battery(args: argparse.Namespace) -> int:
                         "ref": ref,
                         "format_id": item["id"],
                         "predicted_hard": "yes" if item["hard"] else "no",
+                        "expected_coverage": (
+                            f"{item['expect'][0]:.0%}-{item['expect'][1]:.0%}"
+                            if "expect" in item
+                            else ""
+                        ),
+                        "face_presence": f"{score.face_presence:.3f}",
+                        "verdict": score.verdict,
                         "provider": slot,
                         "take": take,
                         "clip_path": str(run_dir / "clips" / ref),
@@ -638,7 +657,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                 )
                 print(f"  {ref}")
 
-    _save_scores(run_dir, scores, "battery_scores.json")
+    _save_scores(run_dir, scores, f"{prefix}_scores.json")
     sheet = _write_battery_sheet(run_dir, rows)
     log.write_artifact("ledger_summary_battery.json", ledger.summary())
     print(f"\n{len(rows)} takes · spent ${ledger.spent}")
@@ -1194,6 +1213,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_run_matrix)
 
     sp = sub.add_parser("battery", help="S0.7 golf format battery + rating sheet")
+    sp.add_argument(
+        "--prompt-set",
+        choices=sorted(PROMPT_SETS),
+        default="golf",
+        help="'golf' measures the provider (S0.7); 'coverage' measures our own "
+        "face-presence rule by generating shots where the face leaves frame.",
+    )
     add_run(sp)
     add_embedder(sp)
     add_budget(sp)
