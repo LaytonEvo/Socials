@@ -233,11 +233,48 @@ COVERAGE_PROBE: tuple[dict[str, Any], ...] = (
     },
 )
 
+#: Draft content shots -- the first prompts aimed at something publishable
+#: rather than at measuring the harness. Every one is built to the envelope
+#: the 2026-09-24 probes established:
+#:
+#:  * the face never leaves frame and returns. That is the one reproducible
+#:    Veo failure found so far, and it is avoidable by choosing the shot
+#:    (docs/reports/occlusion-return-failure-2026-09-24.md).
+#:  * talking to camera, which is the only format with a confirmed pass.
+#:  * no hands on a club in frame: `hands_grip` and `club_distortion` are
+#:    predicted-hard in the golf battery and none of it has run yet.
+#:
+#: These are DRAFTS. Nothing here carries the disclosure overlay or a C2PA
+#: manifest, so nothing here may be published (CLAUDE.md); that machinery is
+#: Phase 1 and does not exist yet.
+DRAFT_SHOTS: tuple[dict[str, Any], ...] = (
+    {
+        "id": "piece_to_camera",
+        "hard": False,
+        "prompt": "talking to camera on the course at golden hour, warm and relaxed, "
+        "facing camera throughout",
+    },
+    {
+        "id": "intro_line",
+        "hard": False,
+        "prompt": "smiling and talking to camera, fairway behind her, light breeze, "
+        "facing camera throughout",
+    },
+    {
+        "id": "sign_off",
+        "hard": False,
+        "prompt": "finishing a sentence to camera and smiling, course behind her, "
+        "facing camera throughout",
+    },
+)
+
+
 #: Prompt sets the `battery` command can run. The golf battery measures the
 #: provider; the coverage probe measures our own scoring rule.
 PROMPT_SETS: dict[str, tuple[dict[str, Any], ...]] = {
     "golf": GOLF_BATTERY,
     "coverage": COVERAGE_PROBE,
+    "draft": DRAFT_SHOTS,
 }
 
 
