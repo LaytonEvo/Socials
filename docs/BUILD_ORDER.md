@@ -65,6 +65,13 @@ Phase 3 onward is unchanged in content, with the specific fixes in [Plan amendme
 
 ### 3.1 Use a throwaway look, not the persona
 
+> [!IMPORTANT]
+> **Superseded 2026-09-24 by [`docs/decisions/0008-persona-look-is-decided.md`](decisions/0008-persona-look-is-decided.md).**
+> The owner has confirmed the master set *is* the persona. The re-measurement
+> this section requires in Phase 1 is therefore released, and the calibration
+> made against these 105 stills carries forward. The original text is kept
+> below for the record.
+
 D1 (persona name, look, backstory, voice) is a human decision and is not yet made. Spike 0 does **not** wait for it.
 
 What Spike 0 measures is whether the *technique* holds, not whether *this particular face* holds. A throwaway look answers that, and it avoids burning the real persona's look on an experiment before the approach is proven — the same reasoning `BUILD_PLAN.md` applies to the test identity in task 4.1.
