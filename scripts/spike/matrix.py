@@ -226,6 +226,19 @@ COVERAGE_PROBE: tuple[dict[str, Any], ...] = (
         "prompt": "standing in profile looking across the course, then turning to face camera",
     },
     {
+        # The ADR 0007 test: the exact motion the owner rejected, with both
+        # ends pinned. First and last frame are the SAME still, so the clip
+        # must return to a pose that is a real photograph of her rather than
+        # one the model invents. If the return is right here, conditioning
+        # fixes the failure; if it is wrong, the failure is deeper than
+        # conditioning reaches. Needs a video slot that accepts two frames.
+        "id": "turn_away_and_back",
+        "hard": False,
+        "expect": (0.40, 0.75),
+        "prompt": "turning away from camera to look down the fairway, "
+        "then turning back to face camera",
+    },
+    {
         "id": "point_to_green",
         "hard": False,
         "expect": (0.60, 0.85),
