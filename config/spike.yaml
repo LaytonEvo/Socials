@@ -280,6 +280,12 @@ providers:
       verified_on: 2026-09-24
       options:
         text: "The wind is straight into us here, so I am taking one more club."
+        # Refused twice without this, both free: first because our clips are
+        # silent by design and heygen requires an audio track on the input,
+        # then "Audio and video durations are too different" -- 3.24s of speech
+        # against a 4.01s video. pixverse and veed silently trim the video
+        # instead, which is why they never complained.
+        enable_dynamic_duration: true
     veed:
       backend: fal
       model: veed/lipsync/v2
