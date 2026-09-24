@@ -290,14 +290,20 @@ providers:
       price_usd_per_1000_characters: 0.05
       verified_on: 2026-09-24
       options:
-        voice: qZNXGnBF6neuAzxagOkO
-        # 0.7-1.2. Owner's choice 2026-09-24: 0.85, "slower and a bit more
-        # relaxed". The line runs 3.58s at this speed, inside a 4s clip.
-        #
-        # Not a fitting workaround: the earlier guess that the glitch on "one
-        # more club" was the line overrunning its clip was WRONG. At speed 1.0
-        # the track was 3.16s in a 4s video, so it always fitted.
-        speed: 0.85
+        # Voice, speed and delivery are all owner choices (D1), settled by ear
+        # on 2026-09-24 after four voices and three rounds of variants.
+        voice: sWsBiVcjjowceAScTnu3
+        # 0.7-1.2. At 0.9 the line runs 3.84s, inside a 4s clip; this voice is
+        # slower than the previous one, which needed 4.62s at 0.85.
+        speed: 0.9
+        # The two dials that address "it sounds AI", and the defaults are the
+        # problem: stability 0.5 gives an even, predictable read, which is the
+        # flatness people hear as synthetic. Lower lets the delivery vary the
+        # way a person's does; style pushes it toward the voice's own manner.
+        # Pushed further (0.15/0.6) it starts to wander, so this is the edge of
+        # what held together.
+        stability: 0.3
+        style: 0.4
 
 # --- LoRA (S0.4) -----------------------------------------------------------
 lora:
