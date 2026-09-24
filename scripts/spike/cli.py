@@ -1336,7 +1336,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--takes", type=int)
     sp.add_argument("--subject", default="the persona")
     sp.add_argument("--image-slot", default="primary")
-    sp.add_argument("--video-slots", nargs="+", default=["flagship", "budget"])
+    sp.add_argument("--video-slots", nargs="+", default=["fast"])
     sp.add_argument(
         "--keyframes",
         help="a directory of existing stills to animate, instead of generating "

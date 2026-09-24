@@ -156,7 +156,22 @@ providers:
       model: fake-video-v0
       price_usd_per_second: 0.0
       verified_on: 1970-01-01
-    flagship:            # face-forward hero shots
+    fast:                # DEFAULT. Fast tier, single keyframe
+      # Chosen over the flagship tier on 2026-09-24. In a controlled
+      # comparison -- same shot, same two stills, same seed, same duration,
+      # resolution and audio setting, tier the only variable -- the owner
+      # rejected the flagship take and kept the Fast one. The 4x rate gap
+      # bought nothing visible. n=1 per tier and Veo is stochastic, so this is
+      # a default and not a proven ranking; revisit if quality problems
+      # appear. Full reasoning in docs/decisions/0007-*.
+      backend: fal
+      model: fal-ai/veo3.1/fast/image-to-video
+      endpoint: null     # the adapter builds it from the model id (ADR 0006)
+      # $0.10/s audio off, $0.15/s with, from fal's model listing queried
+      # 2026-09-24. Higher figure recorded, as everywhere else here.
+      price_usd_per_second: 0.15
+      verified_on: 2026-09-24
+    flagship:            # kept for comparison only; see the `fast` slot
       backend: fal
       model: fal-ai/veo3.1/image-to-video
       endpoint: null     # the adapter builds it from the model id (ADR 0006)
