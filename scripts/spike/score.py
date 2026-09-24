@@ -34,18 +34,24 @@ in it is never silently certified on the frames where it behaved. It just stops
 calling that certification failure. The plan's acceptance criteria for task 1.2
 -- handle no-face and multi-face frames "explicitly" -- is what this implements.
 
-The clip's identity score is the MINIMUM per-frame similarity, and that is
-known to be the wrong statistic. `min` only decreases as you sample more, and
-the frames it selects are the most extreme poses -- the last frame before the
-detector loses the face, which is the least face-like frame in the clip. So
-the verdict is decided by the least informative frame, and which frame that
-is depends on the sampling rate rather than on the clip: at 2 fps a good
-turn-away clip scored 0.9825, at 8 fps the same clip scored 0.9398 and would
-have been rejected, on a frame the owner confirmed was fine. See
-docs/reports/identity-gate-blind-spot-2026-09-24.md section 5. A
-sampling-stable statistic (fraction of usable frames below threshold) is the
-replacement to measure, and until that is done `frame_sample_fps` must not be
-raised: the current threshold is calibrated against 2 fps and only 2 fps.
+A clip fails when **too large a fraction of the frames we could read** fall
+below the calibrated threshold -- not when its single worst frame does.
+
+The minimum was the rule until 2026-09-24 and it is unusable, because `min`
+only decreases as you sample more. Denser sampling gets closer to the instant
+the detector loses the face, which is the most extreme pose in the clip and so
+the lowest-scoring frame: the verdict was handed to the *least* informative
+frame, and which frame that was depended on the sampling rate rather than on
+the clip. Measured across 31 clips at 2 and 8 fps, `min` changed its verdict on
+3 of them and rejected both clips the owner had confirmed were good.
+
+`mean < threshold` scores identically well on that data and is still wrong: the
+threshold is calibrated on the distribution of INDIVIDUAL image-to-centroid
+similarities, and the mean of several frames has a different, narrower
+distribution. Comparing it to that threshold repeats the calibration-space
+error of `calibration-2026-09-23-corrected.md` -- a threshold is only
+meaningful in the space it was measured in. Counting frames below the
+threshold uses it in exactly that space.
 
 Similarity is cosine against the L2-normalised centroid of the master set.
 Max-similarity to any single master image is also recorded, because the two
@@ -75,6 +81,25 @@ from .frames import FrameSource, default_frame_source
 # here now costs a human glance, not a discarded clip.
 DEFAULT_MIN_FACE_PRESENCE = 0.5
 
+# Longest CONTIGUOUS stretch of readable frames that may fall below the
+# threshold, as a share of the readable frames, before the clip is a failure.
+#
+# Contiguity is the point. Scattered frames below the threshold are a head
+# passing through its most extreme pose and coming back; a sustained run is the
+# identity going and not returning, which is the failure this gate exists for.
+# That is the same distinction as everything else measured on 2026-09-24.
+#
+# Derived 2026-09-24 across 31 clips scored at 2 and 8 fps: the
+# two clips that are a visibly different woman sit at 100% at both rates and one
+# drifted clip at 75/76%, while every clip believed good stays at or below 33%.
+# To be stable the allowance must not fall inside any clip's own 2-to-8 fps
+# span. On this data the run and the plain fraction are indistinguishable --
+# the below-threshold frames in these clips are contiguous anyway -- but the
+# run stays stable down to 0.4 where the fraction flips at 0.33, so it is
+# stricter at equal stability. The bracket rests on two confirmed-bad clips,
+# so it is wide and provisional.
+MAX_RUN_BELOW_THRESHOLD = 0.4
+
 # Absolute floor on evidence, independent of clip length. At 2 fps a short clip
 # can clear a 50% ratio on two adjacent frames, which is one moment seen twice.
 MIN_USABLE_FRAMES = 4
@@ -102,10 +127,13 @@ class ClipScore:
     embedder_key: str
     threshold: float
     min_face_presence: float
+    max_run_below: float
     frames_sampled: int
     frames_usable: int
     no_face_frames: int
     multi_face_frames: int
+    frames_below_threshold: int
+    longest_run_below_threshold: int
     identity_score_min: float | None
     identity_score_mean: float | None
     max_similarity_any_master: float | None
@@ -120,8 +148,28 @@ class ClipScore:
         return self.frames_usable / self.frames_sampled
 
     @property
+    def fraction_below_threshold(self) -> float | None:
+        """Share of readable frames that did not look like her. None if no face."""
+        if not self.frames_usable:
+            return None
+        return self.frames_below_threshold / self.frames_usable
+
+    @property
+    def longest_run_fraction(self) -> float | None:
+        """Longest unbroken stretch below threshold, as a share of readable frames."""
+        if not self.frames_usable:
+            return None
+        return self.longest_run_below_threshold / self.frames_usable
+
+    @property
     def passes_threshold(self) -> bool:
-        return self.identity_score_min is not None and self.identity_score_min >= self.threshold
+        """Whether the identity held for long enough at a stretch.
+
+        Deliberately NOT ``identity_score_min >= threshold``; see the module
+        docstring for why the minimum cannot carry a verdict.
+        """
+        run = self.longest_run_fraction
+        return run is None or run <= self.max_run_below
 
     @property
     def has_enough_coverage(self) -> bool:
@@ -145,7 +193,7 @@ class ClipScore:
         question it can answer -- is this her face in the frames sampled --
         correctly. See docs/reports/identity-gate-blind-spot-2026-09-24.md.
         """
-        if self.identity_score_min is not None and not self.passes_threshold:
+        if self.frames_usable and not self.passes_threshold:
             # A frame we looked at was not her. Coverage cannot rescue that.
             return FAIL
         if not self.has_enough_coverage:
@@ -167,9 +215,12 @@ class ClipScore:
         if self.identity_verdict == PASS:
             return None
         if self.identity_verdict == FAIL:
-            assert self.identity_score_min is not None
+            run = self.longest_run_fraction
+            assert run is not None
             return (
-                f"min similarity {self.identity_score_min:.4f} below threshold {self.threshold:.4f}"
+                f"{self.longest_run_below_threshold} readable frames in a row "
+                f"({run:.0%} of {self.frames_usable}) below threshold "
+                f"{self.threshold:.4f}, over the {self.max_run_below:.0%} allowed"
             )
         if self.frames_usable == 0:
             return "no face found in any sampled frame, so identity is unverified"
@@ -194,11 +245,27 @@ class ClipScore:
     def to_json(self) -> dict[str, Any]:
         out = asdict(self)
         out["face_presence"] = self.face_presence
+        out["fraction_below_threshold"] = self.fraction_below_threshold
+        out["longest_run_fraction"] = self.longest_run_fraction
         out["identity_verdict"] = self.identity_verdict
         out["identity_passed"] = self.identity_passed
         out["needs_review"] = self.needs_review
         out["failure_reason"] = self.failure_reason
         return out
+
+
+def _longest_run_below(sims: list[float], threshold: float) -> int:
+    """Longest unbroken stretch of consecutive frames scoring under threshold.
+
+    Contiguity is what separates a head turning through an extreme pose, which
+    dips for a frame or two and recovers, from the identity going and staying
+    gone. Scattered dips and a sustained run can share a frame count.
+    """
+    best = run = 0
+    for sim in sims:
+        run = run + 1 if sim < threshold else 0
+        best = max(best, run)
+    return best
 
 
 def score_embedding_set(
@@ -208,6 +275,7 @@ def score_embedding_set(
     ref: str,
     min_face_presence: float = DEFAULT_MIN_FACE_PRESENCE,
     condition: dict[str, str] | None = None,
+    max_run_below: float = MAX_RUN_BELOW_THRESHOLD,
 ) -> ClipScore:
     """Score already-extracted embeddings against the master set."""
     if embeddings.info.key() != calibration.embedder_key:
@@ -248,10 +316,13 @@ def score_embedding_set(
         embedder_key=embeddings.info.key(),
         threshold=calibration.threshold,
         min_face_presence=min_face_presence,
+        max_run_below=max_run_below,
         frames_sampled=counts["frames"],
         frames_usable=counts["usable"],
         no_face_frames=counts[NO_FACE],
         multi_face_frames=counts[MULTI_FACE],
+        frames_below_threshold=sum(1 for sim in sims if sim < calibration.threshold),
+        longest_run_below_threshold=_longest_run_below(sims, calibration.threshold),
         identity_score_min=min(sims) if sims else None,
         identity_score_mean=float(np.mean(sims)) if sims else None,
         max_similarity_any_master=best_any,
@@ -272,6 +343,7 @@ def score_clip(
     frame_source: FrameSource | None = None,
     min_face_presence: float = DEFAULT_MIN_FACE_PRESENCE,
     condition: dict[str, str] | None = None,
+    max_run_below: float = MAX_RUN_BELOW_THRESHOLD,
 ) -> ClipScore:
     """Extract frames from a clip, embed them, and score against the master set."""
     clip = Path(clip)
@@ -279,7 +351,9 @@ def score_clip(
     dest = Path(frames_dir) if frames_dir else clip.parent / f"{clip.stem}_frames"
     frame_paths = source.extract(clip, dest, fps)
     embeddings = embed_images(embedder, frame_paths, label=clip.name, fps=fps)
-    return score_embedding_set(embeddings, master, calibration, ref, min_face_presence, condition)
+    return score_embedding_set(
+        embeddings, master, calibration, ref, min_face_presence, condition, max_run_below
+    )
 
 
 def identity_rate_by_condition(scores: list[ClipScore]) -> dict[str, dict[str, dict[str, Any]]]:

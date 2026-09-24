@@ -37,17 +37,25 @@ def _cal(stub: bool = False) -> Calibration:
     )
 
 
-def _score(ref: str, min_score: float, condition: dict[str, str]) -> ClipScore:
+def _score(ref: str, min_score: float, condition: dict[str, str], below: int = 0) -> ClipScore:
+    """`below` is how many readable frames fell under the threshold.
+
+    The verdict turns on that fraction, not on `min_score`, which is kept as a
+    reported diagnostic only. See scripts/spike/score.py.
+    """
     return ClipScore(
         ref=ref,
         label=ref,
         embedder_key="real:m:1:d512",
         threshold=0.82,
         min_face_presence=0.9,
+        max_run_below=0.4,
         frames_sampled=10,
         frames_usable=10,
         no_face_frames=0,
         multi_face_frames=0,
+        frames_below_threshold=below,
+        longest_run_below_threshold=below,
         identity_score_min=min_score,
         identity_score_mean=min_score + 0.02,
         max_similarity_any_master=min_score + 0.03,
@@ -78,6 +86,7 @@ SCORES = [
             "motion": "turning",
             "cell_id": "b",
         },
+        below=8,
     ),
 ]
 LEDGER = {

@@ -175,6 +175,8 @@ def _load_scores(run_dir: Path, name: str = "scores.json") -> list[ClipScore]:
         raw = dict(raw)
         for derived in (
             "face_presence",
+            "fraction_below_threshold",
+            "longest_run_fraction",
             "identity_verdict",
             "identity_passed",
             "needs_review",

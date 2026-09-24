@@ -79,14 +79,62 @@ def test_centroid_is_none_when_nothing_usable(embedder):
     assert es.centroid() is None
 
 
-def test_clip_fails_when_min_score_is_below_threshold(embedder, master):
+def test_one_low_frame_does_not_fail_a_clip(embedder, master):
+    """The minimum cannot carry the verdict; see the score.py module docstring.
+
+    One frame below the threshold out of four is the shape of a head turning
+    through its most extreme pose, and rejecting on it threw away footage the
+    owner confirmed was good.
+    """
     info = embedder.info
-    base = master.centroid()
-    clip = _frames(info, [0.99, 0.99, 0.80, 0.99], base)
+    clip = _frames(info, [0.99, 0.99, 0.80, 0.99], master.centroid())
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
-    assert score.identity_passed is False
+    assert score.frames_below_threshold == 1
+    assert score.longest_run_below_threshold == 1
+    assert score.longest_run_fraction == pytest.approx(0.25)
+    assert score.identity_verdict == "pass"
+
+
+def test_a_sustained_run_below_threshold_fails_the_clip(embedder, master):
+    info = embedder.info
+    clip = _frames(info, [0.80, 0.80, 0.80, 0.99], master.centroid())
+    score = score_embedding_set(clip, master, _calibration(info), ref="r")
+    assert score.longest_run_fraction == pytest.approx(0.75)
+    assert score.identity_verdict == "fail"
     assert score.failure_reason is not None
-    assert "below threshold" in score.failure_reason
+    assert "3 readable frames in a row" in score.failure_reason
+
+
+def test_the_same_dips_scattered_do_not_fail_the_clip(embedder, master):
+    """Contiguity is the signal, not the count.
+
+    Same number of frames under the threshold as the test above, spread out
+    instead of consecutive: a head passing through an extreme pose and
+    recovering, rather than the identity going and staying gone.
+    """
+    info = embedder.info
+    clip = _frames(info, [0.80, 0.99, 0.80, 0.99, 0.80, 0.99], master.centroid())
+    score = score_embedding_set(clip, master, _calibration(info), ref="r")
+    assert score.frames_below_threshold == 3
+    assert score.longest_run_below_threshold == 1
+    assert score.identity_verdict == "pass"
+
+
+def test_the_verdict_does_not_move_when_the_same_clip_is_sampled_denser(embedder, master):
+    """Stability under sampling density is the whole point of the change.
+
+    `min` fails this: doubling the frames can only lower it, and on real clips
+    it flipped 3 of 31 verdicts between 2 and 8 fps. A fraction does not move
+    when the extra frames look like the ones already there.
+    """
+    info = embedder.info
+    sparse = _frames(info, [0.99, 0.80, 0.99, 0.99], master.centroid())
+    dense = _frames(info, [0.99, 0.985, 0.80, 0.78, 0.99, 0.99, 0.99, 0.99], master.centroid())
+    cal = _calibration(info)
+    a = score_embedding_set(sparse, master, cal, ref="a")
+    b = score_embedding_set(dense, master, cal, ref="b")
+    assert (b.identity_score_min or 0) < (a.identity_score_min or 0)  # the minimum sank
+    assert a.identity_verdict == b.identity_verdict == "pass"  # the verdict did not
 
 
 def test_face_loss_makes_a_clip_indeterminate_not_failed(embedder, master):

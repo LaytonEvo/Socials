@@ -138,14 +138,45 @@ embedder. Three measurements now point at one cause:
 turned her head" from "this is not her".** Same invariance problem as the
 head-tilt finding in §3(c), seen from the other side.
 
-`min` should be replaced by a statistic that is stable under sampling
-density. The candidate worth measuring first is the **fraction of usable
-frames below threshold**, which is stable, interpretable ("11% of the frames
-we could read did not look like her"), and does not hand the verdict to one
-frame. Weighting frames by frontality is a second option, since near-profile
-frames carry the least identity information and currently carry the most
-weight. Neither is implemented; both need the same treatment the threshold
-got, on data rather than assertion.
+`min` has been replaced. Candidates were measured across 31 clips scored at
+both 2 and 8 fps:
+
+| Rule | Verdict flips 2→8 fps | Different woman caught | Owner-confirmed good failed |
+|---|---|---|---|
+| `min < T` (old) | **3** | 2/2 | **2/2** |
+| `p25 < T` | 1 | 2/2 | 0/2 |
+| `mean < T` | 0 | 2/2 | 0/2 |
+| `frac_below > 50%` | 0 | 2/2 | 0/2 |
+| **`run_below > 40%`** | **0** | **2/2** | **0/2** |
+
+`mean < T` scores as well as the winners and was rejected anyway: the
+threshold is calibrated on the distribution of *individual* image-to-centroid
+similarities, and the mean of several frames has a different, narrower
+distribution. Comparing it to that threshold repeats the calibration-space
+error of `calibration-2026-09-23-corrected.md`. Counting frames against the
+threshold uses it in the space it was measured in.
+
+The chosen rule is the **longest contiguous run of readable frames below the
+threshold**, as a share of readable frames, allowed up to 40%. On this data it
+is indistinguishable from the plain fraction — the below-threshold frames in
+these clips are contiguous anyway — and the preference rests on two things
+the data does not settle. It stays stable down to 0.4 where the fraction flips
+at 0.33, so it is stricter at equal stability; and contiguity is the
+distinction everything else in this report turns on, since scattered dips are
+a head passing through an extreme pose and recovering, while a sustained run
+is the identity going and not returning. The synthetic drift fixture, which
+models gradual drift the real clips do not contain, is caught by the run rule
+and missed by `frac_below > 50%`.
+
+Effect on the 31 clips: **7 verdicts change, every one from fail to pass**, on
+clips whose lowest frame was a brief pose dip of 4–33%. No verdict now differs
+between 2 and 8 fps. Both different-woman clips still fail at both rates.
+`turn_away_hold` passes at both rates, which was the false reject that
+prompted the change.
+
+The allowance rests on two confirmed-bad clips and is correspondingly
+provisional; it is recorded in the code as a bracket rather than a derived
+value.
 
 ## 6. What this means for the gate
 
