@@ -184,7 +184,7 @@ def fpr_resolution(n_negatives: int) -> float:
     persona's own stills rather than 1.0%, and leaving the flagship
     talking-head clip passing by 0.000005. Nothing warned, because the
     achieved FPR (0.0) was inside the target. See
-    docs/reports/gate-a-identity-scorer-2026-09-24.md.
+    docs/reports/identity-threshold-correction-2026-09-24.md.
     """
     return 1.0 / n_negatives if n_negatives > 0 else 1.0
 
