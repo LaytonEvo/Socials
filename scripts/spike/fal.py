@@ -44,7 +44,7 @@ from PIL import Image
 from .config import ProviderConfig
 from .embedders import ASPECT_9_16, crop_to_aspect
 from .errors import ProviderFailed, ProviderNotConfigured, ProviderRefused, ProviderTimeout
-from .providers import LipSyncRequest, VideoRequest
+from .providers import LipSyncRequest, SpeechRequest, VideoRequest
 
 QUEUE_ROOT = "https://queue.fal.run"
 API_KEY_ENV = "FAL_KEY"
@@ -477,6 +477,53 @@ def data_uri_media(path: Path, max_bytes: int = MAX_DATA_URI_BYTES) -> str:
 
 
 @dataclass
+class FalTTSProvider:
+    """Text to speech through fal's queue.
+
+    Returns the CDN url of the generated audio rather than only a local file,
+    because the next call in the chain wants a url: the lip-sync model refuses
+    inlined media, and fal can always fetch its own output. Downloading is
+    optional and only so the track can be listened to or kept as evidence.
+    """
+
+    cfg: ProviderConfig
+    client: FalClient | None = None
+    download: Callable[[str, Path], Path] | None = None
+    on_submit: Callable[[QueuedRequest], None] | None = None
+    extra_arguments: dict[str, Any] | None = None
+    name: str = field(default="fal-tts", init=False)
+
+    def __post_init__(self) -> None:
+        if self.client is None:
+            self.client = FalClient(api_key=os.environ.get(API_KEY_ENV))
+        if self.download is None:
+            self.download = _download
+
+    def synthesize(self, req: SpeechRequest, dest: Path | None = None) -> str:
+        if not self.cfg.model:
+            raise ProviderNotConfigured(
+                f"providers.{self.cfg.kind}.{self.cfg.slot} has no model id."
+            )
+        assert self.client is not None
+        assert self.download is not None
+
+        arguments: dict[str, Any] = {"text": req.text}
+        if req.voice:
+            arguments["voice"] = req.voice
+        arguments.update(self.extra_arguments or {})
+
+        queued = self.client.submit(self.cfg.model, arguments)
+        if self.on_submit is not None:
+            self.on_submit(queued)
+        status = self.client.wait(queued)
+        raise_if_failed(status, queued.request_id)
+        url = first_media_url(self.client.result(queued))
+        if dest is not None:
+            self.download(url, dest)
+        return url
+
+
+@dataclass
 class FalLipSyncProvider:
     """Lip sync through fal's queue.
 
@@ -518,7 +565,9 @@ class FalLipSyncProvider:
         assert self.resolve_clip is not None
 
         arguments: dict[str, Any] = {"video_url": self.resolve_clip(Path(req.clip))}
-        if req.audio is not None:
+        if req.audio_url:
+            arguments["audio_url"] = req.audio_url
+        elif req.audio is not None:
             arguments["audio_url"] = self.resolve_clip(Path(req.audio))
         arguments.update(self.extra_arguments or {})
 

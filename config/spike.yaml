@@ -266,6 +266,35 @@ providers:
       options:
         text: "The wind is straight into us here, so I am taking one more club."
 
+  # Speech (S0.8). Billed per 1000 characters, not per second of output.
+  tts:
+    fake:
+      backend: fake
+      model: fake-tts-v0
+      price_usd_per_1000_characters: 0.0
+      verified_on: 1970-01-01
+    primary:
+      # The owner picked the voice on 2026-09-24 -- a D1 decision (BUILD_PLAN
+      # Section 1), after rejecting pixverse's built-in voices as "older than
+      # her and harsh ... too robotic".
+      #
+      # Splitting speech from sync is the point: the voice then belongs to a
+      # provider good at voices and, unlike Veo's native audio, stays the same
+      # across every video. A recurring personality whose voice drifts between
+      # clips is as broken as one whose face does.
+      backend: fal
+      model: fal-ai/elevenlabs/tts/turbo-v2.5
+      endpoint: null
+      # $0.05 per 1000 characters, from fal's own pricing API
+      # (api.fal.ai/v1/models/pricing?endpoint_id=...), queried 2026-09-24.
+      price_usd_per_1000_characters: 0.05
+      verified_on: 2026-09-24
+      options:
+        voice: qZNXGnBF6neuAzxagOkO
+        # 0.7-1.2. Raise it if a line overruns its clip -- the glitch on "one
+        # more club" is most likely 64 characters not fitting 4 seconds.
+        speed: 1.0
+
 # --- LoRA (S0.4) -----------------------------------------------------------
 lora:
   base_model: null

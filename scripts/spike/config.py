@@ -188,7 +188,14 @@ class SpikeConfig:
             ) from None
 
 
-_PRICE_UNITS = {"image": "image", "video": "second", "lipsync": "second"}
+# Speech is billed by text length, not by output duration, so it needs its own
+# unit. Callers pass units in thousands of characters.
+_PRICE_UNITS = {
+    "image": "image",
+    "video": "second",
+    "lipsync": "second",
+    "tts": "1000 characters",
+}
 
 
 def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> SpikeConfig:
@@ -225,7 +232,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> SpikeConfig:
         for slot, cfg in (slots or {}).items():
             cfg = cfg or {}
             verified = cfg.get("verified_on")
-            price = cfg.get(f"price_usd_per_{unit}")
+            price = cfg.get(f"price_usd_per_{unit.replace(chr(32), chr(95))}")
             providers[kind][slot] = ProviderConfig(
                 slot=slot,
                 kind=kind,

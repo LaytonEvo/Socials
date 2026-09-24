@@ -58,6 +58,7 @@ from .models import MODELS, config_snippet, fetch, sha256_of, write_paths
 from .providers import (
     ImageRequest,
     LipSyncRequest,
+    SpeechRequest,
     VideoRequest,
     load_provider,
     render_fake_face,
@@ -829,13 +830,44 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
     resolver = _cdn_resolver(run_dir)
     if resolver is not None and hasattr(provider, "resolve_clip"):
         provider.resolve_clip = resolver
+
+    # Speak the line with a chosen voice rather than the lip-sync model's own.
+    # The owner rejected its built-in voices, and a voice that belongs to a
+    # dedicated provider is also the only way to keep it the same across
+    # videos. Synthesised once and reused for every clip in the probe: it is
+    # the same line, and paying per clip for identical audio is waste.
+    audio_url: str | None = None
+    line = str((lip_cfg.options or {}).get("text") or "").strip()
+    try:
+        tts_cfg = cfg.provider("tts", "primary")
+    except SpikeError:
+        tts_cfg = None
+    if tts_cfg is not None and tts_cfg.backend and line:
+        tts = load_provider(tts_cfg)
+        with ledger.paid_call(
+            tts_cfg, len(line) / 1000, ref="lipsync:speech", prompt=line
+        ) as outcome:
+            audio_url = tts.synthesize(
+                SpeechRequest(text=line, voice=None, ref="lipsync:speech"),
+                dest=run_dir / "speech.mp3",
+            )
+            outcome.ok = True
+            outcome.artifact = str(run_dir / "speech.mp3")
+        print(f"voice: {(tts_cfg.options or {}).get('voice', '(provider default)')}")
+        # Sending both would leave it ambiguous which the model used.
+        if getattr(provider, "extra_arguments", None):
+            provider.extra_arguments = {
+                k: v for k, v in provider.extra_arguments.items() if k != "text"
+            }
     duration = float(cfg.generation.get("clip_duration_s", 5))
     results: list[dict[str, Any]] = []
     for s in before:
         src = run_dir / "clips" / s.ref
         dest = run_dir / "lipsync" / s.ref
         with ledger.paid_call(lip_cfg, duration, ref=f"{s.ref}:lipsync") as outcome:
-            provider.apply(LipSyncRequest(clip=src, audio=None, ref=s.ref), dest)
+            provider.apply(
+                LipSyncRequest(clip=src, audio=None, audio_url=audio_url, ref=s.ref), dest
+            )
             outcome.ok = True
         after = score_clip(
             dest,

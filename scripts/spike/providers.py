@@ -65,6 +65,24 @@ class LipSyncRequest:
     clip: Path
     audio: Path | None
     ref: str
+    #: Audio already hosted somewhere the provider can fetch. Preferred over
+    #: ``audio`` when the track came from the same provider: its output is
+    #: already on their CDN, and the lip-sync model refuses inlined media
+    #: anyway (2026-09-24).
+    audio_url: str | None = None
+
+
+@dataclass
+class SpeechRequest:
+    """Text to speak, and the voice to speak it in.
+
+    The voice is a D1 decision (BUILD_PLAN Section 1) and belongs to the
+    owner, so it is carried rather than chosen here.
+    """
+
+    text: str
+    voice: str | None
+    ref: str
 
 
 class ImageProvider(Protocol):
@@ -309,5 +327,12 @@ def _fal_lipsync(cfg: ProviderConfig) -> Any:
     return FalLipSyncProvider(cfg, extra_arguments=cfg.options or None)
 
 
+def _fal_tts(cfg: ProviderConfig) -> Any:
+    from .fal import FalTTSProvider
+
+    return FalTTSProvider(cfg, extra_arguments=cfg.options or None)
+
+
 register_provider("lipsync", "fal", _fal_lipsync)
+register_provider("tts", "fal", _fal_tts)
 register_provider("lipsync", "fake", lambda cfg: FakeLipSyncProvider(cfg))
