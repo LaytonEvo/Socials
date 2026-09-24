@@ -104,9 +104,31 @@ frames after the return score higher than those before it — the opposite of
   addressing the ball still need the LoRA — to generate their end frames, not
   to fix their motion. Some battery failures were being attributed to the
   LoRA's absence and were in fact this bug.
-- **The Fast tier produced acceptable motion.** That is one clip, judged on
-  motion rather than on a flagship-versus-fast comparison, so it does not yet
-  justify moving the default slot. A deliberate side-by-side on the same shot
-  and keyframe would, and it would be worth $1.00 given the 4x rate gap.
+- **Fast vs flagship, run 2026-09-24: the owner preferred Fast.** Same shot,
+  same two stills, same seed, same duration, resolution and audio setting --
+  tier the only variable. The flagship take "messed up the motion"; the Fast
+  take "works".
+
+  | | Fast | Flagship |
+  |---|---|---|
+  | Rate (audio off) | $0.10/s | $0.20/s |
+  | Guard rate recorded | $0.15/s | $0.40/s |
+  | Identity | PASS, min 0.9712 | PASS, min 0.9500 |
+  | Coverage | 75% (6/8) | 88% (7/8) |
+  | Owner | **works** | **messed up** |
+  | File size | 3.83 MB | 3.85 MB |
+
+  **The scores point the wrong way and must not be used here.** Flagship
+  scores *lower* on identity precisely because it keeps the face detectable
+  for one extra frame of the turn, and that frame is a deep profile -- 0.9500,
+  in the same band as `master_010` (0.95041), `approach_camera` (0.9504) and
+  `turn_away_hold` (0.9398). Under the old `min` rule flagship would have
+  failed and Fast passed, for reasons unrelated to either being better.
+
+  **This is n=1 per tier and Veo is stochastic, so it is not a quality
+  ranking.** What it does establish is that the 4x rate gap buys nothing
+  visible on this shot, which is enough to default to Fast and revisit if
+  quality problems appear. Lite at $0.03/s is untested and the same trial
+  would cost $0.12.
 - The identity gate is unaffected throughout. It was never what caught this,
   and it said `pass` about the broken clip and the fixed one alike.
