@@ -18,7 +18,7 @@ from typing import Any
 from .calibrate import Calibration
 from .errors import FakeDataInReport
 from .matrix import GOLF_BATTERY
-from .score import ClipScore, pass_rate_by_condition
+from .score import ClipScore, identity_rate_by_condition
 
 
 def _pct(value: float | None) -> str:
@@ -66,16 +66,19 @@ def _calibration_section(cal: Calibration) -> list[str]:
 
 def _matrix_section(scores: list[ClipScore]) -> list[str]:
     total = len(scores)
-    passed = sum(1 for s in scores if s.passed)
+    identity_passed = sum(1 for s in scores if s.identity_passed)
     lines = [
         "## 2. Identity pass rate by condition",
         "",
-        f"{passed} of {total} clips passed ({(passed / total if total else 0):.0%}).",
+        f"{identity_passed} of {total} clips passed the IDENTITY gate "
+        f"({(identity_passed / total if total else 0):.0%}). That is not a usable "
+        f"rate: the identity gate cannot see motion, anatomy or shot adherence "
+        f"(docs/reports/identity-gate-blind-spot-2026-09-24.md).",
         "",
         "A single headline number is not the finding. The breakdown is:",
         "",
     ]
-    breakdown = pass_rate_by_condition(scores)
+    breakdown = identity_rate_by_condition(scores)
     for axis, levels in breakdown.items():
         lines += [
             f"### {axis}",
@@ -83,10 +86,10 @@ def _matrix_section(scores: list[ClipScore]) -> list[str]:
             "| Level | Clips | Passed | Pass rate | Worst min score | Mean min score |",
             "|---|---|---|---|---|---|",
         ]
-        for level, stats in sorted(levels.items(), key=lambda kv: kv[1]["pass_rate"]):
+        for level, stats in sorted(levels.items(), key=lambda kv: kv[1]["identity_pass_rate"]):
             lines.append(
-                f"| {level} | {stats['clips']} | {stats['passed']} | "
-                f"{stats['pass_rate']:.0%} | {_num(stats['worst_min_score'])} | "
+                f"| {level} | {stats['clips']} | {stats['identity_passed']} | "
+                f"{stats['identity_pass_rate']:.0%} | {_num(stats['worst_min_score'])} | "
                 f"{_num(stats['mean_min_score'])} |"
             )
         lines.append("")
@@ -103,14 +106,14 @@ def _matrix_section(scores: list[ClipScore]) -> list[str]:
         lines.append("None.")
     else:
         lines += [
-            "| Clip | Sampled | Usable | No face | Multi face | Presence | Verdict |",
+            "| Clip | Sampled | Usable | No face | Multi face | Presence | Identity |",
             "|---|---|---|---|---|---|---|",
         ]
         for s in lost:
             lines.append(
                 f"| {s.label} | {s.frames_sampled} | {s.frames_usable} | "
                 f"{s.no_face_frames} | {s.multi_face_frames} | "
-                f"{_pct(s.face_presence)} | {s.verdict} |"
+                f"{_pct(s.face_presence)} | {s.identity_verdict} |"
             )
     lines.append("")
     return lines
@@ -150,7 +153,7 @@ def _lipsync_section(probe: dict[str, Any] | None) -> list[str]:
     for row in probe.get("clips", []):
         lines.append(
             f"| {row['label']} | {_num(row['before_min'])} | {_num(row['after_min'])} | "
-            f"{_num(row['delta'])} | {'yes' if row['after_passes'] else 'no'} |"
+            f"{_num(row['delta'])} | {'yes' if row['after_identity_passes'] else 'no'} |"
         )
     mean_delta = probe.get("mean_delta")
     if mean_delta is not None:
@@ -219,7 +222,9 @@ def _battery_section(ratings: list[dict[str, Any]] | None) -> list[str]:
     return lines
 
 
-def _cost_section(ledger_summary: dict[str, Any], usable_seconds: float | None) -> list[str]:
+def _cost_section(
+    ledger_summary: dict[str, Any], identity_passing_seconds: float | None
+) -> list[str]:
     lines = [
         "## 6. Cost",
         "",
@@ -238,10 +243,16 @@ def _cost_section(ledger_summary: dict[str, Any], usable_seconds: float | None) 
                 f"{agg['units']:.1f} | ${agg['total_usd']} |"
             )
         lines.append("")
-    if usable_seconds:
+    if identity_passing_seconds:
         spent = float(ledger_summary.get("spent_usd", 0) or 0)
         lines += [
-            f"**Cost per usable second of video: ${spent / usable_seconds:.4f}**",
+            f"**Cost per identity-passing second of video: "
+            f"${spent / identity_passing_seconds:.4f}**",
+            "",
+            "Identity-passing is an UPPER BOUND on usable: the gate cannot see "
+            "motion, anatomy or whether the clip is the shot that was asked for, "
+            "and passed a visibly AI-generated clip on 2026-09-24. Read this as "
+            "the best case for BUILD_PLAN Section 9, not the real discard rate.",
             "",
             "This number, not the brief's assumed 3-in-5 discard rate, is the input "
             "to BUILD_PLAN Section 9's budget model and to the Phase 0 cost guard.",
@@ -290,7 +301,7 @@ def render_gate_report(
     lipsync_probe: dict[str, Any] | None = None,
     battery_ratings: list[dict[str, Any]] | None = None,
     operator_time: list[dict[str, Any]] | None = None,
-    usable_seconds: float | None = None,
+    identity_passing_seconds: float | None = None,
     allow_fake: bool = False,
     today: dt.date | None = None,
 ) -> str:
@@ -333,7 +344,7 @@ def render_gate_report(
     body += _contact_sheet_section(contact_sheet)
     body += _lipsync_section(lipsync_probe)
     body += _battery_section(battery_ratings)
-    body += _cost_section(ledger_summary, usable_seconds)
+    body += _cost_section(ledger_summary, identity_passing_seconds)
     body += _operator_time_section(operator_time or [])
     body += [
         "## 8. Recommendation",

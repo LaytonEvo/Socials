@@ -123,8 +123,15 @@ class ClipScore:
         )
 
     @property
-    def verdict(self) -> str:
-        """One of PASS, FAIL, INDETERMINATE. See the module docstring."""
+    def identity_verdict(self) -> str:
+        """One of PASS, FAIL, INDETERMINATE -- about IDENTITY, nothing else.
+
+        Named for its scope because the unscoped name caused a real error. A
+        clip marked a bare ``pass`` was read as "this clip is good"; it was in
+        fact visibly AI-generated, and the scorer had answered the only
+        question it can answer -- is this her face in the frames sampled --
+        correctly. See docs/reports/identity-gate-blind-spot-2026-09-24.md.
+        """
         if self.identity_score_min is not None and not self.passes_threshold:
             # A frame we looked at was not her. Coverage cannot rescue that.
             return FAIL
@@ -133,20 +140,20 @@ class ClipScore:
         return PASS
 
     @property
-    def passed(self) -> bool:
-        """Strict pass. Indeterminate is not a pass -- nor is it a failure."""
-        return self.verdict == PASS
+    def identity_passed(self) -> bool:
+        """Identity verified. NOT a judgement that the clip is usable."""
+        return self.identity_verdict == PASS
 
     @property
     def needs_review(self) -> bool:
-        return self.verdict == INDETERMINATE
+        return self.identity_verdict == INDETERMINATE
 
     @property
     def failure_reason(self) -> str | None:
         """Why the clip is not a clean pass. Present for FAIL and INDETERMINATE."""
-        if self.verdict == PASS:
+        if self.identity_verdict == PASS:
             return None
-        if self.verdict == FAIL:
+        if self.identity_verdict == FAIL:
             assert self.identity_score_min is not None
             return (
                 f"min similarity {self.identity_score_min:.4f} below threshold {self.threshold:.4f}"
@@ -174,8 +181,8 @@ class ClipScore:
     def to_json(self) -> dict[str, Any]:
         out = asdict(self)
         out["face_presence"] = self.face_presence
-        out["verdict"] = self.verdict
-        out["passed"] = self.passed
+        out["identity_verdict"] = self.identity_verdict
+        out["identity_passed"] = self.identity_passed
         out["needs_review"] = self.needs_review
         out["failure_reason"] = self.failure_reason
         return out
@@ -262,8 +269,8 @@ def score_clip(
     return score_embedding_set(embeddings, master, calibration, ref, min_face_presence, condition)
 
 
-def pass_rate_by_condition(scores: list[ClipScore]) -> dict[str, dict[str, dict[str, Any]]]:
-    """Pass rate broken down by each axis level.
+def identity_rate_by_condition(scores: list[ClipScore]) -> dict[str, dict[str, dict[str, Any]]]:
+    """Identity pass rate broken down by each axis level.
 
     This is BUILD_PLAN task 1.7's actual deliverable. A single headline pass
     rate hides the thing the gate needs to know: *which* conditions fail.
@@ -277,23 +284,33 @@ def pass_rate_by_condition(scores: list[ClipScore]) -> dict[str, dict[str, dict[
                 continue
             bucket = out.setdefault(axis, {}).setdefault(
                 level,
-                {"clips": 0, "passed": 0, "failed": 0, "indeterminate": 0, "min_scores": []},
+                {
+                    "clips": 0,
+                    "identity_passed": 0,
+                    "identity_failed": 0,
+                    "indeterminate": 0,
+                    "min_scores": [],
+                },
             )
             bucket["clips"] += 1
-            bucket["passed"] += int(score.verdict == PASS)
-            bucket["failed"] += int(score.verdict == FAIL)
-            bucket["indeterminate"] += int(score.verdict == INDETERMINATE)
+            bucket["identity_passed"] += int(score.identity_verdict == PASS)
+            bucket["identity_failed"] += int(score.identity_verdict == FAIL)
+            bucket["indeterminate"] += int(score.identity_verdict == INDETERMINATE)
             if score.identity_score_min is not None:
                 bucket["min_scores"].append(score.identity_score_min)
     for levels in out.values():
         for stats in levels.values():
             mins = stats.pop("min_scores")
-            stats["pass_rate"] = stats["passed"] / stats["clips"] if stats["clips"] else 0.0
+            stats["identity_pass_rate"] = (
+                stats["identity_passed"] / stats["clips"] if stats["clips"] else 0.0
+            )
             # Of the clips we could actually judge. Reported alongside, not
             # instead of, pass_rate: which denominator is right depends on
             # whether the indeterminates are a property of the shot or the model.
-            judged = stats["passed"] + stats["failed"]
-            stats["pass_rate_of_judged"] = stats["passed"] / judged if judged else None
+            judged = stats["identity_passed"] + stats["identity_failed"]
+            stats["identity_pass_rate_of_judged"] = (
+                stats["identity_passed"] / judged if judged else None
+            )
             stats["worst_min_score"] = min(mins) if mins else None
             stats["mean_min_score"] = float(np.mean(mins)) if mins else None
     return out

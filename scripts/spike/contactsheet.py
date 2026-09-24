@@ -26,6 +26,9 @@ FLAG_W = 64
 CAPTION_H = 34
 PASS_RGB = (46, 125, 50)
 FAIL_RGB = (183, 28, 28)
+# Indeterminate is neither: too little of the face was seen to judge. Amber so
+# a reviewer can see at a glance which tiles are asking for their eye.
+INDETERMINATE_RGB = (191, 125, 15)
 MISSING_RGB = (66, 66, 66)
 BG_RGB = (24, 24, 27)
 TEXT_RGB = (240, 240, 240)
@@ -44,9 +47,17 @@ def _tile_for(score: ClipScore) -> Image.Image:
         draw.text((10, TILE // 2 - 6), "no usable frame", fill=TEXT_RGB)
 
     draw = ImageDraw.Draw(tile)
-    colour = PASS_RGB if score.passed else FAIL_RGB
+    # Labelled "ID" because that is all this measures. An unqualified PASS on
+    # this sheet was read as "the clip is good" for a clip that plainly was not
+    # (docs/reports/identity-gate-blind-spot-2026-09-24.md), and this sheet is
+    # exactly where a human looks before trusting it.
+    colour = {
+        "pass": PASS_RGB,
+        "fail": FAIL_RGB,
+        "indeterminate": INDETERMINATE_RGB,
+    }[score.identity_verdict]
     draw.rectangle([0, TILE, TILE, TILE + CAPTION_H], fill=colour)
-    verdict = "PASS" if score.passed else "FAIL"
+    verdict = f"ID {score.identity_verdict.upper()[:4]}"
     lo = score.identity_score_min
     score_text = f"{lo:.3f}" if lo is not None else "--"
     draw.text((6, TILE + 4), f"{verdict}  min {score_text}", fill=TEXT_RGB)

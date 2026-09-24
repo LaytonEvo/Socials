@@ -129,7 +129,7 @@ def test_real_evidence_needs_no_override_and_has_every_section():
         calibration=_cal(),
         scores=SCORES,
         ledger_summary=LEDGER,
-        usable_seconds=60.0,
+        identity_passing_seconds=60.0,
         today=TODAY,
     )
     assert "NOT EVIDENCE" not in text
@@ -163,16 +163,20 @@ def test_report_breaks_pass_rate_down_by_condition():
         assert axis in text
 
 
-def test_cost_per_usable_second_is_reported():
+def test_cost_per_identity_passing_second_is_reported_as_an_upper_bound():
     text = render_gate_report(
         run_id="r",
         calibration=_cal(),
         scores=SCORES,
         ledger_summary=LEDGER,
-        usable_seconds=60.0,
+        identity_passing_seconds=60.0,
         today=TODAY,
     )
-    assert "Cost per usable second" in text
+    assert "Cost per identity-passing second" in text
+    # The number must not be presented as a usable rate: identity passing is an
+    # upper bound on usable, and saying otherwise is what made a visibly bad
+    # clip look fine (docs/reports/identity-gate-blind-spot-2026-09-24.md).
+    assert "UPPER BOUND" in text
     assert "$3.0400" in text  # 182.40 / 60
 
 
@@ -196,7 +200,7 @@ def test_full_harness_runs_offline_and_catches_drift(tmp_path, monkeypatch):
 
     # The fake provider drifts some clips and not others. If everything passed,
     # the harness would be proving only that it runs.
-    passed = [s for s in scores if s["passed"]]
+    passed = [s for s in scores if s["identity_passed"]]
     assert 0 < len(passed) < len(scores)
 
     # Face loss is handled by the coverage rule, not the similarity rule -- and
@@ -205,11 +209,11 @@ def test_full_harness_runs_offline_and_catches_drift(tmp_path, monkeypatch):
     # indeterminate and goes to a human. Neither is a similarity failure.
     lost = [s for s in scores if s["no_face_frames"] > 0]
     assert lost, "expected the fixture to lose the face in at least one clip"
-    thin = [s for s in lost if s["verdict"] == "indeterminate"]
-    assert all(not s["passed"] for s in thin)
+    thin = [s for s in lost if s["identity_verdict"] == "indeterminate"]
+    assert all(not s["identity_passed"] for s in thin)
     assert all(s["failure_reason"] and "threshold" not in s["failure_reason"] for s in thin)
     # Nothing is certified on coverage the rule calls insufficient.
-    assert not [s for s in scores if s["passed"] and s["face_presence"] < 0.5]
+    assert not [s for s in scores if s["identity_passed"] and s["face_presence"] < 0.5]
 
     cal = json.loads((run_dir / "calibration.json").read_text())
     assert cal["embedder_is_stub"] is True

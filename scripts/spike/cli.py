@@ -175,8 +175,8 @@ def _load_scores(run_dir: Path, name: str = "scores.json") -> list[ClipScore]:
         raw = dict(raw)
         for derived in (
             "face_presence",
-            "verdict",
-            "passed",
+            "identity_verdict",
+            "identity_passed",
             "needs_review",
             "failure_reason",
         ):
@@ -464,7 +464,7 @@ def _generate_and_score(
     log.event(
         "scored",
         ref=ref,
-        passed=score.passed,
+        identity_passed=score.identity_passed,
         min_score=score.identity_score_min,
         presence=score.face_presence,
         reason=score.failure_reason,
@@ -552,7 +552,11 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
                 break
             continue
         scores.append(score)
-        flag = "pass" if score.passed else f"FAIL ({score.failure_reason})"
+        flag = (
+            "identity ok"
+            if score.identity_passed
+            else f"identity {score.identity_verdict.upper()} ({score.failure_reason})"
+        )
         print(f"  [{i + 1:>3}/{n}] {cond.cell_id:<44} {flag}")
 
     if skipped:
@@ -566,8 +570,11 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
 
     _save_scores(run_dir, scores)
     log.write_artifact("ledger_summary.json", ledger.summary())
-    passed = sum(1 for s in scores if s.passed)
-    print(f"\n{passed}/{len(scores)} passed · spent ${ledger.spent} of ${ledger.budget_usd}")
+    identity_passed = sum(1 for s in scores if s.identity_passed)
+    print(
+        f"\n{identity_passed}/{len(scores)} passed the identity gate "
+        f"· spent ${ledger.spent} of ${ledger.budget_usd}"
+    )
     return 0
 
 
@@ -689,7 +696,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                             else ""
                         ),
                         "face_presence": f"{score.face_presence:.3f}",
-                        "verdict": score.verdict,
+                        "identity_verdict": score.identity_verdict,
                         "provider": slot,
                         "take": take,
                         "clip_path": str(run_dir / "clips" / ref),
@@ -755,7 +762,7 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
     master = _master_set(run_dir, embedder)
     cal = _load_calibration(run_dir)
 
-    before = [s for s in _load_scores(run_dir) if s.passed][: args.count]
+    before = [s for s in _load_scores(run_dir) if s.identity_passed][: args.count]
     if not before:
         raise SpikeError(
             "No passing clips to probe. Run `run-matrix` first; the probe measures "
@@ -794,7 +801,7 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
                 "before_min": s.identity_score_min,
                 "after_min": after.identity_score_min,
                 "delta": delta,
-                "after_passes": after.passed,
+                "after_identity_passes": after.identity_passed,
             }
         )
         print(
@@ -854,7 +861,11 @@ def cmd_report(args: argparse.Namespace) -> int:
 
     sheet = run_dir / "contact_sheet.png"
     duration = float(cfg.generation.get("clip_duration_s", 5))
-    usable_seconds = sum(1 for s in scores if s.passed) * duration
+    # Identity-passing is NOT the same as usable: a clip can clear the identity
+    # gate and still be unpublishable (broken motion, anatomy, wrong shot). This
+    # is therefore an UPPER BOUND on usable seconds, and the cost-per-usable-
+    # second it feeds into BUILD_PLAN section 9 is correspondingly optimistic.
+    identity_passing_seconds = sum(1 for s in scores if s.identity_passed) * duration
 
     text = render_gate_report(
         run_id=run_dir.name,
@@ -865,7 +876,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         lipsync_probe=probe,
         battery_ratings=ratings,
         operator_time=log.read("operator_time"),
-        usable_seconds=usable_seconds or None,
+        identity_passing_seconds=identity_passing_seconds or None,
         allow_fake=args.allow_fake,
     )
     dest = Path(args.out) if args.out else run_dir / "gate-a.md"

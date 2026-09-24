@@ -84,7 +84,7 @@ def test_clip_fails_when_min_score_is_below_threshold(embedder, master):
     base = master.centroid()
     clip = _frames(info, [0.99, 0.99, 0.80, 0.99], base)
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
-    assert score.passed is False
+    assert score.identity_passed is False
     assert score.failure_reason is not None
     assert "below threshold" in score.failure_reason
 
@@ -105,8 +105,8 @@ def test_face_loss_makes_a_clip_indeterminate_not_failed(embedder, master):
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.identity_score_min == pytest.approx(0.99, abs=1e-6)
     assert score.passes_threshold is True
-    assert score.verdict == "indeterminate"
-    assert score.passed is False
+    assert score.identity_verdict == "indeterminate"
+    assert score.identity_passed is False
     assert score.needs_review is True
     assert score.failure_reason is not None
     assert "seen were fine" in score.failure_reason
@@ -122,7 +122,7 @@ def test_a_bad_frame_fails_the_clip_however_little_was_seen(embedder, master):
     clip = _frames(info, [0.55, None, None, None], master.centroid())
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.face_presence == pytest.approx(0.25)
-    assert score.verdict == "fail"
+    assert score.identity_verdict == "fail"
     assert score.failure_reason is not None
     assert "below threshold" in score.failure_reason
 
@@ -132,7 +132,7 @@ def test_a_clip_with_no_face_at_all_is_unverified_not_failed(embedder, master):
     clip = _frames(info, [None, None, None, None], master.centroid())
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.identity_score_min is None
-    assert score.verdict == "indeterminate"
+    assert score.identity_verdict == "indeterminate"
     assert score.failure_reason is not None
     assert "unverified" in score.failure_reason
 
@@ -144,14 +144,14 @@ def test_full_coverage_certifies_a_clip_too_short_for_the_frame_floor(embedder, 
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.frames_usable == 2 < 4
     assert score.face_presence == pytest.approx(1.0)
-    assert score.verdict == "pass"
+    assert score.identity_verdict == "pass"
 
 
 def test_clip_passes_when_both_rules_hold(embedder, master):
     info = embedder.info
     clip = _frames(info, [0.99, 0.98, 0.97], master.centroid())
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
-    assert score.passed is True
+    assert score.identity_passed is True
     assert score.failure_reason is None
 
 
@@ -167,3 +167,21 @@ def test_worst_frame_is_the_one_a_reviewer_should_see(embedder, master):
     clip = _frames(info, [0.99, 0.70, 0.95], master.centroid())
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.identity_score_min == pytest.approx(0.70, abs=1e-6)
+
+
+def test_the_verdict_never_serialises_under_an_unscoped_name(embedder, master):
+    """The rename exists to stop a misreading, so pin it.
+
+    A bare `pass` on a rating sheet was read as "this clip is good" for a clip
+    that was visibly AI-generated. The scorer had answered its own question
+    correctly; the name promised more than it measured. Nothing in the JSON a
+    human or a later tool reads may say `verdict` or `passed` unqualified.
+    """
+    info = embedder.info
+    clip = _frames(info, [0.99, 0.98, 0.97, 0.96], master.centroid())
+    out = score_embedding_set(clip, master, _calibration(info), ref="r").to_json()
+
+    assert out["identity_verdict"] == "pass"
+    assert out["identity_passed"] is True
+    assert "verdict" not in out
+    assert "passed" not in out
