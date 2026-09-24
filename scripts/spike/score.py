@@ -100,6 +100,21 @@ DEFAULT_MIN_FACE_PRESENCE = 0.5
 # so it is wide and provisional.
 MAX_RUN_BELOW_THRESHOLD = 0.4
 
+# Whether a clip may PASS with any readable frame below the threshold.
+#
+# Owner decision, 2026-09-24: "I'm happy for it to be too strict and send it
+# for review. Ultimately we want to make very realistic videos so it needs to
+# be strict." So the review lane widens rather than the failure lane: a frame
+# that did not look like her sends the clip to a human, it does not reject it.
+# A sustained run still fails outright, per MAX_RUN_BELOW_THRESHOLD.
+#
+# Note what this does NOT buy. The defects that make a video look fake --
+# motion across an occlusion, club and ball detail, anatomy -- are invisible
+# to an identity scorer, as three separate measurements on 2026-09-24 showed.
+# Strictness here is cheap and worth having; it is not where realism comes
+# from.
+ALLOW_PASS_WITH_ANY_FRAME_BELOW = False
+
 # Absolute floor on evidence, independent of clip length. At 2 fps a short clip
 # can clear a 50% ratio on two adjacent frames, which is one moment seen twice.
 MIN_USABLE_FRAMES = 4
@@ -198,6 +213,10 @@ class ClipScore:
             return FAIL
         if not self.has_enough_coverage:
             return INDETERMINATE
+        if self.frames_below_threshold and not ALLOW_PASS_WITH_ANY_FRAME_BELOW:
+            # Cleared the run allowance, so not a failure -- but a frame did
+            # not look like her, and that is not something to certify quietly.
+            return INDETERMINATE
         return PASS
 
     @property
@@ -225,6 +244,12 @@ class ClipScore:
         if self.frames_usable == 0:
             return "no face found in any sampled frame, so identity is unverified"
         reasons = []
+        if self.frames_below_threshold and not ALLOW_PASS_WITH_ANY_FRAME_BELOW:
+            reasons.append(
+                f"{self.frames_below_threshold} of {self.frames_usable} readable frames "
+                f"below threshold {self.threshold:.4f} (within the "
+                f"{self.max_run_below:.0%} run allowance, so not a failure)"
+            )
         if self.face_presence < self.min_face_presence:
             reasons.append(
                 f"face present in only {self.face_presence:.0%} of sampled frames "

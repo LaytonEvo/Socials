@@ -92,7 +92,11 @@ def test_one_low_frame_does_not_fail_a_clip(embedder, master):
     assert score.frames_below_threshold == 1
     assert score.longest_run_below_threshold == 1
     assert score.longest_run_fraction == pytest.approx(0.25)
-    assert score.identity_verdict == "pass"
+    # Not a failure -- but not certified either. The owner asked for the review
+    # lane to widen rather than the failure lane (score.py, 2026-09-24).
+    assert score.identity_verdict != "fail"
+    assert score.identity_verdict == "indeterminate"
+    assert score.needs_review is True
 
 
 def test_a_sustained_run_below_threshold_fails_the_clip(embedder, master):
@@ -117,7 +121,9 @@ def test_the_same_dips_scattered_do_not_fail_the_clip(embedder, master):
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.frames_below_threshold == 3
     assert score.longest_run_below_threshold == 1
-    assert score.identity_verdict == "pass"
+    # Contiguity still decides failure: three scattered dips are not a drift.
+    assert score.identity_verdict != "fail"
+    assert score.identity_verdict == "indeterminate"
 
 
 def test_the_verdict_does_not_move_when_the_same_clip_is_sampled_denser(embedder, master):
@@ -134,7 +140,8 @@ def test_the_verdict_does_not_move_when_the_same_clip_is_sampled_denser(embedder
     a = score_embedding_set(sparse, master, cal, ref="a")
     b = score_embedding_set(dense, master, cal, ref="b")
     assert (b.identity_score_min or 0) < (a.identity_score_min or 0)  # the minimum sank
-    assert a.identity_verdict == b.identity_verdict == "pass"  # the verdict did not
+    assert a.identity_verdict == b.identity_verdict  # the verdict did not move
+    assert a.identity_verdict != "fail"
 
 
 def test_face_loss_makes_a_clip_indeterminate_not_failed(embedder, master):
@@ -233,3 +240,17 @@ def test_the_verdict_never_serialises_under_an_unscoped_name(embedder, master):
     assert out["identity_passed"] is True
     assert "verdict" not in out
     assert "passed" not in out
+
+
+def test_a_clean_clip_still_passes_outright(embedder, master):
+    """Strictness must not collapse into 'everything needs a human'.
+
+    Widening the review lane is only useful if clips with nothing wrong still
+    clear it on their own.
+    """
+    info = embedder.info
+    clip = _frames(info, [0.99, 0.98, 0.985, 0.99, 0.99], master.centroid())
+    score = score_embedding_set(clip, master, _calibration(info), ref="r")
+    assert score.frames_below_threshold == 0
+    assert score.identity_verdict == "pass"
+    assert score.needs_review is False
