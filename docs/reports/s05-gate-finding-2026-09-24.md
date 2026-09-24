@@ -44,6 +44,20 @@ amendment A3, and it needs new stills first.
 
 ## Finding 2 — a fixed portrait cannot produce most of the battery
 
+> [!CAUTION]
+> **This finding is WRONG and was corrected the same day.** All four shots
+> below generated successfully on 2026-09-24 and the owner rated them 4-5; the
+> full 13-shot battery completed with no refusals
+> (`s07-golf-battery-2026-09-24.md`). Two things had changed: six keyframes
+> with rotation instead of one, and the 9:16 master stills instead of the
+> original 3:4 portraits. `apparel`, called impossible from a portrait, was
+> generated from `master_017`.
+>
+> Their contributions cannot be separated from that run, but the conclusion
+> below does not survive either way: **the format question did not depend on
+> S0.4.** It depended on having keyframes worth animating, which Midjourney
+> supplied. The original text is kept for the record.
+
 Four of the first six golf-battery shots could not be generated at all:
 
 | Shot | Outcome |
