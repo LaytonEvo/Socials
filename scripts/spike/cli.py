@@ -611,7 +611,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                 except (BudgetExceeded, BudgetNotSet) as exc:
                     log.event("battery_halted", ref=ref, error=str(exc))
                     print(f"halted: {exc}", file=sys.stderr)
-                    _write_battery_sheet(run_dir, rows)
+                    _write_battery_sheet(run_dir, rows, prefix)
                     return 1
                 except SpikeError as exc:
                     # Same reasoning as the matrix: one shot the provider will
@@ -626,7 +626,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                             f"stopping: {len(skipped)} shots could not be generated.",
                             file=sys.stderr,
                         )
-                        _write_battery_sheet(run_dir, rows)
+                        _write_battery_sheet(run_dir, rows, prefix)
                         return 1
                     continue
                 scores.append(score)
@@ -658,16 +658,27 @@ def cmd_battery(args: argparse.Namespace) -> int:
                 print(f"  {ref}")
 
     _save_scores(run_dir, scores, f"{prefix}_scores.json")
-    sheet = _write_battery_sheet(run_dir, rows)
-    log.write_artifact("ledger_summary_battery.json", ledger.summary())
+    sheet = _write_battery_sheet(run_dir, rows, prefix)
+    log.write_artifact(f"ledger_summary_{prefix}.json", ledger.summary())
     print(f"\n{len(rows)} takes · spent ${ledger.spent}")
     print(f"rating sheet: {sheet}")
-    print(f"  fill in `rating` 1-5 and `failure_tags` from: {'|'.join(FAILURE_TAGS)}")
+    if prompt_set == "golf":
+        print(f"  fill in `rating` 1-5 and `failure_tags` from: {'|'.join(FAILURE_TAGS)}")
+    else:
+        print("  measured face_presence and verdict are in the sheet, per shot.")
     return 0
 
 
-def _write_battery_sheet(run_dir: Path, rows: list[dict[str, Any]]) -> Path:
-    dest = run_dir / "battery_ratings.csv"
+def _write_battery_sheet(
+    run_dir: Path, rows: list[dict[str, Any]], prefix: str = "battery"
+) -> Path:
+    """Write the rating sheet.
+
+    The prefix keeps prompt sets from overwriting each other's sheet in a
+    shared run directory -- the same collision that cost a paid clip when a
+    stale fake-provider output sat in a real clip's path.
+    """
+    dest = run_dir / f"{prefix}_ratings.csv"
     if not rows:
         return dest
     with dest.open("w", newline="", encoding="utf-8") as fh:
