@@ -3,6 +3,8 @@ sample actually covers every condition."""
 
 from __future__ import annotations
 
+import pytest
+
 from scripts.spike.matrix import (
     AXES,
     FULL_MATRIX_SIZE,
@@ -82,3 +84,14 @@ def test_coverage_probe_predicts_a_band_it_could_miss():
     highs = [item["expect"][1] for item in COVERAGE_PROBE]
     assert min(lows) <= 0.375, "nothing probes the bottom of the open bracket"
     assert max(highs) >= 0.875, "nothing probes the top of the open bracket"
+
+
+def test_shot_filter_rejects_an_unknown_id():
+    """A typo must not silently generate the whole set at $1.60 a clip."""
+    from scripts.spike.matrix import COVERAGE_PROBE, select_shots
+
+    assert select_shots(COVERAGE_PROBE, None, "coverage") is COVERAGE_PROBE
+    picked = select_shots(COVERAGE_PROBE, ["glance_back", "point_to_green"], "coverage")
+    assert [item["id"] for item in picked] == ["glance_back", "point_to_green"]
+    with pytest.raises(ValueError, match="typo"):
+        select_shots(COVERAGE_PROBE, ["glance_back", "typo"], "coverage")

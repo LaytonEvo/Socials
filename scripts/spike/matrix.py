@@ -18,6 +18,7 @@ level's on the same axis, while still spreading combinations.
 from __future__ import annotations
 
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -238,6 +239,28 @@ PROMPT_SETS: dict[str, tuple[dict[str, Any], ...]] = {
     "golf": GOLF_BATTERY,
     "coverage": COVERAGE_PROBE,
 }
+
+
+def select_shots(
+    items: tuple[dict[str, Any], ...], only: Sequence[str] | None, set_name: str
+) -> tuple[dict[str, Any], ...]:
+    """Narrow a prompt set to named shot ids, refusing ids that do not exist.
+
+    Re-running a set regenerates every shot in it, and each regenerated shot is
+    billed again for a clip we already hold. A silently-ignored typo would
+    therefore generate the whole set at full price, so an unknown id raises.
+    """
+    if not only:
+        return items
+    known = {item["id"] for item in items}
+    unknown = sorted(set(only) - known)
+    if unknown:
+        raise ValueError(
+            f"--shots names {', '.join(unknown)}, which are not in the "
+            f"'{set_name}' set. Available: {', '.join(sorted(known))}"
+        )
+    wanted = set(only)
+    return tuple(item for item in items if item["id"] in wanted)
 
 
 #: Failure tags from BUILD_PLAN task 2.3, used for manual rating in S0.7.

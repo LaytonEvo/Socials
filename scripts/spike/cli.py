@@ -52,6 +52,7 @@ from .matrix import (
     coverage,
     coverage_gaps,
     sample_matrix,
+    select_shots,
 )
 from .models import MODELS, config_snippet, fetch, sha256_of, write_paths
 from .providers import (
@@ -569,6 +570,10 @@ def cmd_battery(args: argparse.Namespace) -> int:
 
     prompt_set = getattr(args, "prompt_set", "golf")
     items = PROMPT_SETS[prompt_set]
+    try:
+        items = select_shots(items, getattr(args, "shots", None), prompt_set)
+    except ValueError as exc:
+        raise SpikeError(str(exc)) from exc
     # The ref prefix keeps the two sets' artifacts apart in a shared run dir.
     prefix = "battery" if prompt_set == "golf" else prompt_set
 
@@ -1224,6 +1229,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_run_matrix)
 
     sp = sub.add_parser("battery", help="S0.7 golf format battery + rating sheet")
+    sp.add_argument(
+        "--shots",
+        nargs="+",
+        help="run only these shot ids from the prompt set. Use it to resume a "
+        "part-finished set: every shot named is generated and billed again.",
+    )
     sp.add_argument(
         "--prompt-set",
         choices=sorted(PROMPT_SETS),
