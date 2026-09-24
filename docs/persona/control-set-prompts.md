@@ -48,6 +48,147 @@ comparing distributions that differ in more than the one thing being measured.
 Target: ~40 new plus the existing 16 gives about 56, which clears the
 harness's 50+ guidance for the negative distribution.
 
+
+## The 20 prompts, written out
+
+**Run every one of these with NO anchor image attached.** That single
+difference is the entire method: identical conditions, different woman.
+
+
+### Talking
+
+**1.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, mid-sentence talking to camera, mouth open, animated expression, medium shot waist up, soft daylight --ar 9:16
+```
+
+**2.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, laughing with her head back, mouth open, eyes crinkled, medium shot, golden hour --ar 9:16
+```
+
+**3.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, mid-speech gesturing with one hand, looking at camera, waist up, overcast light --ar 9:16
+```
+
+**4.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, smiling broadly showing teeth, head and shoulders, bright daylight --ar 9:16
+```
+
+
+### Angle
+
+**5.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, three-quarter view facing left, looking at camera, waist up, soft daylight --ar 9:16
+```
+
+**6.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, three-quarter view facing right, looking away from camera, waist up, golden hour --ar 9:16
+```
+
+**7.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, full profile side view, looking down the fairway, waist up, overcast --ar 9:16
+```
+
+**8.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, turning her head towards the camera over her shoulder, waist up, afternoon light --ar 9:16
+```
+
+
+### Distance
+
+**9.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, tight close-up of her face, shoulders just in frame, soft daylight --ar 9:16
+```
+
+**10.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, close-up, head and shoulders, slight smile, golden hour --ar 9:16
+```
+
+**11.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, full body standing on the fairway, relaxed posture, midday sun --ar 9:16
+```
+
+**12.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, full body walking towards camera, mid-stride, overcast --ar 9:16
+```
+
+
+### Light
+
+**13.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, harsh midday sunlight, strong shadows on her face, waist up --ar 9:16
+```
+
+**14.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, warm low golden hour sun behind her, rim light on her hair, waist up --ar 9:16
+```
+
+**15.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, flat grey overcast daylight, no shadows, waist up --ar 9:16
+```
+
+**16.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, seated indoors in a clubhouse by a window, soft indoor light, waist up --ar 9:16
+```
+
+
+### Expression and head position
+
+**17.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, neutral expression, relaxed, looking straight at camera, waist up --ar 9:16
+```
+
+**18.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, concentrating, slight frown, looking down at the ball, waist up --ar 9:16
+```
+
+**19.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, head tilted to one side, warm smile, head and shoulders --ar 9:16
+```
+
+**20.**
+
+```
+a 25 year old english woman, long wavy light brown hair, brown eyes, natural makeup, slim athletic build, on a golf course, eyes closed briefly mid-blink, relaxed face, head and shoulders --ar 9:16
+```
+
 ## Why these stay synthetic
 
 ADR 0002 Finding 4: a control set of **real** faces is biometric data of real
