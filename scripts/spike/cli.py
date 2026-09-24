@@ -806,7 +806,10 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
             ref=f"{s.ref}:lipsync",
             fps=cfg.embedder.frame_sample_fps,
             frames_dir=run_dir / "frames" / f"{s.ref}-lipsync",
-            frame_source=ImageSequenceFrames(),
+            # The fake provider writes a directory of stills; a hosted one
+            # writes a single file. Choosing by what is actually there is the
+            # same lesson as the clip path that cost a paid generation.
+            frame_source=ImageSequenceFrames() if dest.is_dir() else None,
             condition=s.condition,
         )
         delta = (

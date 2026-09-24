@@ -301,4 +301,13 @@ def _fal_video(cfg: ProviderConfig) -> Any:
 register_provider("video", "fal", _fal_video)
 register_provider("image", "fake", lambda cfg: FakeImageProvider(cfg))
 register_provider("video", "fake", lambda cfg: FakeVideoProvider(cfg))
+
+
+def _fal_lipsync(cfg: ProviderConfig) -> Any:
+    from .fal import FalLipSyncProvider
+
+    return FalLipSyncProvider(cfg, extra_arguments=cfg.options or None)
+
+
+register_provider("lipsync", "fal", _fal_lipsync)
 register_provider("lipsync", "fake", lambda cfg: FakeLipSyncProvider(cfg))

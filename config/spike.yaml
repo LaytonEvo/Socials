@@ -249,11 +249,22 @@ providers:
       price_usd_per_second: 0.0
       verified_on: 1970-01-01
     primary:
-      backend: null
-      model: null
+      # S0.8's provider. Takes a video plus EITHER an audio track or text to
+      # speak, so one call covers text-to-speech and the sync together.
+      # Schema verified against fal's OpenAPI 2026-09-24: video_url required,
+      # audio_url / text / voice_id optional.
+      backend: fal
+      model: fal-ai/pixverse/lipsync
       endpoint: null
-      price_usd_per_second: null
-      verified_on: null
+      # $0.04 per second of OUTPUT video, from fal's model listing queried
+      # 2026-09-24. The listing also notes a surcharge per 100 characters when
+      # text is supplied instead of audio; that figure was truncated in the
+      # listing and is NOT verified, so the guard below covers video only and
+      # will understate a text-driven call. Read it before relying on it.
+      price_usd_per_second: 0.04
+      verified_on: 2026-09-24
+      options:
+        text: "The wind is straight into us here, so I am taking one more club."
 
 # --- LoRA (S0.4) -----------------------------------------------------------
 lora:

@@ -44,7 +44,7 @@ from PIL import Image
 from .config import ProviderConfig
 from .embedders import ASPECT_9_16, crop_to_aspect
 from .errors import ProviderFailed, ProviderNotConfigured, ProviderRefused, ProviderTimeout
-from .providers import VideoRequest
+from .providers import LipSyncRequest, VideoRequest
 
 QUEUE_ROOT = "https://queue.fal.run"
 API_KEY_ENV = "FAL_KEY"
@@ -447,6 +447,88 @@ def veo_duration(seconds: float, allowed: tuple[str, ...] = VEO_DURATIONS) -> st
             "bill."
         )
     return literal
+
+
+def data_uri_media(path: Path, max_bytes: int = MAX_DATA_URI_BYTES) -> str:
+    """Inline any local media file as a `data:` URI.
+
+    Same trade as ``data_uri_keyframe`` and the same ADR 0006 reasoning, minus
+    the cropping: a clip or an audio track is passed through untouched, because
+    re-encoding it to fit would change the very thing being measured. Clips
+    written by fal carry no extension, so the media type is taken from the
+    bytes when the name cannot supply it.
+    """
+    if not path.is_file():
+        raise ProviderNotConfigured(f"file does not exist: {path}")
+    raw = path.read_bytes()
+    if len(raw) > max_bytes:
+        raise ProviderNotConfigured(
+            f"{path.name} is {len(raw) / 1024 / 1024:.1f}MB, over the "
+            f"{max_bytes / 1024 / 1024:.0f}MB data-URI cap. fal discourages inlining "
+            "large files; host it and pass the URL via resolve_clip."
+        )
+    mime, _ = mimetypes.guess_type(path.name)
+    if mime is None:
+        # ftyp box at offset 4 marks an ISO media container (mp4/mov).
+        mime = "video/mp4" if raw[4:8] == b"ftyp" else None
+    if mime is None:
+        raise ProviderNotConfigured(f"cannot tell what media type {path.name} is; fal needs one")
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+@dataclass
+class FalLipSyncProvider:
+    """Lip sync through fal's queue.
+
+    Answers S0.8: does a lip-sync pass move the identity score, and by how
+    much. The only number before this was -0.0141 from the fake provider,
+    which describes the harness rather than any real model.
+
+    The model takes a video plus EITHER an audio track or text to speak, so
+    one call can cover both text-to-speech and the sync. Which it does is a
+    config question: pass ``text`` (and a voice) in the slot's options, or
+    supply audio on the request.
+    """
+
+    cfg: ProviderConfig
+    client: FalClient | None = None
+    download: Callable[[str, Path], Path] | None = None
+    resolve_clip: Callable[[Path], str] | None = None
+    on_submit: Callable[[QueuedRequest], None] | None = None
+    extra_arguments: dict[str, Any] | None = None
+    name: str = field(default="fal-lipsync", init=False)
+
+    def __post_init__(self) -> None:
+        if self.client is None:
+            self.client = FalClient(api_key=os.environ.get(API_KEY_ENV))
+        if self.download is None:
+            self.download = _download
+        if self.resolve_clip is None:
+            self.resolve_clip = data_uri_media
+
+    def apply(self, req: LipSyncRequest, dest: Path) -> Path:
+        if not self.cfg.model:
+            raise ProviderNotConfigured(
+                f"providers.{self.cfg.kind}.{self.cfg.slot} has no model id. "
+                "Read the model's own page for its id and price, then record both "
+                "in config with a verified_on date."
+            )
+        assert self.client is not None
+        assert self.download is not None
+        assert self.resolve_clip is not None
+
+        arguments: dict[str, Any] = {"video_url": self.resolve_clip(Path(req.clip))}
+        if req.audio is not None:
+            arguments["audio_url"] = self.resolve_clip(Path(req.audio))
+        arguments.update(self.extra_arguments or {})
+
+        queued = self.client.submit(self.cfg.model, arguments)
+        if self.on_submit is not None:
+            self.on_submit(queued)
+        status = self.client.wait(queued)
+        raise_if_failed(status, queued.request_id)
+        result = self.client.result(queued)
+        return self.download(first_media_url(result), dest)
 
 
 def data_uri_keyframe(
