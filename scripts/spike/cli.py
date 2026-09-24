@@ -18,6 +18,7 @@ import dataclasses
 import datetime as dt
 import json
 import shutil
+import subprocess
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -772,6 +773,29 @@ def _write_battery_sheet(
     return dest
 
 
+def _audio_seconds(path: Path) -> float | None:
+    """Duration of an audio file, or None if it cannot be read."""
+    try:
+        out = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return float(out)
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
+        return None
+
+
 CDN_URLS_ARTIFACT = "cdn_urls.json"
 
 
@@ -854,6 +878,14 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
             outcome.ok = True
             outcome.artifact = str(run_dir / "speech.mp3")
         print(f"voice: {(tts_cfg.options or {}).get('voice', '(provider default)')}")
+        # Some models refuse a video much longer than the audio rather than
+        # trimming it silently the way others do. `end_time: auto` asks for the
+        # trim to be explicit, using the speech we just measured.
+        spoken = _audio_seconds(run_dir / "speech.mp3")
+        opts = getattr(provider, "extra_arguments", None) or {}
+        if spoken and str(opts.get("end_time", "")).lower() == "auto":
+            provider.extra_arguments = {**opts, "end_time": round(spoken, 2)}
+            print(f"trimming video to the {spoken:.2f}s of speech")
         # Sending both would leave it ambiguous which the model used.
         if getattr(provider, "extra_arguments", None):
             provider.extra_arguments = {

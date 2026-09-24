@@ -286,6 +286,9 @@ providers:
         # against a 4.01s video. pixverse and veed silently trim the video
         # instead, which is why they never complained.
         enable_dynamic_duration: true
+        # Trim the video to the measured speech. `auto` is resolved at call
+        # time because low stability makes the duration vary per generation.
+        end_time: auto
     veed:
       backend: fal
       model: veed/lipsync/v2
