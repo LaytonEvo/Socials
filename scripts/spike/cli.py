@@ -421,6 +421,7 @@ def _generate_and_score(
             clip_path,
         )
         outcome.ok = True
+        outcome.artifact = str(clip_path)
 
     score = score_clip(
         clip_path,

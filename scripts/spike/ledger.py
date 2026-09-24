@@ -40,6 +40,13 @@ class CallOutcome:
     # None means "charge the estimate"; providers that report real usage
     # should pass the true figure.
     actual_usd: Decimal | None = None
+    #: Where the thing that was paid for ended up. Recording it is what makes
+    #: a run auditable: 24 clips were once generated, billed and thrown away by
+    #: a diagnostic script that kept only the verdict, and nothing in the run
+    #: said so. A paid call that leaves no artefact is not necessarily a bug --
+    #: some calls legitimately produce only an answer -- but it should be
+    #: visible rather than silent.
+    artifact: str | None = None
 
 
 @dataclass
@@ -155,6 +162,14 @@ class CostLedger:
         if outcome.actual_usd is None and outcome.units != 0:
             actual = self.estimate(provider, outcome.units)
         self._spent += actual
+        if outcome.ok and outcome.artifact is None:
+            self.log.event(
+                "paid_call_kept_nothing",
+                ref=ref,
+                usd=str(actual),
+                note="succeeded and recorded no artefact; the output exists only at "
+                "the provider, if at all",
+            )
         entry = {
             "ref": ref,
             "provider_kind": provider.kind,

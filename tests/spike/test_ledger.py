@@ -146,3 +146,21 @@ def test_a_refused_call_is_still_written_to_the_ledger(ledger, priced, run_log):
 
     rows = ledger.entries
     assert any(r["ref"] == "refused-1" for r in rows), "a refused call must still be recorded"
+
+
+def test_a_paid_call_that_keeps_nothing_says_so(ledger, priced, run_log):
+    """24 clips were once generated, billed, and thrown away by a script that
+    kept only the verdict. Nothing in the run recorded that. A call may
+    legitimately produce only an answer, but it should be visible."""
+    with ledger.paid_call(priced, 4.0, ref="kept-nothing"):
+        pass  # succeeds, records no artifact
+
+    events = run_log.read("paid_call_kept_nothing")
+    assert [e["ref"] for e in events] == ["kept-nothing"]
+
+
+def test_a_paid_call_that_saved_something_is_quiet(ledger, priced, run_log):
+    with ledger.paid_call(priced, 4.0, ref="kept") as outcome:
+        outcome.artifact = "spike/runs/x/clips/kept.mp4"
+
+    assert run_log.read("paid_call_kept_nothing") == []
