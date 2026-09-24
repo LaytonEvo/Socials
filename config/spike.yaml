@@ -190,6 +190,19 @@ providers:
       # while reporting it is inside it.
       price_usd_per_second: 0.15
       verified_on: 2026-09-24
+    flf_flagship:        # first/last-frame conditioning, full tier
+      # Exists to answer one question: does the Fast tier give up anything
+      # that matters? The rate gap is 4x at the guard figures, so it decides
+      # the cost model for the whole project (BUILD_PLAN Section 9). Held
+      # identical to flf_fast in every other respect so the tier is the only
+      # variable.
+      backend: fal
+      model: fal-ai/veo3.1/first-last-frame-to-video
+      endpoint: null     # the adapter builds it from the model id (ADR 0006)
+      # $0.20/s audio off, $0.40/s with, from fal's model listing queried
+      # 2026-09-24. Higher figure recorded, as everywhere else here.
+      price_usd_per_second: 0.40
+      verified_on: 2026-09-24
     budget:              # volume / B-roll
       backend: null
       model: null
