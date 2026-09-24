@@ -406,6 +406,19 @@ def _generate_and_score(
             image_provider.generate(ImageRequest(prompt=prompt, seed=seed, ref=ref), keyframe_path)
             outcome.ok = True
 
+    # Which still produced a clip decides what to do about that clip, and it
+    # was not recorded: a no_media refusal is a property of the (keyframe,
+    # prompt) pair, and a clip whose body or limbs come out wrong implicates
+    # the still it was animated from. Both had to be reconstructed by replaying
+    # the keyframe cursor against the queue timestamps, which is guesswork the
+    # log should not require.
+    log.event(
+        "keyframe_selected",
+        ref=ref,
+        keyframe=str(keyframe_path),
+        supplied=keyframe is not None,
+    )
+
     clip_path = run_dir / "clips" / ref
     # Clear whatever is already there. Providers legitimately disagree about
     # the shape of a clip -- the fake writes a directory of stills so it needs
