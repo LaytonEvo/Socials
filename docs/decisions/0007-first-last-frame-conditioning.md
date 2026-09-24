@@ -78,11 +78,35 @@ $0.10/s and Lite at $0.03/s. `BUILD_PLAN` Section 9 assumes roughly $60 for a
 60-second piece; at Fast rates that is about $6 before discards. The budget
 model should not harden until a real invoice settles which figure is charged.
 
+## Outcome — tested 2026-09-24, it works
+
+`turn_away_and_back` on `veo3.1/fast/first-last-frame-to-video`, first and
+last frame the same still, 4 s, $0.60 reserved at the guard rate. Generated
+first time with no refusal.
+
+```
+identity   PASS   min 0.9712 (threshold 0.9609)   coverage 75% (6/8)
+per-frame  0.9912 0.9839 -- -- 0.9712 0.9898 0.9930 0.9921
+```
+
+Owner: **"that motion works"**. The face does leave frame for two sampled
+frames, so the clip exercises the failure rather than avoiding it, and the
+frames after the return score higher than those before it — the opposite of
+`approach_camera`, where the return frame was the clip's worst.
+
 ## Consequences
 
-- If the Fast test shows the return is correct, the shot-list constraint in
-  `DRAFT_SHOTS` lifts and the battery's reaction and swing shots come back
-  into scope for reasons unrelated to S0.4's LoRA.
-- If it does not, the constraint stands and the finding is that the failure is
-  deeper than conditioning can reach.
-- Either way the identity gate is unaffected. It was never what caught this.
+- **The occlusion-return failure is solved** for any motion whose end pose we
+  have a still of. From the existing master set that covers turning away and
+  back, looking around, and gesturing and returning to camera.
+- **It is not a substitute for S0.4.** Conditioning needs a still of the pose
+  the motion *ends* in, so mid-swing, top-of-backswing, follow-through and
+  addressing the ball still need the LoRA — to generate their end frames, not
+  to fix their motion. Some battery failures were being attributed to the
+  LoRA's absence and were in fact this bug.
+- **The Fast tier produced acceptable motion.** That is one clip, judged on
+  motion rather than on a flagship-versus-fast comparison, so it does not yet
+  justify moving the default slot. A deliberate side-by-side on the same shot
+  and keyframe would, and it would be worth $1.00 given the 4x rate gap.
+- The identity gate is unaffected throughout. It was never what caught this,
+  and it said `pass` about the broken clip and the fixed one alike.

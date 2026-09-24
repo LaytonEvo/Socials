@@ -250,9 +250,13 @@ COVERAGE_PROBE: tuple[dict[str, Any], ...] = (
 #: rather than at measuring the harness. Every one is built to the envelope
 #: the 2026-09-24 probes established:
 #:
-#:  * the face never leaves frame and returns. That is the one reproducible
-#:    Veo failure found so far, and it is avoidable by choosing the shot
-#:    (docs/reports/occlusion-return-failure-2026-09-24.md).
+#:  * the face never leaves frame and returns. That was the one reproducible
+#:    Veo failure found, and it is SOLVED by first/last-frame conditioning
+#:    (ADR 0007): pinning the end pose stops the model inventing the return,
+#:    confirmed by the owner on 2026-09-24. The constraint therefore binds
+#:    only on single-keyframe image-to-video. These shots keep it because they
+#:    run on the flagship image-to-video slot; a shot that needs the face to
+#:    leave and return should use a first/last-frame slot instead.
 #:  * talking to camera, which is the only format with a confirmed pass.
 #:  * no hands on a club in frame: `hands_grip` and `club_distortion` are
 #:    predicted-hard in the golf battery and none of it has run yet.
