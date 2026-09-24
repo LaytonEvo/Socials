@@ -50,6 +50,12 @@ class ProviderConfig:
     price: float | None
     price_unit: str  # "image" or "second"
     verified_on: dt.date | None
+    #: Per-model input fields, passed through to the provider's own arguments.
+    #: Every model on a provider has its own schema even where the transport is
+    #: shared, so this is where a setting that belongs to ONE model lives --
+    #: in config, never in code (CLAUDE.md rule 1). The adapter already had the
+    #: seam; nothing could reach it from config until 2026-09-24.
+    options: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_fake(self) -> bool:
@@ -231,6 +237,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> SpikeConfig:
                 verified_on=(
                     _as_date(verified, f"providers.{kind}.{slot}.verified_on") if verified else None
                 ),
+                options=dict(cfg.get("options") or {}),
             )
 
     return SpikeConfig(

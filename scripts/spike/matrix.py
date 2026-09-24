@@ -278,6 +278,15 @@ DRAFT_SHOTS: tuple[dict[str, Any], ...] = (
         "facing camera throughout",
     },
     {
+        # The S0.8 premise test. Audio is only worth judging if she says
+        # something, so the line is in the prompt. Short enough for 4s.
+        "id": "spoken_line",
+        "hard": False,
+        "prompt": "talking to camera on the course at golden hour, facing camera "
+        'throughout, saying: "The wind is straight into us here, so I am taking '
+        'one more club."',
+    },
+    {
         "id": "sign_off",
         "hard": False,
         "prompt": "finishing a sentence to camera and smiling, course behind her, "

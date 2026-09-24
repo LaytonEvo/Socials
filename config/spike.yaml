@@ -171,6 +171,23 @@ providers:
       # 2026-09-24. Higher figure recorded, as everywhere else here.
       price_usd_per_second: 0.15
       verified_on: 2026-09-24
+    fast_audio:          # Fast tier with Veo's native audio ON
+      # S0.8's premise is that lip sync is a separate stage with its own
+      # provider and its own identity cost. Veo generates audio natively, and
+      # if that is usable the stage may not be needed at all -- which would
+      # remove a provider, a cost line and a measured identity penalty.
+      # Everything generated up to 2026-09-24 has been silent.
+      #
+      # Same model as the `fast` slot; audio is a per-call argument, not a
+      # different endpoint. The guard price already carried the audio-ON
+      # figure, so enabling it costs nothing extra against the cap.
+      backend: fal
+      model: fal-ai/veo3.1/fast/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.15
+      verified_on: 2026-09-24
+      options:
+        generate_audio: true
     flagship:            # kept for comparison only; see the `fast` slot
       backend: fal
       model: fal-ai/veo3.1/image-to-video

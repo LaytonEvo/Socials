@@ -295,7 +295,7 @@ def _fal_video(cfg: ProviderConfig) -> Any:
     """
     from .fal import FalVideoProvider
 
-    return FalVideoProvider(cfg)
+    return FalVideoProvider(cfg, extra_arguments=cfg.options or None)
 
 
 register_provider("video", "fal", _fal_video)
