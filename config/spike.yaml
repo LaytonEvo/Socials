@@ -266,6 +266,32 @@ providers:
       options:
         text: "The wind is straight into us here, so I am taking one more club."
 
+    heygen:
+      # Quality candidate. pixverse was chosen as the cheapest of seven and
+      # the owner judged its sync bad on 2026-09-24, which made it a false
+      # economy: sync quality gates the talking-head format, the core content
+      # type. Same required fields as pixverse (video_url, audio_url), so it
+      # is a drop-in.
+      backend: fal
+      model: fal-ai/heygen/v3/lipsync/precision
+      endpoint: null
+      # $0.10/second, from fal's pricing API, queried 2026-09-24.
+      price_usd_per_second: 0.10
+      verified_on: 2026-09-24
+      options:
+        text: "The wind is straight into us here, so I am taking one more club."
+    veed:
+      backend: fal
+      model: veed/lipsync/v2
+      endpoint: null
+      # $0.07/unit, from fal's pricing API, queried 2026-09-24. The API reports
+      # the unit as "units" rather than seconds; treated as per-second here,
+      # which is the reading the model page implies but is NOT verified.
+      price_usd_per_second: 0.07
+      verified_on: 2026-09-24
+      options:
+        text: "The wind is straight into us here, so I am taking one more club."
+
   # Speech (S0.8). Billed per 1000 characters, not per second of output.
   tts:
     fake:
