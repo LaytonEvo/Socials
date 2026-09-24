@@ -89,12 +89,15 @@ def test_clip_fails_when_min_score_is_below_threshold(embedder, master):
     assert "below threshold" in score.failure_reason
 
 
-def test_clip_fails_on_face_loss_even_with_perfect_scores(embedder, master):
-    """The failure the plan's scoring would have missed.
+def test_face_loss_makes_a_clip_indeterminate_not_failed(embedder, master):
+    """Losing the face is missing evidence, not evidence of a problem.
 
     Every frame where the face IS found scores 0.99. Taking min/mean over only
-    usable frames would call this a clean pass -- on a clip that lost the face
-    for half its length.
+    the usable frames would call this a clean pass on a clip half of which was
+    never inspected, so it must not pass. But it must not fail either: a
+    detector finding nothing cannot distinguish "she turned away" from "her
+    face melted", and calling absence a failure threw away a good clip for
+    real (see the module docstring).
     """
     info = embedder.info
     base = master.centroid()
@@ -102,9 +105,46 @@ def test_clip_fails_on_face_loss_even_with_perfect_scores(embedder, master):
     score = score_embedding_set(clip, master, _calibration(info), ref="r")
     assert score.identity_score_min == pytest.approx(0.99, abs=1e-6)
     assert score.passes_threshold is True
+    assert score.verdict == "indeterminate"
     assert score.passed is False
+    assert score.needs_review is True
     assert score.failure_reason is not None
-    assert "face present in only 50%" in score.failure_reason
+    assert "seen were fine" in score.failure_reason
+
+
+def test_a_bad_frame_fails_the_clip_however_little_was_seen(embedder, master):
+    """Seeing a bad frame IS evidence, unlike not seeing a face.
+
+    Low coverage downgrades a clean clip to indeterminate; it must never
+    upgrade a clip with an observed bad frame out of failing.
+    """
+    info = embedder.info
+    clip = _frames(info, [0.55, None, None, None], master.centroid())
+    score = score_embedding_set(clip, master, _calibration(info), ref="r")
+    assert score.face_presence == pytest.approx(0.25)
+    assert score.verdict == "fail"
+    assert score.failure_reason is not None
+    assert "below threshold" in score.failure_reason
+
+
+def test_a_clip_with_no_face_at_all_is_unverified_not_failed(embedder, master):
+    info = embedder.info
+    clip = _frames(info, [None, None, None, None], master.centroid())
+    score = score_embedding_set(clip, master, _calibration(info), ref="r")
+    assert score.identity_score_min is None
+    assert score.verdict == "indeterminate"
+    assert score.failure_reason is not None
+    assert "unverified" in score.failure_reason
+
+
+def test_full_coverage_certifies_a_clip_too_short_for_the_frame_floor(embedder, master):
+    """The absolute floor bounds UNSEEN frames; a short clip has none."""
+    info = embedder.info
+    clip = _frames(info, [0.99, 0.98], master.centroid())
+    score = score_embedding_set(clip, master, _calibration(info), ref="r")
+    assert score.frames_usable == 2 < 4
+    assert score.face_presence == pytest.approx(1.0)
+    assert score.verdict == "pass"
 
 
 def test_clip_passes_when_both_rules_hold(embedder, master):

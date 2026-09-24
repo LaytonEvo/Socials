@@ -103,14 +103,14 @@ def _matrix_section(scores: list[ClipScore]) -> list[str]:
         lines.append("None.")
     else:
         lines += [
-            "| Clip | Sampled | Usable | No face | Multi face | Presence | Passed |",
+            "| Clip | Sampled | Usable | No face | Multi face | Presence | Verdict |",
             "|---|---|---|---|---|---|---|",
         ]
         for s in lost:
             lines.append(
                 f"| {s.label} | {s.frames_sampled} | {s.frames_usable} | "
                 f"{s.no_face_frames} | {s.multi_face_frames} | "
-                f"{_pct(s.face_presence)} | {'yes' if s.passed else 'no'} |"
+                f"{_pct(s.face_presence)} | {s.verdict} |"
             )
     lines.append("")
     return lines

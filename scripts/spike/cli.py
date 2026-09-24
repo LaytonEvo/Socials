@@ -165,7 +165,13 @@ def _load_scores(run_dir: Path, name: str = "scores.json") -> list[ClipScore]:
     out = []
     for raw in json.loads(path.read_text()):
         raw = dict(raw)
-        for derived in ("face_presence", "passed", "failure_reason"):
+        for derived in (
+            "face_presence",
+            "verdict",
+            "passed",
+            "needs_review",
+            "failure_reason",
+        ):
             raw.pop(derived, None)
         raw["per_frame"] = []
         out.append(ClipScore(**raw))

@@ -3,17 +3,36 @@
 The scoring rule is where a quiet mistake would do the most damage, so it is
 spelled out here rather than left implicit.
 
-A clip passes only if **both** hold:
+Scoring is three-valued, because two of the questions it answers are different
+questions:
 
-1. its lowest per-frame similarity clears the calibrated threshold, and
-2. a face was actually found in at least ``min_face_presence`` of sampled frames.
+* **fail** -- a frame we actually looked at scored below the calibrated
+  threshold. Positive evidence that identity broke. Regenerate.
+* **indeterminate** -- nothing we looked at failed, but we did not see enough
+  of the face to certify the clip. Send it to the human who has to approve it
+  anyway.
+* **pass** -- enough of the face was seen, and all of it cleared the threshold.
 
-Condition 2 exists because condition 1 alone is gameable by the failure mode we
-most care about. If the model loses the face for two seconds, those frames yield
-no vector; taking min/mean over only the *usable* frames would score that clip
-on the frames where it behaved, and report a clean pass on a clip with a
-two-second hole in it. The plan's own acceptance criteria for task 1.2 -- handle
-no-face and multi-face frames "explicitly" -- is what this implements.
+The middle case is why this is not a boolean. **A missing face is
+uninformative.** When the detector finds nothing we cannot tell "she turned
+away from camera" from "her face melted": both produce zero vectors. Treating
+absence as failure therefore throws away good footage, and it did. Measured
+2026-09-24: ``battery-walking_fairway`` scored 0.9914, 0.9899 and 0.9761 on its
+first three frames and then showed her from behind for the remaining five, as a
+shot of someone walking away down a fairway is supposed to. The clip was fine.
+The old rule -- face present in >= 90% of frames or fail -- rejected it, and the
+0.9 was never derived from anything.
+
+So coverage no longer fails a clip. It decides whether the verdict is
+trustworthy: below ``min_face_presence`` of sampled frames, or fewer than
+``MIN_USABLE_FRAMES`` usable ones, the clip is *indeterminate* rather than
+passed. An observed bad frame still fails the clip outright, whatever the
+coverage -- seeing a bad frame is evidence, unlike not seeing a face.
+
+This keeps what the old condition 2 was actually protecting: a clip with a hole
+in it is never silently certified on the frames where it behaved. It just stops
+calling that certification failure. The plan's acceptance criteria for task 1.2
+-- handle no-face and multi-face frames "explicitly" -- is what this implements.
 
 Similarity is cosine against the L2-normalised centroid of the master set.
 Max-similarity to any single master image is also recorded, because the two
@@ -34,7 +53,22 @@ from .embed import MULTI_FACE, NO_FACE, Embedder, EmbeddingSet, cosine, embed_im
 from .errors import CalibrationMismatch
 from .frames import FrameSource, default_frame_source
 
-DEFAULT_MIN_FACE_PRESENCE = 0.9
+# Coverage below which a verdict is not trusted. NOT a pass mark: see the
+# module docstring. The 28 clips generated in the spike sit at 100% or 87.5%
+# presence, and the one legitimate low-coverage clip sits at 37.5%, so the
+# evidence brackets this value to (0.375, 0.875] and does not pin it further.
+# 0.5 is chosen within that bracket on the principle that a verdict should rest
+# on the majority of the frames sampled, and is cheap to revisit -- being wrong
+# here now costs a human glance, not a discarded clip.
+DEFAULT_MIN_FACE_PRESENCE = 0.5
+
+# Absolute floor on evidence, independent of clip length. At 2 fps a short clip
+# can clear a 50% ratio on two adjacent frames, which is one moment seen twice.
+MIN_USABLE_FRAMES = 4
+
+PASS = "pass"
+FAIL = "fail"
+INDETERMINATE = "indeterminate"
 
 
 @dataclass
@@ -77,36 +111,72 @@ class ClipScore:
         return self.identity_score_min is not None and self.identity_score_min >= self.threshold
 
     @property
-    def passes_presence(self) -> bool:
-        return self.face_presence >= self.min_face_presence
+    def has_enough_coverage(self) -> bool:
+        """Whether enough of the face was seen for the verdict to be trusted."""
+        if self.frames_sampled and self.frames_usable == self.frames_sampled:
+            # Nothing went unseen. The frame count is then a property of clip
+            # length and sample rate -- the harness's business, not the clip's
+            # -- so a short fully-visible clip is certifiable like any other.
+            return True
+        return (
+            self.face_presence >= self.min_face_presence and self.frames_usable >= MIN_USABLE_FRAMES
+        )
+
+    @property
+    def verdict(self) -> str:
+        """One of PASS, FAIL, INDETERMINATE. See the module docstring."""
+        if self.identity_score_min is not None and not self.passes_threshold:
+            # A frame we looked at was not her. Coverage cannot rescue that.
+            return FAIL
+        if not self.has_enough_coverage:
+            return INDETERMINATE
+        return PASS
 
     @property
     def passed(self) -> bool:
-        return self.passes_threshold and self.passes_presence
+        """Strict pass. Indeterminate is not a pass -- nor is it a failure."""
+        return self.verdict == PASS
+
+    @property
+    def needs_review(self) -> bool:
+        return self.verdict == INDETERMINATE
 
     @property
     def failure_reason(self) -> str | None:
-        if self.passed:
+        """Why the clip is not a clean pass. Present for FAIL and INDETERMINATE."""
+        if self.verdict == PASS:
             return None
-        if self.frames_usable == 0:
-            return "no face found in any sampled frame"
-        reasons = []
-        if not self.passes_threshold:
+        if self.verdict == FAIL:
             assert self.identity_score_min is not None
-            reasons.append(
+            return (
                 f"min similarity {self.identity_score_min:.4f} below threshold {self.threshold:.4f}"
             )
-        if not self.passes_presence:
+        if self.frames_usable == 0:
+            return "no face found in any sampled frame, so identity is unverified"
+        reasons = []
+        if self.face_presence < self.min_face_presence:
             reasons.append(
                 f"face present in only {self.face_presence:.0%} of sampled frames "
-                f"(need {self.min_face_presence:.0%})"
+                f"(need {self.min_face_presence:.0%} to certify)"
             )
-        return "; ".join(reasons)
+        if self.frames_usable < MIN_USABLE_FRAMES:
+            reasons.append(f"only {self.frames_usable} usable frame(s) (need {MIN_USABLE_FRAMES})")
+        seen = (
+            ""
+            if self.identity_score_min is None
+            else (
+                f"; the {self.frames_usable} frame(s) seen were fine "
+                f"(min {self.identity_score_min:.4f})"
+            )
+        )
+        return "; ".join(reasons) + seen
 
     def to_json(self) -> dict[str, Any]:
         out = asdict(self)
         out["face_presence"] = self.face_presence
+        out["verdict"] = self.verdict
         out["passed"] = self.passed
+        out["needs_review"] = self.needs_review
         out["failure_reason"] = self.failure_reason
         return out
 
@@ -206,16 +276,24 @@ def pass_rate_by_condition(scores: list[ClipScore]) -> dict[str, dict[str, dict[
             if axis == "cell_id":
                 continue
             bucket = out.setdefault(axis, {}).setdefault(
-                level, {"clips": 0, "passed": 0, "min_scores": []}
+                level,
+                {"clips": 0, "passed": 0, "failed": 0, "indeterminate": 0, "min_scores": []},
             )
             bucket["clips"] += 1
-            bucket["passed"] += int(score.passed)
+            bucket["passed"] += int(score.verdict == PASS)
+            bucket["failed"] += int(score.verdict == FAIL)
+            bucket["indeterminate"] += int(score.verdict == INDETERMINATE)
             if score.identity_score_min is not None:
                 bucket["min_scores"].append(score.identity_score_min)
     for levels in out.values():
         for stats in levels.values():
             mins = stats.pop("min_scores")
             stats["pass_rate"] = stats["passed"] / stats["clips"] if stats["clips"] else 0.0
+            # Of the clips we could actually judge. Reported alongside, not
+            # instead of, pass_rate: which denominator is right depends on
+            # whether the indeterminates are a property of the shot or the model.
+            judged = stats["passed"] + stats["failed"]
+            stats["pass_rate_of_judged"] = stats["passed"] / judged if judged else None
             stats["worst_min_score"] = min(mins) if mins else None
             stats["mean_min_score"] = float(np.mean(mins)) if mins else None
     return out

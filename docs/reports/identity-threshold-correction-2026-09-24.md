@@ -153,9 +153,9 @@ needlessly strict.
 
 ## 7. Still open
 
-- **`face_presence >= 0.9` has never been justified by any measurement.** It is
-  now the *only* thing failing `walking_fairway` (0.38), and it was chosen by
-  assertion. It needs the same treatment this threshold just received.
+- ~~**`face_presence >= 0.9` has never been justified by any measurement.**~~
+  Addressed the same day: see `face-presence-rule-2026-09-24.md`. Coverage no
+  longer fails a clip; it downgrades the verdict to indeterminate.
 - **The control set is a proxy.** Midjourney lookalikes are not the negative
   this gate will face in production — Veo drifting off-model from her keyframe
   is. Calibrating against owner-labelled Veo output is the measurement that

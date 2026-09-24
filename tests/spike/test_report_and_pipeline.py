@@ -199,10 +199,17 @@ def test_full_harness_runs_offline_and_catches_drift(tmp_path, monkeypatch):
     passed = [s for s in scores if s["passed"]]
     assert 0 < len(passed) < len(scores)
 
-    # Face loss must be caught by the presence rule, not the similarity rule.
+    # Face loss is handled by the coverage rule, not the similarity rule -- and
+    # it downgrades rather than fails. A clip that lost a frame or two but still
+    # showed most of the face is a pass; one that showed too little to judge is
+    # indeterminate and goes to a human. Neither is a similarity failure.
     lost = [s for s in scores if s["no_face_frames"] > 0]
     assert lost, "expected the fixture to lose the face in at least one clip"
-    assert all(not s["passed"] for s in lost)
+    thin = [s for s in lost if s["verdict"] == "indeterminate"]
+    assert all(not s["passed"] for s in thin)
+    assert all(s["failure_reason"] and "threshold" not in s["failure_reason"] for s in thin)
+    # Nothing is certified on coverage the rule calls insufficient.
+    assert not [s for s in scores if s["passed"] and s["face_presence"] < 0.5]
 
     cal = json.loads((run_dir / "calibration.json").read_text())
     assert cal["embedder_is_stub"] is True
