@@ -85,32 +85,67 @@ Recorded because a negative result on a plausible instrument is worth as much
 as a positive one, and because roll-from-eye-landmarks also conflates roll
 with yaw once the head turns, which limits it independently.
 
-## 5. Sampling rate: a prediction I got wrong
+## 5. Sampling rate, and why `min` is the wrong statistic
 
-I predicted faster sampling would not change the verdict, on the grounds that
-each frame would still score ~0.98. That was wrong.
+I predicted faster sampling would not change the verdict. That was wrong, and
+so was the recommendation I drew from it. Both are corrected here.
 
-| Clip | 2 fps | 8 fps |
+| Clip | Owner's judgement | 2 fps | 8 fps |
+|---|---|---|---|
+| `approach_camera` | **clearly AI** | 0.9757 pass | 0.9504 **fail** |
+| `turn_away_hold` | **fine** | 0.9825 indeterminate | 0.9398 **fail** |
+| `profile_to_camera` | not assessed | 0.9845 pass | 0.9823 pass |
+| `glance_back` | not assessed | 0.9326 fail | 0.9534 fail |
+| `look_down_and_up` | not assessed | 0.9465 fail | 0.9513 fail |
+
+At 8 fps the bad clip fails — and so does a good one. One accidental catch
+bought at the price of one false reject is not an improvement, and
+**raising the sample rate is withdrawn as a recommendation.**
+
+The mechanism is the same in both directions, and it is not about quality:
+
+```
+turn_away_hold at 8 fps
+  0.875s   0.9687
+  1.000s   0.9398   <- fails. Last frame before the face is lost
+  1.125s   no face  ... and stays gone, as the shot intends
+```
+
+The failing frame is **the last frame before the detector loses the face**,
+which is by construction the most extreme pose in which a face was still
+found. Eyes closed, near-profile, mid-turn: good footage of the persona
+turning away.
+
+That generalises into the real finding:
+
+> **The clip verdict is `min` across sampled frames, and `min` only decreases
+> as you sample more.** Denser sampling gets closer to the instant the face
+> disappears, which is the most extreme pose, which is the lowest score. So
+> the verdict is decided by the single *least* informative frame in the clip,
+> and which frame that is depends on the sampling rate rather than on the
+> clip.
+
+This is a defect in the rule, independent of the threshold and of the
+embedder. Three measurements now point at one cause:
+
+| Image | Score | What it is |
 |---|---|---|
-| `approach_camera` | 0.9757 **pass** | 0.9504 **fail** |
-| `glance_back` | 0.9326 fail | 0.9534 fail |
-| `look_down_and_up` | 0.9465 fail | 0.9513 fail |
-| `profile_to_camera` | 0.9845 pass | 0.9823 **pass** |
-| `turn_away_hold` | 0.9825 indeterminate | 0.9398 **fail** |
+| `master_010` | 0.95041 | her lowest-scoring reference still — near-profile |
+| `approach_camera` @8fps | 0.9504 | failing frame — near-profile |
+| `turn_away_hold` @8fps | 0.9398 | failing frame — near-profile |
 
-At 8 fps the bad clip fails. But it fails **on pose, not motion**: the 0.9504
-frame is at 1.375s, mid-turn and near-profile — the same pose penalty that
-makes `master_010`, a near-profile still, her lowest-scoring reference image
-at 0.95041. Nearly the same number, for the same reason.
+**Pose dominates the signal at the tails, and the gate cannot tell "she
+turned her head" from "this is not her".** Same invariance problem as the
+head-tilt finding in §3(c), seen from the other side.
 
-The worry that this would also reject good turning footage is not borne out
-on this sample: `profile_to_camera` turns through the same range and still
-passes at 0.9823, because its turn is gradual and the face stays detectable
-throughout. `turn_away_hold` changed to a fail and has not been assessed by
-eye, so whether that is correct is unknown.
-
-So: raise the sample rate — it is local compute and costs nothing — but it is
-**not** a motion detector and must not be described as one. n=5.
+`min` should be replaced by a statistic that is stable under sampling
+density. The candidate worth measuring first is the **fraction of usable
+frames below threshold**, which is stable, interpretable ("11% of the frames
+we could read did not look like her"), and does not hand the verdict to one
+frame. Weighting frames by frontality is a second option, since near-profile
+frames carry the least identity information and currently carry the most
+weight. Neither is implemented; both need the same treatment the threshold
+got, on data rather than assertion.
 
 ## 6. What this means for the gate
 

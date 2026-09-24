@@ -34,6 +34,19 @@ in it is never silently certified on the frames where it behaved. It just stops
 calling that certification failure. The plan's acceptance criteria for task 1.2
 -- handle no-face and multi-face frames "explicitly" -- is what this implements.
 
+The clip's identity score is the MINIMUM per-frame similarity, and that is
+known to be the wrong statistic. `min` only decreases as you sample more, and
+the frames it selects are the most extreme poses -- the last frame before the
+detector loses the face, which is the least face-like frame in the clip. So
+the verdict is decided by the least informative frame, and which frame that
+is depends on the sampling rate rather than on the clip: at 2 fps a good
+turn-away clip scored 0.9825, at 8 fps the same clip scored 0.9398 and would
+have been rejected, on a frame the owner confirmed was fine. See
+docs/reports/identity-gate-blind-spot-2026-09-24.md section 5. A
+sampling-stable statistic (fraction of usable frames below threshold) is the
+replacement to measure, and until that is done `frame_sample_fps` must not be
+raised: the current threshold is calibrated against 2 fps and only 2 fps.
+
 Similarity is cosine against the L2-normalised centroid of the master set.
 Max-similarity to any single master image is also recorded, because the two
 disagreeing is itself informative: it means the master set is not internally
