@@ -169,6 +169,26 @@ def threshold_at_fpr(
     return chosen, fpr, 1.0 - fnr
 
 
+def fpr_resolution(n_negatives: int) -> float:
+    """The finest false-positive rate a control set of this size can express.
+
+    An FPR estimated from n negatives moves in steps of 1/n: with 92 controls
+    the achievable rates are 0, 1.09%, 2.17%, and so on. Asking for anything
+    finer is not a measurement, it is a rounding artefact -- and the artefact
+    is not harmless. A request for FPR <= 1% from 92 controls is satisfiable
+    ONLY at FPR = 0, which pushes the threshold above the highest-scoring
+    control image and lets a single image set the gate.
+
+    That happened for real on 2026-09-24: target 0.01 against 92 controls
+    produced a threshold of 0.9701 instead of 0.9609, rejecting 4.8% of the
+    persona's own stills rather than 1.0%, and leaving the flagship
+    talking-head clip passing by 0.000005. Nothing warned, because the
+    achieved FPR (0.0) was inside the target. See
+    docs/reports/gate-a-identity-scorer-2026-09-24.md.
+    """
+    return 1.0 / n_negatives if n_negatives > 0 else 1.0
+
+
 def _describe(values: np.ndarray) -> dict[str, float]:
     if len(values) == 0:
         return {"n": 0}
@@ -204,6 +224,13 @@ class Calibration:
     positives: dict[str, float] = field(default_factory=dict)
     negatives: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    # The finest FPR the control set can express; see fpr_resolution().
+    fpr_resolution: float = 0.0
+    # The distributions themselves, not just their summaries. Re-deriving a
+    # band, a percentile or an operating point from summary stats alone is
+    # impossible, and re-embedding 197 stills to recover them takes minutes.
+    positive_values: list[float] = field(default_factory=list)
+    negative_values: list[float] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         out = asdict(self)
@@ -240,11 +267,34 @@ def calibrate(
     auc = roc_auc(pos, neg)
     overlap = overlap_coefficient(pos, neg)
     d_prime_value = d_prime(pos, neg)
-    threshold, fpr, tpr = threshold_at_fpr(pos, neg, target_fpr)
-    eer_t, eer = equal_error_rate(pos, neg)
-    verdict = verdict_for(auc, overlap)
 
     warnings: list[str] = []
+
+    # A target finer than the control set can express is silently rounded to
+    # FPR = 0, which is a stricter gate than was asked for and costs recall.
+    # Clamp to the resolution instead, and report the recall that saved.
+    resolution = fpr_resolution(len(neg))
+    effective_target = target_fpr
+    if 0.0 < target_fpr < resolution:
+        effective_target = resolution
+        _, _, strict_tpr = threshold_at_fpr(pos, neg, target_fpr)
+        _, _, clamped_tpr = threshold_at_fpr(pos, neg, resolution)
+        recovered = clamped_tpr - strict_tpr
+        detail = (
+            f" Holding the finer target would have cost {recovered:.1%} of the "
+            f"same-face images for no measurable gain in false accepts."
+            if recovered > 0.0
+            else " On this data both targets give the same threshold."
+        )
+        warnings.append(
+            f"target_fpr {target_fpr:.4f} is finer than {len(neg)} different-face "
+            f"samples can express (resolution 1/{len(neg)} = {resolution:.4f}); "
+            f"calibrated at {effective_target:.4f} instead.{detail}"
+        )
+
+    threshold, fpr, tpr = threshold_at_fpr(pos, neg, effective_target)
+    eer_t, eer = equal_error_rate(pos, neg)
+    verdict = verdict_for(auc, overlap)
     if len(pos) < MIN_SAMPLES_FOR_CONFIDENCE or len(neg) < MIN_SAMPLES_FOR_CONFIDENCE:
         warnings.append(
             f"Small sample: {len(pos)} same-face and {len(neg)} different-face pairs "
@@ -277,9 +327,9 @@ def calibrate(
             f"normal distributions; these are not, so read AUC and overlap and treat d' "
             f"as indicative only."
         )
-    if fpr > target_fpr:
+    if fpr > effective_target:
         warnings.append(
-            f"No threshold reached the target false-positive rate of {target_fpr:.3f}; "
+            f"No threshold reached the target false-positive rate of {effective_target:.3f}; "
             f"the best available is {fpr:.3f}."
         )
 
@@ -300,4 +350,7 @@ def calibrate(
         positives=_describe(pos),
         negatives=_describe(neg),
         warnings=warnings,
+        fpr_resolution=resolution,
+        positive_values=[float(x) for x in pos],
+        negative_values=[float(x) for x in neg],
     )

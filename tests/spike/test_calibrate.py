@@ -119,3 +119,42 @@ def test_disagreement_between_d_prime_and_auc_is_flagged():
 def test_calibration_needs_both_distributions():
     with pytest.raises(ValueError, match="same-face and different-face"):
         calibrate([0.9, 0.8], [], INFO, today=TODAY)
+
+
+def test_target_finer_than_the_control_set_can_express_is_clamped():
+    """The 2026-09-24 gate bug: a target below 1/n silently becomes FPR = 0.
+
+    With 50 different-face samples the achievable rates are 0, 2%, 4%, ... so a
+    request for 1% is satisfiable only at 0%, which pushes the threshold above
+    the highest-scoring control and throws away same-face images to get there.
+    Nothing warned at the time, because the achieved FPR was *inside* the
+    target. The shape below is the real one in miniature: one low positive and
+    one high negative, each an outlier that would otherwise set the gate.
+    """
+    positives = np.array([0.95] + [0.98] * 49)
+    negatives = np.array([0.90] * 49 + [0.96])
+
+    cal = calibrate(positives, negatives, INFO, target_fpr=0.01, today=TODAY)
+
+    assert cal.fpr_resolution == pytest.approx(0.02)
+    assert any("finer than" in w for w in cal.warnings)
+    # Clamped to 2%: the threshold sits below the lone high control rather than
+    # above it, and the lone low positive is kept.
+    assert cal.threshold == pytest.approx(0.95)
+    assert cal.tpr_at_threshold == pytest.approx(1.0)
+    assert any("2.0% of the same-face images" in w for w in cal.warnings)
+
+
+def test_a_target_the_control_set_can_express_is_left_alone():
+    rng = np.random.default_rng(11)
+    cal = calibrate(rng.normal(0.9, 0.02, 300), rng.normal(0.4, 0.05, 300), INFO, today=TODAY)
+    assert cal.fpr_resolution == pytest.approx(1 / 300)
+    assert not any("finer than" in w for w in cal.warnings)
+
+
+def test_the_raw_distributions_are_kept_not_just_their_summaries():
+    """Summary stats cannot be re-analysed; recovering them costs a re-embed."""
+    cal = calibrate([0.9, 0.95, 0.99], [0.1, 0.2], INFO, today=TODAY)
+    assert cal.positive_values == [0.9, 0.95, 0.99]
+    assert cal.negative_values == [0.1, 0.2]
+    assert cal.to_json()["positive_values"] == [0.9, 0.95, 0.99]
