@@ -514,11 +514,31 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
     skipped: list[tuple[str, str]] = []
     max_skips = max(3, n // 3)
     retries = int(cfg.generation.get("refusal_retries", 3))
+    keyframe_cursor = 0
     for i, cond in enumerate(conditions):
         ref = f"matrix-{i:03d}-{cond.cell_id}"
         prompt = f"{args.subject}, {cond.prompt_fragment()}"
+        existing = run_dir / "clips" / ref
+        if getattr(args, "resume", False) and existing.exists():
+            # Already generated and paid for in an earlier attempt. Scoring is
+            # local and free, so re-score rather than re-buy.
+            score = score_clip(
+                existing,
+                embedder,
+                master,
+                cal,
+                ref=ref,
+                fps=cfg.embedder.frame_sample_fps,
+                frames_dir=run_dir / "frames" / ref,
+                condition=cond.as_dict(),
+            )
+            scores.append(score)
+            print(f"  [{i + 1:3d}/{n}] {cond.cell_id:<44} reused (already generated)")
+            continue
         try:
-            score = _generate_with_retry(
+            score, keyframe_cursor = _generate_trying_keyframes(
+                keyframes,
+                keyframe_cursor if keyframes else 0,
                 cfg=cfg,
                 run_dir=run_dir,
                 log=log,
@@ -532,7 +552,6 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
                 image_slot=args.image_slot,
                 video_slot=args.video_slot,
                 condition=cond.as_dict(),
-                keyframe=keyframes[i % len(keyframes)] if keyframes else None,
                 attempts=retries,
             )
         except (BudgetExceeded, BudgetNotSet) as exc:
@@ -1405,6 +1424,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_embedder(sp)
     add_budget(sp)
     sp.add_argument("--cells", type=int)
+    sp.add_argument(
+        "--resume",
+        action="store_true",
+        help="re-score cells whose clip is already on disk instead of "
+        "regenerating them. Scoring is local and free; generation is not.",
+    )
     sp.add_argument("--subject", default="the persona")
     sp.add_argument("--image-slot", default="primary")
     sp.add_argument("--video-slot", default="flagship")
