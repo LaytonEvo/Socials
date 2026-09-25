@@ -293,12 +293,24 @@ the finding that a fixed portrait could not produce the battery was wrong, and
 Midjourney stills cover keyframes. Skipping it saves GPU spend and the FLUX
 licence question entirely.
 
+> **Reopened 2026-09-25.** Midjourney stills cover *portrait* keyframes. Frame
+> inspection of the two rejected clips shows both failures begin at the moment
+> the model leaves the portrait composition the keyframe anchors it to: shots
+> that can be posed inside a portrait all succeed, and shots needing a wide
+> action framing pan away and fabricate the golf. There is no source of an
+> action-framed still of this persona — at address, at the top, at impact — and
+> the club-and-ball formats are failing for want of one. **The question is
+> sourcing, not the LoRA specifically**; pose-conditioned Midjourney prompts may
+> answer it more cheaply. Detail in `s07-battery-take2-2026-09-25.md`.
+
 ### Evidence still missing, and what it costs
 
 | | Cost |
 |---|---|
 | ~~Second battery take~~ — run 2026-09-25, 10 of 13 formats, $6.00. **Two failed.** Three formats outstanding | $1.80 |
-| First/last-frame on `ball_flight` and `putting_stroke` — untested hypothesis | $0.60 |
+| ~~First/last-frame on `ball_flight` and `putting_stroke`~~ — hypothesis withdrawn 2026-09-25 on frame inspection | — |
+| Action-framed keyframe on `putting_stroke`, 2 takes | $1.20 |
+| A source of action-framed stills of the persona — see D-D | unknown |
 | Two matrix cells that never ran (balance exhausted) | $1.20 |
 | First/last-frame on the two rejected shots | $1.20 |
 | Operator time on a real end-to-end piece | time, not money |

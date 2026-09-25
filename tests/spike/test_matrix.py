@@ -156,3 +156,53 @@ def test_resuming_a_prompt_set_keeps_the_shots_already_paid_for(tmp_path):
     with (tmp_path / "coverage_ratings.csv").open(newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
     assert [r["ref"] for r in rows] == ["a", "b"]
+
+
+def test_regenerating_a_rated_clip_does_not_silently_discard_the_rating(tmp_path):
+    """A rating is the one column here a re-run cannot recompute.
+
+    Newest-wins dropped it. Carrying it forward would be worse -- refs are
+    deterministic, so the regenerated clip is a different clip and the old
+    verdict would be attached to footage nobody watched.
+    """
+    import csv as _csv
+
+    from scripts.spike.cli import _write_battery_sheet
+
+    fields = {"ref": "battery-chip-fast-0", "face_presence": "1.000"}
+    _write_battery_sheet(
+        tmp_path,
+        [{**fields, "rating": "2", "failure_tags": "swing_plane", "notes": "owner: bad"}],
+        "battery",
+    )
+    # the same ref generated again: fresh measurement, blank judgement columns
+    _write_battery_sheet(
+        tmp_path,
+        [{**fields, "face_presence": "0.250", "rating": "", "failure_tags": "", "notes": ""}],
+        "battery",
+    )
+
+    with (tmp_path / "battery_ratings.csv").open(newline="", encoding="utf-8") as fh:
+        (row,) = list(_csv.DictReader(fh))
+
+    assert row["face_presence"] == "0.250", "the fresh measurement should win"
+    assert row["rating"] == "", "a verdict on the old clip must not stand for the new one"
+    assert "SUPERSEDED" in row["notes"]
+    assert "rating=2" in row["notes"] and "swing_plane" in row["notes"]
+    assert "owner: bad" in row["notes"], "the original note is kept verbatim"
+
+
+def test_an_unrated_row_is_overwritten_without_ceremony(tmp_path):
+    """Only a human judgement is worth preserving; measurements are cheap."""
+    import csv as _csv
+
+    from scripts.spike.cli import _write_battery_sheet
+
+    fields = {"ref": "battery-chip-fast-0", "rating": "", "failure_tags": "", "notes": ""}
+    _write_battery_sheet(tmp_path, [{**fields, "face_presence": "1.000"}], "battery")
+    _write_battery_sheet(tmp_path, [{**fields, "face_presence": "0.250"}], "battery")
+
+    with (tmp_path / "battery_ratings.csv").open(newline="", encoding="utf-8") as fh:
+        (row,) = list(_csv.DictReader(fh))
+    assert row["face_presence"] == "0.250"
+    assert row["notes"] == ""

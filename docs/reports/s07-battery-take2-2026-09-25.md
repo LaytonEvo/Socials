@@ -115,22 +115,101 @@ lands specifically on swing content — the formats a golf persona most needs.
 ratings on a third take of the two that failed. Amending twice on n=1 each time
 is how the ADR got over-constrained in the first place.
 
-## A hypothesis worth $0.60, not a prediction
+## Why both clips failed: the keyframe is a portrait, the shot is not
 
-First/last-frame conditioning solved the occlusion-return failure by pinning
-both ends of a motion so the model interpolates rather than inventing the return
-(ADR 0007). A golf swing is the same shape of problem: a constrained trajectory
-whose midpoint the model currently invents. Pinning the address frame and the
-follow-through frame may constrain the swing arc the way it constrained the turn.
+**I proposed a first/last-frame test before looking at the clips. Looking at
+them killed the hypothesis.** Eight-frame strips of both rejects show one shared
+structure, and it is not an invented middle between two good ends.
 
-**Flagged as untested.** Four of my predictions in this spike were wrong, and the
-roll detector is a closer analogue than I would like: built on a plausible
-mechanism, it did not catch the defect it was designed for. Two clips at
-`flf_fast` would settle it.
+Both clips open on three frames of head-and-shoulders portrait, then the camera
+leaves her face and the golf is fabricated in a wide shot:
+
+- **`putting_stroke`** — after the cut to wide, she stands at address with a
+  putter and **the ball sits on the far side of the putter face**, so the club
+  is addressing it from the wrong side. The stroke is never made. Her face is
+  behind her hair in every wide frame, which is the 0.250 presence.
+- **`ball_flight`** — she turns, the camera pans off her to the fairway, and a
+  ball travels away **low and flat, with no swing shown at all**. The owner's
+  words: *"ball flight does have a ball in it... but low flight and no swing."*
+  An iron also materialises lying on the turf for two frames and vanishes.
+
+**Neither clip ever renders the golf action. They render the before and the
+after.**
+
+### The format that succeeded did the opposite
+
+`full_swing_follow`, rated 4 and scored 1.000 presence, never leaves the portrait
+framing. She holds a follow-through pose facing camera while a club swings into
+frame from off-screen. It is a *portrait containing a club*, not a swing, and
+that is exactly why it works.
+
+### The mechanism
+
+The keyframe every one of these shots starts from is a head-and-shoulders
+Midjourney still. That composition is the model's anchor.
+
+- A shot that can be **posed inside a portrait** — talking head, reaction,
+  clubhouse, apparel, follow-through — stays anchored and succeeds. Every one of
+  these held 1.000 face presence.
+- A shot that **requires a wide action framing** — a putting stroke, a ball in
+  flight — cannot be shown from the anchor, so the model pans away from it. From
+  that point nothing constrains the scene, and the golf is invented: ball on the
+  wrong side of the club, a swing skipped entirely, a club appearing on the grass.
+
+**This reframes the presence correlation.** Low face presence is not a
+coincidence that happens to track club-and-ball shots. It *is* the model leaving
+the keyframe's composition, which is the same moment the physics stops being
+anchored. The signal and the defect have one cause, which is why the routing
+rule in the previous section works better than a proxy has any right to.
+
+### The first/last-frame hypothesis is withdrawn
+
+Pinning both ends of the motion cannot help when **both ends would be
+portraits**. ADR 0007 worked on `turn_away_and_back` because the two ends were
+the correct framing and only the middle was missing. Here the framing itself is
+wrong for the shot, and interpolating between two wrong frames gives a smoother
+wrong clip.
+
+*Arithmetic correction: I costed that test at $0.60 for two clips. The Fast tier
+is $0.15/s and these are 4 s clips, so it is $0.60 each and $1.20 for two.*
+
+### What is being tested instead
+
+One variable, two takes: the **same `putting_stroke` prompt, same Fast slot, and
+a keyframe that is already in the action framing** — a full-body address frame
+lifted from take 2 — against the two portrait-keyframe takes already on disk.
+$1.20.
+
+The readout does not depend on the keyframe being perfect, and it is not: the
+frame carries the same ball-on-the-wrong-side flaw, because every action-framed
+still of this persona has been extracted from a clip whose action was already
+wrong. The question is whether the model **holds the framing and animates**, or
+pans away and fabricates as before. That is visible either way.
+
+### This is the strongest argument yet for D-D
+
+Gate A retired S0.4's LoRA partly on the grounds that *"Midjourney stills cover
+keyframes"*. They cover **portrait** keyframes. There is currently no source of
+an action-framed still of this persona, and the club-and-ball formats are failing
+for exactly that reason.
+
+**D-D should be reopened**, not as a LoRA question but as a sourcing question:
+the pipeline needs stills of her at address, at the top, at impact, and the
+portrait set does not contain them. A LoRA is one answer; pose-conditioned
+Midjourney prompts may be a cheaper one.
+
+### One more thing the gate cannot see
+
+In take 1 of `putting_stroke` her lower garment changes mid-clip, white skirt to
+black shorts, while the identity score stays fine. That is Gate A §3's first
+blind spot — *"it scores a face crop: body, limbs and scene are outside the
+measurement"* — with a concrete instance attached rather than an argument.
 
 ## Carried forward
 
 - `walking_fairway`, `apparel`, `full_swing_address` second takes: ~$1.80.
-- First/last-frame on `ball_flight` and `putting_stroke`: ~$0.60, hypothesis above.
+- ~~First/last-frame on `ball_flight` and `putting_stroke`~~ — hypothesis withdrawn, see above.
+- Action-framed keyframe test on `putting_stroke`, 2 takes: $1.20. Running 2026-09-25.
+- A source of action-framed stills of the persona. Reopens D-D.
 - Gate A §5 and §6 amended 2026-09-25; the ADR 0003 bullet is withdrawn pending the above.
 - Two providers, the other half of the acceptance criterion, is still unaddressed. Both takes are `veo3.1/fast/image-to-video`.

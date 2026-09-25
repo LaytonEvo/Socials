@@ -769,6 +769,42 @@ def cmd_battery(args: argparse.Namespace) -> int:
     return 0
 
 
+def _keep_owner_judgement(previous: dict[str, Any] | None, fresh: dict[str, Any]) -> dict[str, Any]:
+    """Never let a regenerated clip silently discard what the owner said about it.
+
+    A rating is the only column here that cannot be recomputed: every other
+    field falls out of re-scoring the clip, while `rating` cost a human
+    watching four seconds of video. Merging newest-wins dropped it.
+
+    Carrying it forward instead would be worse. Refs are deterministic, so
+    regenerating one overwrites `clips/<ref>` -- the row would then attach the
+    owner's verdict on the old clip to a different clip. That is a wrong
+    rating, and a wrong rating is harder to notice than a missing one.
+
+    So do neither: clear the judgement, preserve it verbatim in the notes
+    marked superseded, and say so. The owner re-rates; nothing is lost and
+    nothing is misattributed.
+    """
+    if previous is None or not (previous.get("rating") or previous.get("failure_tags")):
+        return fresh
+    kept = dict(fresh)
+    carried = (
+        f"SUPERSEDED -- clip regenerated {dt.date.today().isoformat()}; "
+        f"the owner's rating below applied to the PREVIOUS clip at this ref "
+        f"and must not be read as a verdict on this one. "
+        f"rating={previous.get('rating') or '-'} "
+        f"tags={previous.get('failure_tags') or '-'}"
+    )
+    note = previous.get("notes") or ""
+    kept["notes"] = f"{carried} | {note}" if note else carried
+    print(
+        f"  {fresh['ref']}: regenerated over a rated clip -- "
+        f"rating {previous.get('rating') or '-'} moved to notes, needs re-rating",
+        file=sys.stderr,
+    )
+    return kept
+
+
 def _write_battery_sheet(
     run_dir: Path, rows: list[dict[str, Any]], prefix: str = "battery"
 ) -> Path:
@@ -787,7 +823,7 @@ def _write_battery_sheet(
     if dest.exists():
         with dest.open(newline="", encoding="utf-8") as fh:
             previous = {r["ref"]: r for r in csv.DictReader(fh)}
-        fresh = {r["ref"]: r for r in rows}
+        fresh = {r["ref"]: _keep_owner_judgement(previous.get(r["ref"]), r) for r in rows}
         merged = {**previous, **fresh}
         rows = [merged[ref] for ref in sorted(merged)]
     with dest.open("w", newline="", encoding="utf-8") as fh:
