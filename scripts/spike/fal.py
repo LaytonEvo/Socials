@@ -187,7 +187,16 @@ class FalClient:
             # whichever call surfaces it -- and fal surfaces it late: a request
             # with a missing field reaches COMPLETED with error: None, and only
             # the result fetch returns the 422. See ADR 0006.
-            if status == 422 or (400 <= status < 500 and refusal_is_free):
+            # 403 is an authorization or account-state answer -- locked
+            # balance, bad key, no access -- and none of those mean a runner
+            # ran. It is therefore free WHENEVER it appears, not only on
+            # submit, and the when-based rule above is too coarse for it.
+            #
+            # Measured 2026-09-25: three "User is locked. Reason: TOP_UP"
+            # answers arrived while polling, were classified as billable
+            # because they were not on submit, and charged $1.80 for clips
+            # that were never produced.
+            if status == 422 or status == 403 or (400 <= status < 500 and refusal_is_free):
                 # fal uses 403 for an exhausted balance as well as for bad
                 # credentials, and its own words are the only thing that tells
                 # them apart. Ours go second, and conditionally: leading with an

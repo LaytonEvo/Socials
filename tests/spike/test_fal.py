@@ -674,3 +674,32 @@ def test_auto_fix_is_always_off(tmp_path):
     assert body is not None
     assert body["auto_fix"] is False
     assert body["safety_tolerance"] == "4", "provider default, stated explicitly"
+
+
+def test_a_locked_balance_is_never_billable_even_while_polling():
+    """403 says the account cannot run work, not that work ran.
+
+    ADR 0006 classifies a 4xx by WHEN it arrives: free on submit, billable
+    afterwards, because a late 4xx implies a runner had already started. That
+    is too coarse for 403. Measured 2026-09-25: three "User is locked. Reason:
+    TOP_UP" answers arrived while polling and were charged $1.80 for clips
+    that never existed.
+    """
+    import pytest
+
+    from scripts.spike.errors import ProviderRefused
+    from scripts.spike.fal import FalClient, QueuedRequest
+
+    def locked(url, method, payload, headers):
+        return 403, b'{"detail": "User is locked. Reason: TOP_UP."}'
+
+    client = FalClient(api_key="k", transport=locked)
+    queued = QueuedRequest(
+        request_id="r",
+        status_url="https://queue.fal.run/m/requests/r/status",
+        response_url="https://queue.fal.run/m/requests/r",
+        cancel_url="",
+    )
+    with pytest.raises(ProviderRefused) as exc:
+        client.result(queued)
+    assert exc.value.billable is False

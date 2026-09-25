@@ -397,3 +397,33 @@ video. Without upload the only way to give it one with an audio track is to
 generate the clip with audio at $0.15/s instead of $0.10/s — **$0.20 more per
 4-second clip, for audio that is then discarded and replaced by the TTS
 track**. About $2.40 on a twelve-shot piece.
+
+
+---
+
+## Addendum, 2026-09-25 — 403 is free whenever it arrives
+
+This ADR classifies a 4xx by **when** it appears: free on submit, because
+nothing was queued; billable afterwards, because by then a runner may have
+started and the safe assumption is that it did.
+
+That is right for a 4xx describing the *request*. It is wrong for one
+describing the *account*. A 403 — locked balance, bad key, no access — says
+fal declined to run anything, and that is true whether it surfaces on submit
+or on the twentieth poll.
+
+**Measured.** During the second golf-battery take, three calls answered
+`403 User is locked. Reason: TOP_UP` while polling. Each was classified
+billable because it was not on submit, and **$1.80 was recorded for clips
+that never existed**. The cost guard was reporting spend that had not
+happened, which is the same class of error as charging $2 for a 403 in the
+first live run — the fix then was billability by operation, and it was still
+too coarse.
+
+403 now joins 422 as free on every operation. What remains classified by
+timing is the ordinary 4xx, where the distinction genuinely holds.
+
+The three ledger rows from that run are left in place: they are what the
+harness recorded at the time, and rewriting history to match a later
+understanding would make the ledger less trustworthy, not more. The figure to
+correct against is **$1.80 over-recorded on 2026-09-25**.
