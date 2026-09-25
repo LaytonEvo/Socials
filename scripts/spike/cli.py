@@ -659,6 +659,11 @@ def cmd_battery(args: argparse.Namespace) -> int:
     prefix = "battery" if prompt_set == "golf" else prompt_set
 
     takes = args.takes or int(cfg.generation.get("takes_per_battery_prompt", 2))
+    # Take numbers continue rather than restart, so a second take does not
+    # regenerate and re-bill the first. The acceptance criterion asks for two
+    # takes precisely because generation is stochastic; paying twice for the
+    # one already on disk would not make it less so.
+    offset = int(getattr(args, "take_offset", 0) or 0)
     keyframe_dir = getattr(args, "keyframes", None)
     keyframes: list[Path] = []
     if keyframe_dir:
@@ -681,7 +686,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
 
     for item in items:
         for slot in slots:
-            for take in range(takes):
+            for take in range(offset, offset + takes):
                 ref = f"{prefix}-{item['id']}-{slot}-{take}"
                 prompt = f"{args.subject}, {item['prompt']}"
                 try:
@@ -1465,6 +1470,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_embedder(sp)
     add_budget(sp)
     sp.add_argument("--takes", type=int)
+    sp.add_argument(
+        "--take-offset",
+        type=int,
+        default=0,
+        help="number the takes from here instead of 0, to add takes to a set "
+        "without regenerating the ones already paid for.",
+    )
     sp.add_argument("--subject", default="the persona")
     sp.add_argument("--image-slot", default="primary")
     sp.add_argument("--video-slots", nargs="+", default=["fast"])
