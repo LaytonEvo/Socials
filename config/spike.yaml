@@ -248,9 +248,10 @@ providers:
       model: fake-lipsync-v0
       price_usd_per_second: 0.0
       verified_on: 1970-01-01
-    primary:
-      # S0.8's provider. Takes a video plus EITHER an audio track or text to
-      # speak, so one call covers text-to-speech and the sync together.
+    pixverse:
+      # Kept for reference. Cheapest of seven and the worst of the three
+      # tested: the owner judged its sync bad, and it costs the most identity.
+      # Takes a video plus EITHER an audio track or text to speak.
       # Schema verified against fal's OpenAPI 2026-09-24: video_url required,
       # audio_url / text / voice_id optional.
       backend: fal
@@ -266,8 +267,14 @@ providers:
       options:
         text: "The wind is straight into us here, so I am taking one more club."
 
-    heygen:
-      # Quality candidate. pixverse was chosen as the cheapest of seven and
+    primary:
+      # CHOSEN 2026-09-24 on a controlled three-way: one source clip, one
+      # synthesis, three models, nothing else varying. Best on the owner's eye
+      # ("B is definitely the best") and the only one that does not cost
+      # identity -- +0.0041 against -0.0037 for pixverse and -0.0006 for veed,
+      # reproducing a +0.0042 seen on a separate clip.
+      #
+      # Earlier quality candidate. pixverse was chosen as the cheapest of seven and
       # the owner judged its sync bad on 2026-09-24, which made it a false
       # economy: sync quality gates the talking-head format, the core content
       # type. Same required fields as pixverse (video_url, audio_url), so it
