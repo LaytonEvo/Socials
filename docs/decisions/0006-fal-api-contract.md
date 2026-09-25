@@ -343,3 +343,57 @@ a reconciliation step, and neither is a Spike 0 concern.
 - The upload API, needed to send a local keyframe. Until it is read,
   `FalVideoProvider.resolve_keyframe` refuses rather than guesses.
 - Rate limits and concurrency caps.
+
+
+---
+
+## Addendum, 2026-09-25 — file upload IS available, and this ADR was wrong about it
+
+This ADR concluded that **raw REST upload is not one of** the ways to give fal
+a local file, on the grounds that no plain-HTTP upload endpoint is documented
+and that `POST /assets/uploads` takes a url rather than bytes. That was the
+wrong endpoint. `fal-client` 1.0.3, the vendor's own client, uploads bytes two
+ways:
+
+```
+# preferred ("fal_v3")
+POST https://v3.fal.media/files/upload
+     Authorization: Key ...
+     <raw bytes>                       -> {"access_url": "..."}
+
+# fallback ("fal"), a signed two-step
+POST https://rest.fal.ai/storage/upload/initiate?storage_type=gcs
+     {"file_name": ..., "content_type": ...}
+                                       -> {"upload_url": ..., "file_url": ...}
+PUT  <upload_url>  <raw bytes>         (signed; no Authorization)
+```
+
+Read from the client's source rather than guessed, which makes it
+authoritative about their API in a way reverse-engineering the wire would not
+have been.
+
+### Why it still does not work from this environment
+
+Credentials here are injected by the agent proxy at the HTTP layer rather than
+held by the process: `FAL_KEY` is not in the environment, our client sends no
+`Authorization` header, and calls to `queue.fal.run` succeed anyway. That
+injection is scoped by host. `v3.fal.media` is not in scope, so an upload
+returns `Forbidden` — from our proxy's scoping, not from fal.
+
+Two things follow. `fal-client` cannot work here at all: it refuses before
+sending when no key is in the environment, and given a placeholder it sends
+that placeholder rather than letting the proxy substitute a real one. And a
+plain-HTTP upload fails the same way for the same reason.
+
+**Unblocking it needs `FAL_KEY` set in the environment's settings** — the
+variable `.env.example` already names. With it, either route above works with
+no vendor dependency at all, since the SDK's only advantage was knowing these
+endpoints.
+
+### What it costs to stay blocked
+
+`heygen/v3/lipsync/precision`, chosen on 2026-09-24, refuses a silent input
+video. Without upload the only way to give it one with an audio track is to
+generate the clip with audio at $0.15/s instead of $0.10/s — **$0.20 more per
+4-second clip, for audio that is then discarded and replaced by the TTS
+track**. About $2.40 on a twelve-shot piece.
