@@ -2,6 +2,11 @@
 
 **Date:** 2026-09-25 · **Recommendation: proceed, with four decisions attached**
 
+> **Amended 2026-09-25**, after the report was written, by the second battery
+> take: §5's headline usable rate and §6's discard rate are corrected below, and
+> the ADR 0003 recommendation is withdrawn. Detail in
+> `s07-battery-take2-2026-09-25.md`.
+
 Spike 0 asked whether a recurring, openly-AI golf personality is technically
 feasible. It is. Every element of the content chain has been built, measured
 and chosen against real providers, and the owner has watched and judged the
@@ -143,15 +148,40 @@ Not decided; see §8.
 | 4 — usable, club/ball detail off | 7 |
 | below 4 | **0** |
 
-**Usable rate 13/13, including all seven formats ADR 0003 predicted would
-break on club-and-ball physics.** Dominant failure tags: `club_distortion`,
-`ball`. The constraint is not "these formats are impossible" but "club and
-ball detail is imperfect wherever they appear" — far weaker, and it widens
-what the persona can post. **ADR 0003 needs amending.**
+Usable rate 13/13 on this take, including all seven formats ADR 0003 predicted
+would break on club-and-ball physics. Dominant failure tags:
+`club_distortion`, `ball`.
 
 Caveat: **one take, one provider.** The acceptance criterion asks for two
 takes on two providers. One good take does not prove a format is reliably
 good.
+
+> ### ⚠ CAUTION — superseded 2026-09-25
+>
+> **This section originally concluded "usable rate 13/13" and "ADR 0003 needs
+> amending". The second take falsified the first claim and reversed the
+> direction of the second.**
+>
+> 10 of 13 formats have a second take. The owner rejected two of them —
+> `ball_flight` and `putting_stroke`, both on golf swing and ball physics.
+> Both had been rated 4 in this take. **8 of 10 formats are usable twice; 2
+> are not.**
+>
+> Both rejects are club-and-ball shots: 2 of 13 such takes rejected (15%,
+> 95% CI 1.9–45.4%) against 0 of 10 face-forward takes (0%, CI 0–30.8%). The
+> split falls on the axis ADR 0003 named, and the intervals overlap too
+> heavily to establish it.
+>
+> **The ADR 0003 recommendation is withdrawn.** Its axis is right and its
+> strength is still too high: 11 of 13 club-and-ball takes were usable, so
+> these formats are not impossible, but the failure is a discarded clip
+> rather than "detail a bit off". The constraint is a **yield penalty
+> concentrated on swing content**, which is the content a golf persona most
+> needs. The amendment should wait for the three missing formats rather than
+> be rewritten twice on one take each.
+>
+> Detail, and a routing rule it offers D-A, in
+> `s07-battery-take2-2026-09-25.md`.
 
 ---
 
@@ -185,9 +215,14 @@ unverified.** The budget model must not harden until an invoice settles it.
 anatomy or shot adherence, and passed a visibly bad clip.
 
 **Discard rate.** `BUILD_PLAN` §9 assumes 3 in 5 discarded. Measured on
-owner-rated output: **2 of 18 (11%)**. Far better than assumed — but on a
-small sample, one take per format, and after the shot list was already
-narrowed by what earlier runs had taught.
+owner-reviewed output after the second take: **4 of 28 (14%)**. Still far
+better than assumed, but the correction matters less than where the discards
+sit — all four are club-and-ball shots, and the rate on that subset is 2 of 13
+takes with a 95% interval running to 45%. A blended figure understates the cost
+of swing content and overstates the cost of everything else.
+
+Eight of those 28 carry "reviewed, not flagged" rather than a numeric score,
+which is a weaker statement than a 4 or a 5. Treat 14% as a floor.
 
 The tier decision matters more than any of this. Fast beat flagship on a
 controlled comparison, at **$0.15/s against $0.40/s guard** — roughly £190 a
@@ -240,6 +275,12 @@ face — and it must work across occlusions, which is the hard part. **The human
 approver is currently the only thing that has caught a bad clip; the gate has
 caught none.**
 
+One cheap thing the data does offer, as routing rather than detection: every
+clip that has ever lost a frame of face was a club-and-ball shot, 10 of 10, so
+**face presence below 1.0 flags the clips where a human must watch the golf and
+not just the face.** It cannot see a bad swing. It identifies where one is
+possible.
+
 **D-B. Recalibrate for lip-synced output, or gate before the pass.** §4.
 Cheapest option is a margin; correct option is a calibration run.
 
@@ -256,14 +297,16 @@ licence question entirely.
 
 | | Cost |
 |---|---|
-| Second battery take — one take does not prove reliability | $7.80 |
+| ~~Second battery take~~ — run 2026-09-25, 10 of 13 formats, $6.00. **Two failed.** Three formats outstanding | $1.80 |
+| First/last-frame on `ball_flight` and `putting_stroke` — untested hypothesis | $0.60 |
 | Two matrix cells that never ran (balance exhausted) | $1.20 |
 | First/last-frame on the two rejected shots | $1.20 |
 | Operator time on a real end-to-end piece | time, not money |
 
 ### What the spike changed about the plan
 
-- **ADR 0003** over-constrained content formats. 13/13 usable.
+- **ADR 0003** — *withdrawn 2026-09-25.* Take 0 gave 13/13 usable; take 2
+  rejected two club-and-ball formats. See the caution in §5.
 - **BUILD_ORDER §3.1**'s throwaway-look premise is void (ADR 0008).
 - **`BUILD_PLAN` §9**'s 3-in-5 discard rate looks pessimistic at 11%, and its
   cost model is 2.7× too high at the Fast tier.
@@ -272,9 +315,10 @@ licence question entirely.
 
 ### A note on this report's reliability
 
-Four of my own conclusions were wrong and were corrected on measurement: the
-calibration space, "the distributions cross", the S0.4 dependency, and that
-turning would be the worst motion. Each was caught by checking rather than by
-reasoning. **The owner's eye caught every bad clip; the automated gate caught
+Five of my own conclusions were wrong and were corrected on measurement: the
+calibration space, "the distributions cross", the S0.4 dependency, that turning
+would be the worst motion, and — added 2026-09-25 — that ADR 0003 had
+over-constrained the formats, a conclusion drawn from one take that a second
+take reversed. Each was caught by checking rather than by reasoning. **The owner's eye caught every bad clip; the automated gate caught
 none of them.** That asymmetry is the most important thing in this report and
 it should shape how much the Phase 3 automation is trusted.
