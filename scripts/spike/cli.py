@@ -399,7 +399,15 @@ def _generate_and_score(
     """
     video_cfg = cfg.provider("video", video_slot)
     video_provider = load_provider(video_cfg)
-    duration = float(cfg.generation.get("clip_duration_s", 5))
+    # A slot may pin its own clip length, because a model's schema can forbid
+    # the run-wide default: the h3-max family rejects anything under 5 s and
+    # gemini-omni-flash defaults to 8. Resolved once, so the figure the guard
+    # reserves against and the figure the provider is asked for cannot drift
+    # apart -- a guard that charges for 4 s of a 8 s clip is a guard that lets
+    # a run pass its cap while reporting it is inside it.
+    duration = float(
+        video_cfg.request.get("duration_s") or cfg.generation.get("clip_duration_s", 5)
+    )
 
     if keyframe is not None:
         keyframe_path = keyframe

@@ -56,6 +56,14 @@ class ProviderConfig:
     #: in config, never in code (CLAUDE.md rule 1). The adapter already had the
     #: seam; nothing could reach it from config until 2026-09-24.
     options: dict[str, Any] = field(default_factory=dict)
+    #: How this model's request is SHAPED, as opposed to what extra fields it
+    #: takes. Every fal video model names the keyframe field differently and
+    #: expresses duration differently -- veo3.1 wants `image_url` and the
+    #: literal "4s", wan-3.0 wants `start_image_url` and an integer -- and
+    #: sending the wrong shape is a 422, not a graceful degradation. Left empty
+    #: the adapter keeps the shape it has always sent, so a slot that predates
+    #: this field is unaffected.
+    request: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_fake(self) -> bool:
@@ -245,6 +253,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> SpikeConfig:
                     _as_date(verified, f"providers.{kind}.{slot}.verified_on") if verified else None
                 ),
                 options=dict(cfg.get("options") or {}),
+                request=dict(cfg.get("request") or {}),
             )
 
     return SpikeConfig(

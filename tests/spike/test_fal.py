@@ -703,3 +703,81 @@ def test_a_locked_balance_is_never_billable_even_while_polling():
     with pytest.raises(ProviderRefused) as exc:
         client.result(queued)
     assert exc.value.billable is False
+
+
+def _submit_body(tmp_path, request_shape, duration_s=4.0):
+    """Generate one clip and return the arguments that reached fal."""
+    c = _client(
+        [
+            (200, {"request_id": "abc"}),
+            (200, {"status": "COMPLETED", "metrics": {"inference_time": 5.0}}),
+            (200, {"video": {"url": "https://v3.fal.media/clip.mp4"}}),
+        ]
+    )
+    provider = FalVideoProvider(
+        _cfg(),
+        client=c,
+        download=lambda _u, d: (d.write_bytes(b"MP4"), d)[1],
+        resolve_keyframe=lambda _p: "https://example.com/her.jpg",
+        request_shape=request_shape,
+    )
+    provider.generate(
+        VideoRequest(
+            keyframe=tmp_path / "her.jpg",
+            prompt="a swing",
+            duration_s=duration_s,
+            seed=1,
+            ref="t1",
+        ),
+        tmp_path / "clip.mp4",
+    )
+    _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    return body
+
+
+def test_a_slot_can_rename_the_keyframe_field(tmp_path):
+    """wan-3.0 calls it start_image_url. The wrong name is a 422, not a warning."""
+    body = _submit_body(
+        tmp_path,
+        {"image_field": "start_image_url", "duration_style": "seconds_int", "base": {}},
+        duration_s=5.0,
+    )
+    assert body["start_image_url"] == "https://example.com/her.jpg"
+    assert "image_url" not in body
+
+
+def test_a_slot_can_express_duration_as_an_integer(tmp_path):
+    """veo3.1 wants the literal "4s"; the h3-max family wants a number."""
+    body = _submit_body(tmp_path, {"duration_style": "seconds_int", "base": {}}, duration_s=5.0)
+    assert body["duration"] == 5
+    body = _submit_body(tmp_path, {})
+    assert body["duration"] == "4s", "the default shape is still veo's"
+
+
+def test_a_slots_base_arguments_replace_veos_rather_than_merging(tmp_path):
+    """auto_fix and safety_tolerance belong to veo3.1 and to nothing else.
+
+    Leaking them into another model's request is an unrecognised field at best
+    and a 422 at worst, and either way the slot is no longer sending what its
+    config says it sends.
+    """
+    body = _submit_body(tmp_path, {"base": {"resolution": "768P"}})  # veo duration
+    assert body["resolution"] == "768P"
+    for veo_only in ("auto_fix", "safety_tolerance", "generate_audio"):
+        assert veo_only not in body
+
+
+def test_a_slot_with_no_request_block_sends_exactly_what_it_always_did(tmp_path):
+    """Every slot written before 2026-09-25 must be untouched by the seam."""
+    body = _submit_body(tmp_path, None)
+    assert body["image_url"] == "https://example.com/her.jpg"
+    assert body["duration"] == "4s"
+    assert body["generate_audio"] is False
+    assert body["auto_fix"] is False
+    assert body["resolution"] == "720p"
+    assert body["safety_tolerance"] == "4"
+
+
+def test_an_unknown_duration_style_says_which_ones_exist(tmp_path):
+    with pytest.raises(ProviderNotConfigured, match="duration_style"):
+        _submit_body(tmp_path, {"duration_style": "milliseconds", "base": {}}, duration_s=5.0)

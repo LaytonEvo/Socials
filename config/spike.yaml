@@ -235,6 +235,81 @@ providers:
       # 2026-09-24. Higher figure recorded, as everywhere else here.
       price_usd_per_second: 0.40
       verified_on: 2026-09-24
+    # --- Alternative tiers, added 2026-09-25 (S0.7 cross-model probe) ------
+    # Every field below was read from fal's own queue OpenAPI and pricing API
+    # on 2026-09-25, not from memory. They exist to answer one question: is the
+    # club-and-ball causality failure a property of veo3.1 or of the current
+    # state of video generation? Veo was the only model the spike had tested.
+    alt_h3max:           # MiniMax H3 Max via fal
+      backend: fal
+      model: minimax/h3-max/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.025
+      verified_on: 2026-09-25
+      request:
+        # `duration` is an integer with minimum 5, so the run-wide 4 s is
+        # rejected outright. Pinned here so the cost guard reserves for the
+        # clip that is actually requested.
+        duration_s: 5
+        duration_style: seconds_int
+        base:
+          resolution: 768P        # enum is capitalised on this model
+          enable_safety_checker: true
+          prompt_expansion_mode: balanced   # required field
+      options: {}
+    alt_h3max_turbo:     # post-trained H3 Max variant; cheapest video on fal
+      backend: fal
+      model: minimax/h3-max-turbo/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.0125
+      verified_on: 2026-09-25
+      request:
+        duration_s: 5
+        duration_style: seconds_int
+        base:
+          resolution: 768P
+          enable_safety_checker: true
+          prompt_expansion_mode: balanced
+      options: {}
+    alt_wan3:            # Alibaba Wan 3.0
+      backend: fal
+      model: alibaba/wan-3.0/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.05
+      verified_on: 2026-09-25
+      request:
+        # Names the keyframe `start_image_url`, not `image_url`. Sending the
+        # wrong name is a 422, which is why the field name belongs beside the
+        # model id rather than in the adapter.
+        image_field: start_image_url
+        last_frame_field: end_image_url
+        first_frame_field: start_image_url
+        duration_s: 5
+        duration_style: seconds_int
+        base:
+          resolution: 720p
+          aspect_ratio: "9:16"
+          audio: false
+          enable_safety_checker: true
+          enable_prompt_expansion: false   # the prompt IS the variable
+      options: {}
+    alt_gemini:          # Google Gemini Omni Flash 1.1
+      backend: fal
+      model: google/gemini-omni-flash/v1.1/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.03
+      verified_on: 2026-09-25
+      request:
+        # `duration` defaults to 8 and caps at 10. Left at its default rather
+        # than pushed to the floor: an untested minimum is a 422 waiting to
+        # happen, and 422s cost time even though they cost no money.
+        duration_s: 8
+        duration_style: seconds_int
+        last_frame_field: end_image_url
+        base:
+          resolution: 720p
+          aspect_ratio: "9:16"
+      options: {}
     budget:              # volume / B-roll
       backend: null
       model: null

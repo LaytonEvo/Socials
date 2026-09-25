@@ -338,6 +338,11 @@ class FalVideoProvider:
     #: contract is shared, the arguments are not — so this is the seam for a
     #: model that wants something the defaults above do not cover.
     extra_arguments: dict[str, Any] | None = None
+    #: How the request is shaped, from the slot's `request:` block. Names the
+    #: keyframe field, says how duration is expressed, and supplies the base
+    #: arguments. Absent, the veo3.1 shape below is used, which is what every
+    #: slot written before 2026-09-25 expects.
+    request_shape: dict[str, Any] | None = None
     #: Content-moderation strictness, 1 (most strict) to 6 (least). Left at
     #: fal's own default: loosening a provider's safety setting is an owner
     #: decision, not an engineering convenience, and this project's whole
@@ -354,6 +359,42 @@ class FalVideoProvider:
             self.download = _download
         if self.resolve_keyframe is None:
             self.resolve_keyframe = data_uri_keyframe
+
+    def _default_shape(self) -> dict[str, Any]:
+        """The veo3.1 image-to-video request shape.
+
+        This is a default, not a truth about fal: the queue contract is shared
+        across models and the arguments are not. It stays here only so that
+        slots written before `request:` existed keep sending exactly what they
+        sent before. Any other model states its own shape in config, because a
+        model's schema belongs with its model id and price (CLAUDE.md rule 1).
+        """
+        return {
+            "image_field": "image_url",
+            "first_frame_field": "first_frame_url",
+            "last_frame_field": "last_frame_url",
+            "duration_field": "duration",
+            "duration_style": "veo_literal",
+            "base": {
+                # Audio defaults to TRUE on this model and doubles the
+                # per-second rate. S0.5 asks whether her face survives being
+                # animated, which no soundtrack affects, so paying double
+                # across the matrix would be spending on the wrong question.
+                "generate_audio": False,
+                "resolution": "720p",
+                # NEVER true. auto_fix rewrites a prompt that trips the content
+                # checker and runs the rewrite instead. In a condition matrix
+                # the prompt IS the variable, so a silent rewrite means the cell
+                # you recorded is not the cell that ran -- the same class of
+                # error as calibrating in a space the scorer does not read.
+                "auto_fix": False,
+                # 1 strictest, 6 loosest; fal's default is 4. Stated explicitly
+                # for the same reason: a moderation setting that moves because
+                # someone changed a default is a silent change to what the run
+                # measured.
+                "safety_tolerance": self.safety_tolerance,
+            },
+        }
 
     def generate(self, req: VideoRequest, dest: Path) -> Path:
         if not self.cfg.model:
@@ -372,37 +413,22 @@ class FalVideoProvider:
         # (verified against fal's OpenAPI 2026-09-24, ADR 0007). The request
         # decides the shape and config decides which model id receives it, so
         # no model name reaches this file.
+        shape = {**self._default_shape(), **(self.request_shape or {})}
+
         if req.last_keyframe is not None:
             frames: dict[str, Any] = {
-                "first_frame_url": self.resolve_keyframe(req.keyframe),
-                "last_frame_url": self.resolve_keyframe(req.last_keyframe),
+                str(shape["first_frame_field"]): self.resolve_keyframe(req.keyframe),
+                str(shape["last_frame_field"]): self.resolve_keyframe(req.last_keyframe),
             }
         else:
-            frames = {"image_url": self.resolve_keyframe(req.keyframe)}
+            frames = {str(shape["image_field"]): self.resolve_keyframe(req.keyframe)}
 
-        arguments: dict[str, Any] = {
-            "prompt": req.prompt,
-            **frames,
-            "duration": veo_duration(req.duration_s),
-            # Audio defaults to TRUE on this model and doubles the per-second
-            # rate. S0.5 asks whether her face survives being animated, which no
-            # soundtrack affects, so paying double across the matrix would be
-            # spending on the wrong question. Whether native audio can replace
-            # the lip-sync stage is a separate run (ADR 0005).
-            "generate_audio": False,
-            "resolution": "720p",
-            # NEVER true. auto_fix rewrites a prompt that trips the content
-            # checker and runs the rewrite instead. In a condition matrix the
-            # prompt IS the variable, so a silent rewrite means the cell you
-            # recorded is not the cell that ran -- the same class of error as
-            # calibrating in a space the scorer does not read. Explicit rather
-            # than inherited, so a change of provider default cannot turn it on.
-            "auto_fix": False,
-            # 1 strictest, 6 loosest; fal's default is 4. Stated explicitly for
-            # the same reason: a moderation setting that moves because someone
-            # changed a default is a silent change to what the run measured.
-            "safety_tolerance": self.safety_tolerance,
-        }
+        arguments: dict[str, Any] = {"prompt": req.prompt, **frames, **dict(shape["base"])}
+        duration_field = shape["duration_field"]
+        if duration_field is not None:
+            arguments[str(duration_field)] = _duration_for(
+                shape["duration_style"], req.duration_s, self.cfg.slot
+            )
         arguments.update(self.extra_arguments or {})
         queued = self.client.submit(self.cfg.model, arguments)
         # Surfaced so a run whose polling fails can still be reconciled against
@@ -430,6 +456,25 @@ MAX_DATA_URI_BYTES = 4 * 1024 * 1024
 #: documentation there -- one master still failed four times out of four, so it
 #: is a property of the input and retrying only spends time.
 RETRYABLE_REFUSALS = frozenset({"content_policy_violation"})
+
+
+def _duration_for(style: Any, seconds: float, slot: str) -> Any:
+    """Express a duration the way one model's schema wants it.
+
+    veo3.1 rejects 5.0 with a 422 naming its three literals; wan-3.0 and
+    h3-max take an integer. The style is named in config beside the model id
+    that requires it.
+    """
+    if style == "veo_literal":
+        return veo_duration(seconds)
+    if style == "seconds_int":
+        return round(seconds)
+    raise ProviderNotConfigured(
+        f"providers.video.{slot}: request.duration_style is {style!r}. "
+        f"Known styles are 'veo_literal' and 'seconds_int'; set duration_field "
+        f"to null for a model that takes no duration."
+    )
+
 
 #: veo3.1 image-to-video takes `duration` as one of these literals, not a
 #: number, and `generate_audio` defaults to TRUE. Read from the model's API
