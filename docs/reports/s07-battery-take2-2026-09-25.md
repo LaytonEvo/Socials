@@ -203,12 +203,31 @@ club on the turf, no wardrobe change, one continuous scene. Set beside the
 portrait-keyframe takes the difference is not subtle. **Keyframe composition
 governs whether the model stays in the shot you asked for.**
 
-**The primary defect is not fixed by it.** She addresses the ball and remains at
-address. Whether a stroke is made in the last second is a judgement I am not
-making: the ball and putter head both travel up-frame over the final ~0.8 s,
-which reads either as the ball rolling away from camera — a real stroke in
-perspective — or as both objects drifting off the turf. **Sent to the owner.**
-On the record of this spike, my reading of a clip is worth less than theirs.
+**The primary defect is not fixed by it, and it is worse than I read it.** I
+described her as addressing the ball and staying there. The owner's reading:
+
+> *"She doesn't address the ball, she practices behind it then never addresses
+> the ball. In the first video, she puts, misses the ball and the ball moves."*
+
+Two separate failures, and the second is the serious one:
+
+1. **The sequence is wrong.** What I took for address is a practice stroke taken
+   *behind* the ball. She never steps in and sets up to it. The model has the
+   visual vocabulary of a golfer near a ball but not the order the actions go in.
+2. **The causality is broken.** The club misses the ball **and the ball moves
+   anyway.**
+
+That second point reclassifies the defect. This is not "club and ball detail is
+imperfect" (ADR 0003's language, and my own in Gate A §5). The model renders
+*club-moving* and *ball-moving* as two independent events with no physical
+relation between them. No amount of detail fidelity fixes a missing causal link,
+and no keyframe supplies one: a keyframe constrains a moment, and causality is a
+relation between moments.
+
+**This is the third clip reading of mine the owner has corrected**, after "no
+ball in `ball_flight`" and "the stroke may be real". The pattern is consistent
+enough to state as a working rule: on clip content, their reading is the
+measurement and mine is a hypothesis.
 
 ### The cost of the fix: face presence 0.000
 
