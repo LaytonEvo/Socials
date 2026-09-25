@@ -186,6 +186,56 @@ still of this persona has been extracted from a clip whose action was already
 wrong. The question is whether the model **holds the framing and animates**, or
 pans away and fabricates as before. That is visible either way.
 
+### Result: the framing holds, the stroke still does not, and the gate goes blind
+
+Two takes, $1.20, `battery-putting_stroke-fast-2` and `-fast-3`.
+
+| | Keyframe | Face presence | Verdict |
+|---|---|---|---|
+| take 1 | portrait | 0.625 | fail |
+| take 2 | portrait | 0.250 | indeterminate — **owner reject** |
+| take 3 | **action** | **0.000** | indeterminate |
+| take 4 | **action** | **0.000** | indeterminate |
+
+**The mechanism is confirmed, 2 of 2.** Both action-keyframe takes hold the
+framing for the full four seconds. No pan away, no cut to wide, no hallucinated
+club on the turf, no wardrobe change, one continuous scene. Set beside the
+portrait-keyframe takes the difference is not subtle. **Keyframe composition
+governs whether the model stays in the shot you asked for.**
+
+**The primary defect is not fixed by it.** She addresses the ball and remains at
+address. Whether a stroke is made in the last second is a judgement I am not
+making: the ball and putter head both travel up-frame over the final ~0.8 s,
+which reads either as the ball rolling away from camera — a real stroke in
+perspective — or as both objects drifting off the turf. **Sent to the owner.**
+On the record of this spike, my reading of a clip is worth less than theirs.
+
+### The cost of the fix: face presence 0.000
+
+Both action takes score **zero** face presence. Not low — zero. The keyframe is a
+full-body address with her face behind her hair, the model faithfully holds that
+framing, and so the face is never visible in any sampled frame.
+
+**The framing that makes the golf work is the framing the identity gate cannot
+score at all.** That is worse than the portrait takes it replaces, and it is a
+structural conflict rather than a tuning problem: a shot composed to show a club
+striking a ball is composed not to show a face.
+
+#### What it suggests for D-A and D-B
+
+A design option, not a measurement: **verify identity on the keyframe, and
+verify the clip for continuity instead.**
+
+Clip-level identity scoring is trying to answer a question the keyframe already
+answers, and on action shots it cannot answer it at all. If the keyframe is a
+known-good still of the persona, identity is established at the source; what
+remains to check is that the clip never cuts away from it, which is
+frame-to-frame continuity — the same instrument D-A already needs for motion and
+the same one that would have caught the wardrobe change in take 1.
+
+This does not rescue the current gate. It moves the identity claim to where the
+evidence actually is.
+
 ### This is the strongest argument yet for D-D
 
 Gate A retired S0.4's LoRA partly on the grounds that *"Midjourney stills cover
@@ -209,7 +259,7 @@ measurement"* — with a concrete instance attached rather than an argument.
 
 - `walking_fairway`, `apparel`, `full_swing_address` second takes: ~$1.80.
 - ~~First/last-frame on `ball_flight` and `putting_stroke`~~ — hypothesis withdrawn, see above.
-- Action-framed keyframe test on `putting_stroke`, 2 takes: $1.20. Running 2026-09-25.
+- ~~Action-framed keyframe test on `putting_stroke`~~ — run 2026-09-25, $1.20. Framing fixed, stroke not. Owner rating outstanding.
 - A source of action-framed stills of the persona. Reopens D-D.
 - Gate A §5 and §6 amended 2026-09-25; the ADR 0003 bullet is withdrawn pending the above.
 - Two providers, the other half of the acceptance criterion, is still unaddressed. Both takes are `veo3.1/fast/image-to-video`.
