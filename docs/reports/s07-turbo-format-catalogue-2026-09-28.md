@@ -107,3 +107,59 @@ measurement.
 Cheapest next test: two clips with the dialogue written into the prompt, about
 **13p**, to find out whether the language can be steered at all. If it cannot,
 ADR 0005's *no* stands and nothing is lost.
+
+---
+
+## The language steers. The voice does not.
+
+Two `talking_head_course` clips with the line written into the prompt as quoted
+British English, spoken by the model rather than pinned over it. **$0.125.**
+
+**"Both are english."** The language is steerable by prompt. That is the
+mechanism ADR 0005 was asking about, and it works.
+
+Two defects, both in the speech, both named by the owner:
+
+1. **"Second sounds a little different."** The voice is not the same between two
+   takes of the same prompt.
+2. **"There is a non-english (made up few words) at the start."** A gibberish
+   preamble precedes the English.
+
+Identity was unaffected — 0.9685 and 0.9587 against 0.9569–0.9748 for the same
+format unprompted — and neither clip cut away, so asking for dialogue costs
+nothing in the picture. Face presence fell to 0.600 and 0.900 from 1.000, with no
+cuts to explain it, so she is turning away or leaving frame mid-clip.
+
+### ADR 0005's answer is "partly", and the reason matters
+
+The earlier *no* was reasoned from the wrong mechanism: a **pinned** track does
+not move the mouth, which is true and irrelevant, because the model lip syncs its
+**own** speech and does it well. Corrected: native audio **can** carry correct
+lip sync, in the right language, on request.
+
+**It still cannot replace the lip-sync stage, for a reason nothing had measured:
+the voice is not stable across takes.**
+
+That is not a quality complaint. A recurring persona needs one voice the way it
+needs one face — it is an identity property, and the spike already has an
+instrument for the face and none for the voice. The ElevenLabs slot was chosen
+partly for exactly this: *"a voice that belongs to a dedicated provider is also
+the only way to keep it the same across videos."* That reasoning survives.
+
+So **HeyGen stays at $0.40/clip**, but for a better-understood reason than
+before. Not "the model cannot lip sync" — it can — but "the model cannot hold a
+voice".
+
+### One combination not yet tried
+
+`--say` and `--pin-audio` were deliberately built as separate levers. Used
+together on the **same line**, the model would lip sync its own English rendering
+while the soundtrack carries the ElevenLabs voice saying the same words.
+
+If the timing is close enough, that is correct lip sync **in her voice** with no
+lip-sync provider at all: about $0.07 a clip against $0.47.
+
+**Not predicted to work.** The two renderings have different pacing, and the
+gibberish preamble would push the whole thing out of sync on any take that has
+one. But it costs **13p** to find out, it needs no new provider, and both flags
+already exist.
