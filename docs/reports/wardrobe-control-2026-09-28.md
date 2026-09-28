@@ -4,6 +4,54 @@
 polo, white pleated skort, white visor — against the usual English portrait
 keyframe.
 
+## Correction, after the owner watched them
+
+*"All those videos start in white outfit then switch on the next scene."*
+
+**Correct, and it changes the conclusion below.** The section as written says the
+outfit is stable, which it is — after a hard cut at about 0.3 s. The clip opens
+on the keyframe: her white outfit, her face, the keyframe's light. Then it cuts,
+and everything after the cut is a re-rendered version of her in the prompted
+clothes.
+
+**The outfit clips and the Florida clips do different things, and the difference
+is the finding.**
+
+| | Florida | Outfit |
+|---|---|---|
+| How the change arrives | continuous camera move; palms grow into frame | **hard cut at ~0.3 s** |
+| Her clothes | unchanged throughout | white → navy, across the cut |
+| Her face | same render throughout | **re-rendered after the cut** |
+| Identity | 0.9478–0.9559, all usable per the owner | **0.8854–0.9259, two fails** |
+
+**The keyframe is authoritative over her body. The prompt is authoritative over
+the world.** The model will transform the background around her continuously,
+because the background is not her. It cannot transform her clothing without
+re-rendering her, so it cuts — and the person after the cut is measurably a
+different person.
+
+That explains the identity numbers exactly, and it is a better explanation than
+"a big appearance instruction re-renders more of her". It also explains why
+Florida's identity dip is mild and probably lighting, while the outfit's is
+severe.
+
+### What follows
+
+**Spec §5's clothing rule cannot be enforced in the video prompt.** It has to be
+enforced where her body is decided: **in the keyframe.** The master set needs
+stills of her in the spec-compliant outfits — navy polo and skort, and whatever
+else the calendar needs — each one checked against the 0.9609 threshold like any
+other master image.
+
+That is a smaller job than the Florida-keyframe work this report's predecessor
+feared, and a different one from D-D's action-framed stills. It is Midjourney
+portraits in golf clothing, which is what the master set already is, wearing
+something else.
+
+**Trimming the first half-second does not fix it.** It removes the visible cut
+and leaves a clip that is entirely the post-cut render — which is the render
+that fails identity.
+
 ## The outfit obeys, exactly and stably
 
 She wears what the prompt asks for. Navy polo, white pleated skort, visor, held
@@ -28,15 +76,14 @@ the entire spike, beaten only by the clip that turned into a man.
 The same two formats, same keyframe, same model, with no outfit in the prompt
 returned 0.9725, 0.9748, 0.9634 and 0.9571 — every one a pass or a near-pass.
 
-**The naive reading is that dressing her costs her face**, and the mechanism is
-at least plausible: a heavily specified outfit is a large instruction about her
-appearance, and the model appears to re-render more of her to satisfy it.
+**Dressing her costs her face, and the correction above says why**: the model
+re-renders her after a cut rather than dressing the person in the keyframe. The
+gate was right here, and the owner rejected all four.
 
-**Treat that as a hypothesis.** The gate's failures have been right one in three
-across this spike, and it has cried wolf on exactly this kind of clip before —
-it failed all four Florida clips the owner then rated usable. On the frames she
-reads as noticeably more made-up than the master set, which is consistent with
-the score, but the owner's eye decides and the clips have gone to them.
+Worth noting against the gate's record: it failed all four Florida clips, which
+the owner then rated usable, and it failed these, which the owner rejected. Same
+instrument, same session, opposite outcomes — which is what a 1-in-3 precision
+looks like from the inside, and why it routes rather than rejects.
 
 ## It invented a brand
 
