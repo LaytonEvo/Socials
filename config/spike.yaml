@@ -255,7 +255,14 @@ providers:
         base:
           resolution: 768P        # enum is capitalised on this model
           enable_safety_checker: true
-          prompt_expansion_mode: balanced   # required field
+          # 'balanced' REWRITES the prompt before generation. That is auto_fix
+          # under another name, and the veo slot above says why it is never on:
+          # in a battery the prompt IS the variable, so a silent rewrite means
+          # the clip you recorded is not the clip you asked for. It was set to
+          # balanced from 2026-09-25 to 2026-09-28 and every clip generated in
+          # that window ran an expanded prompt -- which is the most likely
+          # source of the unrequested multi-shot editing those clips showed.
+          prompt_expansion_mode: disabled
       options: {}
     alt_h3max_turbo:     # post-trained H3 Max variant; cheapest video on fal
       backend: fal
@@ -269,7 +276,7 @@ providers:
         base:
           resolution: 768P
           enable_safety_checker: true
-          prompt_expansion_mode: balanced
+          prompt_expansion_mode: disabled   # rewrites the prompt; see the turbo slot
       options: {}
     alt_wan3:            # Alibaba Wan 3.0
       backend: fal
