@@ -1,6 +1,6 @@
 # Is the golf failure veo3.1's, or video generation's?
 
-**Date:** 2026-09-25 · **Status:** owner ratings outstanding. 3 of 4 models ran.
+**Date:** 2026-09-25, extended 2026-09-28 · **Status:** turbo rated and repeated; the other two carry no verdict.
 
 Every conclusion the spike has drawn about what video models can and cannot do
 rests on **one model family**: `veo3.1`, fast and flagship. The club-and-ball
@@ -68,11 +68,43 @@ rather than a veo3.1 quirk: a shot composed to show a club striking a ball is
 composed not to show a face, whoever renders it. Nothing here weakens D-A or the
 proposal to verify identity on the keyframe and the clip on continuity.
 
+## 2026-09-28: the owner rated it, and it was repeated
+
+**`h3max_turbo` rated 4** — *"turbo looks ok"*. **The first club-and-ball clip in
+this project the owner has not rejected on physics.** Every previous one was
+either rejected outright or rated 4 under a blanket "they all look good" that
+later inspection did not support.
+
+`h3max` and `gemini` carry a note and no rating. The owner named turbo and said
+nothing about the other two; not selected is not rejected, and recording a
+verdict nobody gave would be putting words in the sheet.
+
+### Takes 2 and 3
+
+The n=1 caveat below was the whole weakness of this finding, so two more takes
+were run on the same prompt and keyframe. **$0.125 for both**, which is the real
+argument for this model as much as the physics is.
+
+| Take | Structure | Face presence |
+|---|---|---|
+| 10 | address, stroke, ball rolls away, camera follows it | 0.000 |
+| 11 | same, including the camera move | 0.000 |
+| 12 | same, camera stays with her; **a small dark object sits on the green by her feet from a third of the way in** | 0.000 |
+
+Sent for rating. Pending that, the structure repeated 3 for 3, which is the
+first time any club-and-ball format in this spike has held across takes — the
+two formats that started this report both passed take 1 and failed take 2.
+
+**The artefact in take 12 matters more than it looks.** It is exactly the class
+of defect the identity gate cannot see — not a face, not identity, just a wrong
+object on the grass — and at 0.000 face presence the gate has nothing to say
+about these clips at all. Whatever this model is worth, it does not reduce the
+need for a human on every clip.
+
 ## What this does not establish
 
-- **n=1 per model.** The two rejects that started this were both second takes of
-  formats that passed their first. One good take proves nothing; that is the
-  lesson of this whole report series.
+- ~~n=1 per model~~ — addressed for turbo on 2026-09-28 (3 takes). Still n=1 for
+  `h3max` and `gemini`.
 - **One shot.** Putting only. `full_swing_impact` and `ball_flight` are
   untested on every alternative.
 - **`wan-3.0` never ran.** Its queue timeout is a harness limit, not a verdict.
@@ -81,8 +113,10 @@ proposal to verify identity on the keyframe and the clip on continuity.
 
 ## Carried forward
 
-- Owner ratings on the three clips.
-- If MiniMax holds: second takes, then `full_swing_impact` and `ball_flight`,
-  then the face-forward battery to check identity is not worse.
+- Owner ratings on turbo takes 2 and 3.
+- `full_swing_impact` and `ball_flight` on turbo — the untested half of the
+  question, since everything so far is one shot.
+- The face-forward battery on turbo, to check identity is not worse than veo's
+  on the shots where a face is actually visible.
 - `wan-3.0` with a longer poll window.
 - ADR 0003's amendment still waits. This probe could move it again.
