@@ -276,3 +276,77 @@ Seven. The calibration space, "the distributions cross", the S0.4 dependency,
 turning being the worst motion, ADR 0003 being over-constrained, club-and-ball
 being beyond video models, and now the cut mechanism. Every one was caught by
 measuring rather than by thinking harder, which is the argument for measuring.
+
+---
+
+## 2026-09-28, later: the gate check, and audio nobody had noticed
+
+### The gate's failures are mostly wrong
+
+Four club-and-ball clips went to the owner — two the gate had failed on identity,
+two it had passed. **All four came back "They all look OK."**
+
+Scored against every turbo clip the owner has now given a verdict on:
+
+| | Count |
+|---|---|
+| True positives — gate failed it, owner rejected it | **1** |
+| False positives — gate failed it, owner kept it | **2** |
+| False negatives — gate passed it, owner rejected it | 0 |
+| True negatives | 7 |
+
+**Precision of a gate FAIL: 1 in 3.** Two of the three clips it condemned were
+usable, and on this sample it has never wrongly let one through.
+
+That is a sharper statement of D-A than anything in Gate A. The gate is not
+useless and it is not a rejector: it has **never missed a bad clip the owner
+caught** (0 false negatives in 10), and **two thirds of what it condemns is
+fine**. Used as an auto-reject it destroys usable footage at twice the rate it
+saves anyone from a bad clip. Used as a *router* — flag for a human, never
+discard — it has so far cost nothing and caught the one genuine impostor.
+
+**Auto-reject on identity should not be built.** Routing should.
+
+The one true positive remains the one that matters: the gate found a different
+person before any human looked.
+
+### The driver
+
+*"I'd argue the driver in the last video doesn't look real."* Tagged
+`club_distortion`, which is one of ADR 0003's original predicted failure modes
+and the one that survives the change of model. The gate passed the clip and was
+right to: club geometry is not a face, and **nothing in this harness measures
+it.** That is the second instrument D-A needs, and it is still unbuilt.
+
+### Every turbo clip has a soundtrack, and it is speaking an unknown language
+
+*"Not sure what language she's speaking."*
+
+**61 of 61 turbo clips carry an AAC audio track. Every veo clip is silent**,
+because `generate_audio: false` was set deliberately. The turbo schema has **no
+audio on/off control at all** — soundtrack generation is unconditional — so the
+spike has generated 61 clips of speech in an unidentified language without
+anyone noticing, including in the clips already used as evidence.
+
+**This was found by the owner, not by the harness.** Nothing in the scoring
+pipeline looks at audio, and it should: a clip whose soundtrack is wrong is not
+publishable however good the picture.
+
+Two consequences, one bad and one good.
+
+**Bad:** the language is wrong for a British persona, and there is no flag to
+turn it off. Any turbo clip used as-is needs its audio stripped or replaced.
+
+**Good, and possibly large:** `target_audio_url` pins a supplied soundtrack —
+fal's words, *"the original audio replaces the output soundtrack"*. That means
+ElevenLabs TTS could be fed **directly into video generation**, and the video
+would be generated to that audio rather than lip-synced to it afterwards.
+
+If that works it removes a stage, a provider and a measured identity cost:
+S0.8 chose HeyGen at **$0.40/clip** precisely because it was the only lip-sync
+model that did not damage identity. A model that takes the audio up front has
+nothing to damage. **ADR 0005 flagged exactly this question** — whether native
+audio can replace the lip-sync stage — and parked it as a separate run.
+
+Untested. It is the cheapest large thing left: one turbo clip with a pinned
+ElevenLabs line, against the existing HeyGen result, for about **7p**.
