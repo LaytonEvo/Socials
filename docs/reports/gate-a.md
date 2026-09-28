@@ -2,6 +2,16 @@
 
 **Date:** 2026-09-25 · **Recommendation: proceed, with four decisions attached**
 
+> **Amended 2026-09-28.** A cross-model probe overturned this report's two
+> largest conclusions. The club-and-ball constraint was a property of
+> `veo3.1`, not of video generation: `minimax/h3-max-turbo`, at **$0.0125/s
+> against $0.15/s**, renders a full golf swing from the portrait stills this
+> project already has, and the owner has accepted the swings. Separately, the
+> identity gate produced its **first true positive** — it failed a clip at
+> 0.9106 and the owner independently called it *"a different person"*. §3, §5,
+> §6, D-A and D-D are all affected; see
+> `s07-cross-model-probe-2026-09-25.md`.
+>
 > **Amended 2026-09-25**, after the report was written, by the second battery
 > take: §5's headline usable rate and §6's discard rate are corrected below, and
 > the ADR 0003 recommendation is withdrawn. Detail in
@@ -182,6 +192,37 @@ good.
 >
 > Detail, and a routing rule it offers D-A, in
 > `s07-battery-take2-2026-09-25.md`.
+>
+> ### Superseded again 2026-09-28
+>
+> **The club-and-ball constraint was a property of `veo3.1`, not of the
+> formats and not of video generation.** `minimax/h3-max-turbo`, run on the
+> same prompts and the same portrait keyframes, renders address over a teed
+> ball, backswing, contact, follow-through and ball flight. The owner's
+> verdict on six takes: *"Swings are good."*
+>
+> | Turbo | Clips | Usable | Rejected |
+> |---|---|---|---|
+> | `putting_stroke` | 3 | 3 | 0 |
+> | `full_swing_impact` | 3 | 2 | 1 — *"a different person"* |
+> | `full_swing_follow` | 3 | 3 | 0 |
+>
+> **8 of 9, at $0.0125/s.** The one reject failed on identity, not on golf,
+> and the gate had already caught it.
+>
+> **ADR 0003 is now decidable, and the answer is the opposite of the one it
+> expected.** `BUILD_PLAN` predicted *"full swing and ball flight blocked"*;
+> on this provider they are not blocked. The ADR's open question — *if swing
+> and ball flight are confirmed blocked, does the concept still work?* — no
+> longer has to be answered under that constraint.
+>
+> Two defects the owner confirmed and one that is structural:
+> **debris thrown up at ground contact** (*"your comments on the ground impact
+> are valid"*), **wardrobe drift across cuts**, and **unrequested multi-shot
+> editing** — a shot list that asks for one shot and receives five is not a
+> shot list, and each extra cut is another chance to re-render her outfit.
+>
+> Nine takes, one model, three shots. A yield rate needs more than that.
 
 ---
 
@@ -223,6 +264,12 @@ of swing content and overstates the cost of everything else.
 
 Eight of those 28 carry "reviewed, not flagged" rather than a numeric score,
 which is a weaker statement than a 4 or a 5. Treat 14% as a floor.
+
+> **Superseded 2026-09-28.** The tier comparison below is between two `veo3.1`
+> tiers, and the cheaper of them is **12× the price of the model that now does
+> the work**. `minimax/h3-max-turbo` is $0.0125/s against Fast's $0.15/s guard,
+> and it renders content Fast cannot render at all. Every figure in this section
+> is an upper bound on a cost model that has not been rebuilt around it.
 
 The tier decision matters more than any of this. Fast beat flagship on a
 controlled comparison, at **$0.15/s against $0.40/s guard** — roughly £190 a
@@ -275,6 +322,27 @@ face — and it must work across occlusions, which is the hard part. **The human
 approver is currently the only thing that has caught a bad clip; the gate has
 caught none.**
 
+> **Amended 2026-09-28 — the gate caught one, and it was right.** On
+> `full_swing_impact` take 3 it failed a clip at 0.9106 against the 0.9609
+> threshold, before anyone had watched it. The owner's independent verdict:
+> *"take three is a different person."*
+>
+> One true positive does not validate the gate, but it does re-describe how it
+> fails, and the new description is more useful than "it catches nothing":
+>
+> - **Asked "is this her face?", with frames that contain a face, it answers
+>   correctly.** That is now demonstrated rather than assumed.
+> - **Its failures were never discrimination failures.** They were missing
+>   evidence — a defect inside a no-face window, or the 0.000 coverage of an
+>   action-framed shot — or being asked a question it does not answer.
+> - **Most bad clips in this spike failed on motion, objects, wardrobe or shot
+>   adherence, none of which is a face.** The gate was not wrong about those.
+>   It was silent, because nobody had built the instrument that speaks to them.
+>
+> **This narrows D-A rather than removing it.** The task is not to replace the
+> identity gate. It is to guarantee coverage so the gate has evidence, and to
+> add a second instrument for everything that is not a face.
+
 One cheap thing the data does offer, as routing rather than detection: every
 clip that has ever lost a frame of face was a club-and-ball shot, 10 of 10, so
 **face presence below 1.0 flags the clips where a human must watch the golf and
@@ -288,7 +356,13 @@ Cheapest option is a margin; correct option is a calibration run.
 non-commercial. Everything measured here rests on it. Accept, buy InsightFace,
 or revert to DINOv2.
 
-**D-D. Is S0.4's LoRA still wanted?** It is no longer on the critical path —
+**D-D. Is S0.4's LoRA still wanted?** *Reopened 2026-09-25, and closed again
+2026-09-28: the swings above were generated from ordinary portrait keyframes,
+so on this model no action-framed still is needed and the sourcing problem does
+not arise. The 2026-09-25 argument below was drawn from `veo3.1`'s behaviour
+and does not survive the change of model.*
+
+It is no longer on the critical path —
 the finding that a fixed portrait could not produce the battery was wrong, and
 Midjourney stills cover keyframes. Skipping it saves GPU spend and the FLUX
 licence question entirely.
@@ -331,6 +405,10 @@ Five of my own conclusions were wrong and were corrected on measurement: the
 calibration space, "the distributions cross", the S0.4 dependency, that turning
 would be the worst motion, and — added 2026-09-25 — that ADR 0003 had
 over-constrained the formats, a conclusion drawn from one take that a second
-take reversed. Each was caught by checking rather than by reasoning. **The owner's eye caught every bad clip; the automated gate caught
+take reversed. A sixth was corrected on 2026-09-28: that club-and-ball content was beyond
+current video models. It was beyond the one model family this spike had tested,
+which is not the same claim and should not have been written as though it were.
+
+Each was caught by checking rather than by reasoning. **The owner's eye caught every bad clip; the automated gate caught
 none of them.** That asymmetry is the most important thing in this report and
 it should shape how much the Phase 3 automation is trusted.
