@@ -413,3 +413,45 @@ judgement and the clips have gone for it.
 If the answer is yes, S0.8's provider choice and ADR 0005 both need revisiting,
 and the per-clip cost of a talking-head piece falls from roughly $0.60 + $0.40 to
 about $0.07.
+
+### The mouth does not follow it. ADR 0005 is answered: no.
+
+*"Lip sync is off."*
+
+**`target_audio_url` muxes audio over a finished video. It does not condition
+generation.** The schema says so and I read it wrong — "pin to the generated
+soundtrack … the original audio **replaces the output soundtrack**, padded with
+silence if shorter than the video, without changing playback speed." Every word
+of that describes what happens to the audio track. Nothing in it says the video
+is generated to the speech. I read "pin" as conditioning; it means attach.
+
+So the lip-sync stage stays, and with it HeyGen and its $0.40. The table in the
+previous section is wrong and the claim that a talking-head clip falls to $0.07
+is withdrawn.
+
+### What survives
+
+**The audio control is still worth having.** Turbo invents a soundtrack on every
+clip with no way to switch it off, and pinning is the only way to govern it.
+For a non-speaking clip — a swing, a reaction, B-roll — pinning ambience or
+silence replaces an unidentified language with something publishable, for
+nothing. For a talking-head clip it is redundant, because the lip-sync pass
+overwrites the audio anyway.
+
+**And the cost shape has inverted, which matters more.**
+
+| Stage | Veo pipeline | Turbo pipeline |
+|---|---|---|
+| Video | $0.60 (4 s at $0.15) | **$0.0625** (5 s at $0.0125) |
+| Lip sync | $0.40 | $0.40 |
+| Talking-head clip | ~$1.00 | **~$0.47** |
+
+The video was the dominant cost and is now a seventh of it. **Lip sync is now
+six times the price of the clip it is applied to.** S0.8 chose HeyGen over
+veed ($0.28) and pixverse ($0.16) on identity grounds, correctly, when video
+dominated the bill. That trade should be re-examined now that lip sync *is* the
+bill — the question is no longer "which sync model is cheapest" but "what is
+0.0041 of identity margin worth at six times the cost of the footage".
+
+Not a decision to take here. It belongs with D-B, which already asks whether the
+gate should run before or after the lip-sync pass.
