@@ -1,0 +1,264 @@
+# Production provider configuration.
+#
+# Rules from CLAUDE.md that this file exists to enforce:
+#   - No model names, endpoints or prices in code. They live here.
+#   - Every price carries a `verified_on` date. The cost guard REFUSES a price
+#     without one, or one older than `price_max_age_days`.
+#   - Model weights carry a licence and the date the licence TEXT was read.
+#     Commercial use must be permitted.
+#
+# Relationship to `config/spike.yaml`: that file configures Spike 0's throwaway
+# harness and is frozen when Spike 0 closes. This file configures `app/`. Prices
+# below were carried across from spike measurements with their original
+# `verified_on` dates intact, which means most of them are ALREADY older than a
+# newly verified figure would be. CLAUDE.md requires re-verification against the
+# provider's current official docs at the time each adapter is implemented, and
+# recording what was found in `docs/decisions/`. Carrying a date forward is not
+# verification; it is a record of when someone last looked.
+#
+# `backend: null` means "not implemented" and must raise a clear error if used,
+# never fall back to a default.
+
+price_max_age_days: 90
+
+# Every price here is the HIGHER of the figures a provider publishes where they
+# differ (for example audio-on vs audio-off rates). A cost guard that
+# understates is worse than no guard: it lets a run sail past the cap while
+# reporting it is inside it. Over-reserving spends less than budgeted, which is
+# the safe direction to be wrong in.
+price_convention: higher_of_published_figures
+
+# --- Secrets ---------------------------------------------------------------
+# Names only. Values come from the environment and nowhere else; every name
+# here must appear in `.env.example`.
+credentials:
+  fal: FAL_KEY
+  anthropic: ANTHROPIC_API_KEY
+
+# --- Providers -------------------------------------------------------------
+providers:
+
+  # Task 0.6 requires the pipeline to run end to end on fakes before any paid
+  # call exists. These slots are the only ones Phase 0 needs working.
+  fake:
+    image:
+      backend: fake
+      model: fake-image-v0
+      price_usd_per_image: 0.0
+      verified_on: 1970-01-01
+    video:
+      backend: fake
+      model: fake-video-v0
+      price_usd_per_second: 0.0
+      verified_on: 1970-01-01
+      capabilities:
+        durations_s: [4, 5, 6, 8]
+        aspects: ["9:16", "16:9", "1:1"]
+        image_to_video: true
+        native_audio: false
+        seed: true
+    lipsync:
+      backend: fake
+      model: fake-lipsync-v0
+      price_usd_per_second: 0.0
+      verified_on: 1970-01-01
+    voice:
+      backend: fake
+      model: fake-tts-v0
+      price_usd_per_1000_characters: 0.0
+      verified_on: 1970-01-01
+    llm:
+      backend: fake
+      model: fake-llm-v0
+      price_usd_per_1000_input_tokens: 0.0
+      price_usd_per_1000_output_tokens: 0.0
+      verified_on: 1970-01-01
+
+  # --- Video ---------------------------------------------------------------
+  # BUILD_PLAN Section 5 says to implement "one flagship, one budget". Spike 0
+  # measured that split backwards. `h3-max-turbo` is both the CHEAPEST video
+  # model tested and the only one that renders club-and-ball golf content at
+  # all, at 1/12 the rate of the veo3.1 Fast tier that could not. So the two
+  # adapters to write first are turbo (golf mechanics, and cheapest) and
+  # veo3.1 Fast (verified face-forward quality, and a seed that is at least
+  # accepted). Neither is a "flagship" in the price sense.
+  #
+  # NOT YET AN ADR. The production video provider is chosen on Phase 2's
+  # confirmation run against the real persona look, not on Spike 0's throwaway
+  # (BUILD_ORDER §2). Both slots stay configured until then.
+  video:
+    golf:
+      # Renders address over a teed ball, a putting stroke and a follow-through
+      # on prompts and portrait keyframes where veo3.1 produced neither club
+      # nor ball. 64% of club-and-ball takes usable, 83% face-forward, rated
+      # blind by the owner. See docs/reports/s07-turbo-format-catalogue-2026-09-28.md.
+      backend: fal
+      model: minimax/h3-max-turbo/image-to-video
+      endpoint: null          # the adapter builds it from the model id (ADR 0006)
+      price_usd_per_second: 0.0125
+      verified_on: 2026-09-25
+      capabilities:
+        durations_s: [5]       # integer, minimum 5; a 4 s request is rejected
+        aspects: ["9:16"]
+        image_to_video: true
+        native_audio: forced   # generates a soundtrack unconditionally, no flag
+        seed: accepted_not_honoured
+      request:
+        # Every field name below is a property of the MODEL, which is why it
+        # lives beside the model id and not in the adapter. Sending the wrong
+        # name is a 422.
+        duration_s: 5
+        duration_style: seconds_int
+        audio_field: target_audio_url
+        base:
+          resolution: 768P
+          enable_safety_checker: true
+          # NEVER `balanced` or `auto`. Both rewrite the prompt before
+          # generation, so the clip on record is not the clip that was asked
+          # for. Set to `balanced` between 2026-09-25 and 2026-09-28; every
+          # clip generated in that window ran an expanded prompt.
+          prompt_expansion_mode: disabled
+    face:
+      # Kept for face-forward work, where its quality is verified and its
+      # native audio can be switched off. 4× the turbo rate and it renders no
+      # club (docs/reports/s07-cross-model-probe-2026-09-25.md).
+      backend: fal
+      model: fal-ai/veo3.1/fast/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.15
+      verified_on: 2026-09-24
+      capabilities:
+        durations_s: [4, 6, 8]   # literals only (ADR 0006)
+        aspects: ["9:16", "16:9"]
+        image_to_video: true
+        native_audio: optional
+        seed: accepted_not_honoured
+      request:
+        duration_style: veo_literal
+        base:
+          generate_audio: false
+          resolution: 720p
+          auto_fix: false        # rewrites the prompt; see the turbo slot
+
+  # --- Image (keyframes) ---------------------------------------------------
+  image:
+    keyframe:
+      # Editing a master still rather than generating a new one, so the face
+      # the threshold was calibrated against survives by construction instead
+      # of by luck. Wardrobe is set HERE and not in the video prompt: a
+      # clothing change in a prompt forces a hard cut and a re-rendered person
+      # (docs/reports/wardrobe-control-2026-09-28.md).
+      backend: fal
+      model: fal-ai/nano-banana-2/edit
+      endpoint: null
+      price_usd_per_image: 0.08
+      verified_on: 2026-09-28
+      request:
+        image_field: image_urls
+        image_field_is_list: true
+        base:
+          output_format: png
+          num_images: 1
+          # 1K, not 2K. A keyframe must survive being inlined into the next
+          # request, and 2K PNGs came back at 5.6 MB against a 4 MB data-URI
+          # cap. An output that cannot be used as input is not an output.
+          resolution: 1K
+          enable_web_search: false
+
+  # --- Lip sync ------------------------------------------------------------
+  lipsync:
+    primary:
+      # Chosen 2026-09-24 on a controlled three-way: one source clip, one
+      # synthesis, three models, nothing else varying. Best on the owner's eye
+      # and the only one that did not cost identity (+0.0041 against -0.0037
+      # and -0.0006). Amendment A5 requires the render to be re-scored AFTER
+      # this stage: the number on a `generation` row predates the last
+      # transformation of the face.
+      backend: fal
+      model: fal-ai/heygen/v3/lipsync/precision
+      endpoint: null
+      price_usd_per_second: 0.10
+      verified_on: 2026-09-24
+      request:
+        base:
+          # Refused without this: our clips are silent by design and heygen
+          # requires an audio track, then rejects a speech/video duration
+          # mismatch outright where other models silently trim.
+          enable_dynamic_duration: true
+          end_time: auto
+
+  # --- Voice ---------------------------------------------------------------
+  voice:
+    primary:
+      # A designed synthetic voice, per task 3.6 — not cloned from a real
+      # person. Splitting speech from sync is the point: the voice belongs to a
+      # provider good at voices and stays the same across every video, where a
+      # video model's native audio drifts between takes. A recurring
+      # personality whose voice drifts is as broken as one whose face does.
+      #
+      # Billed per 1000 characters, not per second of output.
+      backend: fal
+      model: fal-ai/elevenlabs/tts/turbo-v2.5
+      endpoint: null
+      price_usd_per_1000_characters: 0.05
+      verified_on: 2026-09-24
+      # Voice id, speed and delivery are owner choices (D1), settled by ear on
+      # 2026-09-24. They live in `config/persona.yaml`, not here: they are
+      # persona identity, not provider configuration.
+      #
+      # OPEN: this voice's provenance has not been checked. Task 3.6 requires a
+      # DESIGNED voice; if this id is a library voice cloned from a real
+      # person, it does not satisfy that and must be replaced. Verify before a
+      # published render.
+      provenance_verified_on: null
+
+  # --- LLM (shot lists, captions) ------------------------------------------
+  llm:
+    shotlist:
+      # Task 3.1: brief in, schema-validated JSON shot list out. This is the
+      # ONLY place Claude appears inside the running product, and it is called
+      # through `app/providers/` like any other adapter.
+      backend: anthropic
+      model: claude-opus-5
+      endpoint: null
+      # NOT VERIFIED. Deliberately null rather than filled from memory: the
+      # cost guard refuses a price without a `verified_on`, which is the
+      # correct behaviour here. Read Anthropic's current pricing page when the
+      # adapter is written and record it in docs/decisions/.
+      price_usd_per_1000_input_tokens: null
+      price_usd_per_1000_output_tokens: null
+      verified_on: null
+      request:
+        # A locked prompt prefix makes caching possible, but a prefix shorter
+        # than the model's minimum cacheable length silently does not cache.
+        # Verify with `usage.cache_read_input_tokens` rather than assuming.
+        prompt_caching: true
+
+# --- Identity scorer -------------------------------------------------------
+# Not a "provider" in the adapter sense, but it carries the same licence and
+# verification obligations, and amendment A3 makes its version part of the
+# data model: a calibrated threshold is valid for ONE model at ONE version.
+# Changing either invalidates every stored vector and the threshold with them,
+# so the schema records the model and version on every row that holds one and
+# re-calibration is forced when they change.
+embedder:
+  backend: dlib                     # ADR 0004, on measured separation
+  model: dlib_face_recognition_resnet_model_v1
+  version: null                     # pin before any vector is stored
+  dim: 128
+  frame_sample_fps: 2.0
+  threshold: null                   # written by calibration; never hand-edited
+  threshold_calibrated_on: null
+  # Public domain by the author's statement, with a training-data caveat:
+  # part of FaceScrub is non-commercial, and the statement covers the model
+  # file rather than the photographs behind it. ADR 0004 treats this as a
+  # counsel question. It blocks PUBLICATION, not measurement.
+  licence: "Public domain (author statement); FaceScrub training-data caveat, see ADR 0004"
+  licence_verified_on: 2026-09-23
+  licence_cleared_for_publication: false
+
+# --- LoRA ------------------------------------------------------------------
+lora:
+  base_model: null
+  base_model_licence: null          # must permit commercial use (task 1.4)
+  base_model_licence_verified_on: null

@@ -1,0 +1,169 @@
+# Content policy. Read by the policy guard (task 3.2) and the shot-list
+# generator (task 3.1), which must refuse a shot in `blocked_formats` and a
+# brief touching a blocked topic.
+#
+# This file is task 2.5's decision record. Everything in it is traceable to
+# rated evidence or to a standing rule, and each format carries the sample size
+# behind its number so nobody reads a 2-clip result as a measurement.
+
+# --- Topic blocks: permanent, not evidence-dependent -----------------------
+# These are not format questions and no measurement changes them.
+blocked_topics:
+  - id: financial_products
+    # CLAUDE.md: "Financial products are out of scope permanently. The policy
+    # guard blocks them. Don't weaken it." D4 in BUILD_PLAN Section 1.
+    rule: permanent
+    covers:
+      - investment, trading or crypto promotion of any kind
+      - betting, gambling and odds content, including golf betting
+      - lending, insurance and financial advice
+  - id: real_identifiable_people
+    # A synthetic persona presented alongside a real named person implies an
+    # association that does not exist, and uses their likeness without consent.
+    rule: permanent
+    covers:
+      - named professional golfers presented as peers, partners or opponents
+      - real people's likeness, voice or name in generated footage
+      - real brands presented as sponsors without an actual agreement
+
+# --- The content rule that survives any format result ---------------------
+# BUILD_PLAN Phase 2, verbatim: "never cut real swing footage of an unnamed
+# person into the persona's content in a way that implies she is the one
+# swinging." Task 3.13's hybrid ingest stays disabled while
+# `production.mode: synthetic`, which is what enforces this today.
+footage_rules:
+  real_footage_implying_persona_performance: blocked
+  hybrid_requires: [contracted_performer, disclosed_approach, rights_metadata]
+
+# --- Format policy --------------------------------------------------------
+# NOTHING IS BLOCKED ON RENDERING GROUNDS.
+#
+# BUILD_PLAN Phase 2 predicted the opposite — "full swing and ball flight
+# blocked" — and ADR 0003 argued the same case at more length. Both were wrong,
+# and the reason matters for how this file is maintained: the constraint was a
+# property of ONE model family, not of the format and not of video generation.
+# veo3.1 rendered no club and no ball; minimax/h3-max-turbo, on the same
+# prompts and the same portrait keyframes, renders address over a teed ball, a
+# putting stroke and a follow-through. Detail in
+# docs/reports/s07-turbo-format-catalogue-2026-09-28.md.
+#
+# So a format is not blocked or allowed in the abstract. It is blocked or
+# allowed FOR A GIVEN PROVIDER, and this file records provider-specific yield.
+#
+# What survives of ADR 0003's argument is a YIELD PENALTY concentrated on
+# club-and-ball content — the content a golf persona most needs. That is a cost
+# and scheduling fact, not a prohibition, and it is expressed below as a take
+# count rather than a block.
+blocked_formats: []
+
+format_evidence:
+  # All figures: h3-max-turbo, prompt expansion disabled, 2 takes per format,
+  # rated blind by the owner (filenames carried format and take number only).
+  # "Usable" means rated 4 or 5 on the PICTURE. Audio defects are excluded
+  # deliberately — they appear on nearly every clip and are governed separately
+  # (docs/reports/audio-governance-2026-09-28.md); rating them would make every
+  # format a discard and measure nothing about format yield.
+  provider: minimax/h3-max-turbo/image-to-video
+  rated_on: 2026-09-28
+  takes_per_format: 2
+  report: docs/reports/s07-turbo-format-catalogue-2026-09-28.md
+  # n=2 per format. A 0/2 is not a block and a 2/2 is not a guarantee; the
+  # confidence interval on two clips spans almost the whole range. These
+  # numbers set take counts, nothing stronger.
+  sample_size_caveat: two_takes_per_format
+
+allowed_formats:
+
+  # --- Face-forward: 10/12 usable (83%) ---
+  - id: talking_head_course
+    group: face_forward
+    usable: [2, 2]
+    takes: 2
+  - id: clubhouse
+    group: face_forward
+    usable: [2, 2]
+    takes: 2
+  - id: equipment_closeup
+    group: face_forward
+    usable: [2, 2]
+    takes: 2
+  - id: walking_fairway
+    group: face_forward
+    usable: [2, 2]
+    takes: 2
+  - id: reaction
+    group: face_forward
+    usable: [2, 2]
+    takes: 2
+  - id: apparel
+    group: face_forward
+    usable: [0, 2]
+    # The only face-forward format that produced nothing usable, and the
+    # weakest result in the battery (rated 1 and 3). Not blocked on n=2, but it
+    # is the first format to re-test rather than to schedule.
+    takes: 4
+    review: retest_before_scheduling
+
+  # --- Club-and-ball: 9/14 usable (64%) ---
+  # Higher take counts are the yield penalty, priced rather than prohibited. At
+  # $0.0125/s these are the cheapest clips the project generates, so buying
+  # yield with extra takes costs less than the face-forward work does.
+  - id: full_swing_address
+    group: club_and_ball
+    usable: [2, 2]
+    takes: 3
+  - id: full_swing_follow
+    group: club_and_ball
+    usable: [2, 2]
+    takes: 3
+  - id: putting_stroke
+    group: club_and_ball
+    usable: [2, 2]
+    takes: 3
+    # Owner note on an otherwise usable take: "not sure what direction she's
+    # putting." A putt needs a readable target line; the `unclear_direction`
+    # failure tag exists for this.
+    requires: readable_target_line
+  - id: ball_flight
+    group: club_and_ball
+    usable: [1, 2]
+    takes: 4
+  - id: chip
+    group: club_and_ball
+    usable: [1, 2]
+    takes: 4
+  - id: full_swing_impact
+    group: club_and_ball
+    usable: [1, 2]
+    takes: 4
+    # The moment club, ball and ground all have to agree. Ground contact was
+    # specifically flagged by the owner across several clips.
+    requires: credible_ground_contact
+  - id: full_swing_top
+    group: club_and_ball
+    usable: [0, 2]
+    # Nothing usable, both takes rated 3. Same standing as `apparel`: re-test
+    # before scheduling, not blocked on two clips.
+    takes: 4
+    review: retest_before_scheduling
+
+# --- What this file does NOT decide --------------------------------------
+# D1 — the persona's concept — is the owner's and is not settled by format
+# yield. ADR 0003's surviving question is whether a golf personality who CAN
+# now be rendered swinging should be positioned as a player or as a
+# personality. The formats above say what is renderable. They do not say what
+# she should be.
+#
+# Also unmeasured, and therefore not encoded here:
+#   - Club GEOMETRY is wrong in ways nobody has measured. "Usable" is an
+#     owner's eye on a 5-second clip, not a golfer's judgement of the swing.
+#   - No continuity instrument exists. A wardrobe change mid-clip was found by
+#     the owner watching, not by any detector, and a proposed detector was
+#     withdrawn as useless at scale (docs/reports/wardrobe-control-2026-09-28.md).
+#   - Every figure here is from a THROWAWAY look, not the real persona.
+#     BUILD_ORDER §2 keeps Phase 2's confirmation run for exactly this reason,
+#     and these numbers must be re-measured against the real look before they
+#     are trusted for scheduling.
+pending:
+  d1_positioning: see config/persona.yaml
+  confirmation_run: phase_2
