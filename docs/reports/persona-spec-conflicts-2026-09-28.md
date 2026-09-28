@@ -99,3 +99,54 @@ It does not cover everything. A bad **shot** is content. A bad **club** is a
 broken render — the owner rejected a driver and a putter as *"not real"* on
 2026-09-28, and no amount of framing makes an unreal club a joke about her
 handicap.
+
+---
+
+## Florida: resolved. The setting is a prompt-level choice.
+
+Four clips, `talking_head_course` and `walking_fairway`, two takes each, from the
+**same English keyframe**. **$0.25.**
+
+The keyframe is unambiguously England: deciduous woodland, low soft sun, rolling
+parkland. The prompt named Florida — tall palms, Bermuda grass, hard subtropical
+light, flat sandy terrain — and the model rendered it: palms, white sand
+bunkers, water, flat ground, the light to match.
+
+**So collision 3 dissolves.** No Florida keyframes are needed, the master set
+covers both worlds, and the England/Florida contrast in spec §3's content strands
+costs nothing. That is the good case and it was not the likeliest one.
+
+### Two qualifications
+
+**The setting changes over during the clip.** The opening second still carries
+the keyframe's English background and the palms arrive after it. Read as a
+transition it is fine; read as a mistake it is not, and that is the owner's call
+rather than a measurement. It matters most for very short cuts, where a clip may
+end before the setting has fully turned over.
+
+**Identity sits lower than the English equivalents.** All four scored
+`indeterminate`:
+
+| Clip | Face presence | Identity min |
+|---|---|---|
+| `talking_head_course` take 1 | 0.900 | 0.9559 |
+| `talking_head_course` take 2 | 1.000 | 0.9549 |
+| `walking_fairway` take 1 | 0.700 | 0.9478 |
+| `walking_fairway` take 2 | 0.600 | **0.9163** |
+
+Against the same two formats in the English setting, which returned 0.9725,
+0.9748, 0.9634 and 0.9571. Every Florida clip is below every English one, and
+the worst is well under the 0.9609 threshold.
+
+**Four clips against four is not a finding**, and the gate's failures have been
+right one time in three, so this may be nothing. But the mechanism is plausible:
+the persona was generated under soft English light and the identity centroid is
+built from those images, so hard subtropical light is a lighting condition the
+master set never saw. The condition matrix already found light to be the second
+strongest axis after apparent face size, with midday the worst level at 1 of 5.
+
+**Worth one cheap check before the content calendar leans on Florida**: the same
+two formats, more takes, English against Florida, purely to see whether the gap
+survives a larger sample. Roughly 50p. If it does, it argues for adding
+Florida-lit stills to the master set — not to replace the keyframes, which work,
+but to widen the distribution the threshold is calibrated against.
