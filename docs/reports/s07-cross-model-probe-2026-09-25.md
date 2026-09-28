@@ -189,3 +189,90 @@ owner's has not yet been applied. Six takes, one model, two shots.
 **D-D may close after all.** These came from portrait keyframes, so on this model
 the action-still sourcing problem does not arise. That reverses the 2026-09-25
 argument for reopening it, which was based on veo3.1's behaviour.
+
+---
+
+## 2026-09-28: the full battery, a config error of mine, and a wrong mechanism
+
+13 formats × 2 takes on turbo, **26 of 26 generated, zero refusals, $1.625**.
+`veo3.1` never managed a clean sweep of the battery; it needed keyframe rotation
+and still refused shots.
+
+### The error
+
+`prompt_expansion_mode` was set to `balanced` on both MiniMax slots when they
+were added on 2026-09-25. fal's own description: *"How much effort to spend
+rewriting the prompt before generation."*
+
+**That is `auto_fix` under another name**, and the `veo3.1` slot a few lines
+above in the same file carries the comment explaining why it is never on: *"in a
+condition matrix the prompt IS the variable, so a silent rewrite means the cell
+you recorded is not the cell that ran."* Every turbo clip from 2026-09-25 to
+2026-09-28 ran an expanded prompt while every veo clip ran the literal one, so
+that cross-model comparison was never one variable.
+
+Fixed to `disabled` and the battery re-run, another $1.625.
+
+### What the correction changed
+
+| Turbo, identity min | expansion `balanced` | expansion `disabled` |
+|---|---|---|
+| club-and-ball, below 0.9609 | **10/14** | **4/14** |
+| club-and-ball, median | 0.9395 | **0.9680** |
+| club-and-ball verdicts | 0 pass, 9 indet, 5 fail | **5 pass**, 7 indet, 2 fail |
+| face-forward, below 0.9609 | 4/12 | 6/12 |
+| worst clip overall | 0.9146 | **0.7883** |
+
+**Disabling the rewrite more than halved the below-threshold rate on golf shots
+and produced the first club-and-ball passes this model has recorded.** It made
+face-forward slightly worse and introduced two far worse outliers.
+
+### My explanation for it was wrong, in both directions
+
+I predicted the expansion was adding the unrequested cutaways, and that the cuts
+were driving identity drift. A local cut detector (frame-to-frame luma
+difference, free, no API) says otherwise.
+
+**The expansion was suppressing cuts, not causing them.** With it disabled the
+model cuts *more*: mean 3.46 against 1.92, max 10 against 6. A richer prompt
+apparently gives the model enough to fill one shot with; a bare one leaves it
+improvising extra shots.
+
+**And cuts do not predict identity drift.** The −0.332 correlation I reported
+was computed on the `balanced` half alone. Across all 52 turbo clips it collapses
+to **−0.127**, and the bucket pattern is not monotonic — the clips with 6+ cuts
+have the *best* median identity of any bucket (0.9690, 2/10 below threshold).
+
+| Cuts | n | Median identity min | Below threshold |
+|---|---|---|---|
+| 0 | 17 | 0.9641 | 6/17 |
+| 1–2 | 12 | 0.9485 | 9/12 |
+| 3–5 | 13 | 0.9550 | 7/13 |
+| 6+ | 10 | **0.9690** | **2/10** |
+
+The config fix stands on principle regardless — a silent prompt rewrite has no
+place in a measurement harness — but it was not right for the reason I gave.
+
+**The cut detector is still worth keeping.** It is the frame-to-frame continuity
+instrument D-A calls for, it cost nothing, and it would have caught the
+skirt-to-shorts wardrobe change. It is simply not an identity predictor.
+
+### The trade, now measured on both models
+
+- **`veo3.1`** holds identity better (3/13 club-and-ball clips below threshold)
+  and **cannot render the golf** — the owner rejected its clips on physics.
+- **`h3-max-turbo`** renders golf the owner accepts and is **marginal on
+  identity** (4/14 below threshold at its best, 5 pass / 7 indeterminate / 2
+  fail), at a twelfth of the price.
+
+Whether "marginal on identity" is *visible* is the owner's call and not the
+gate's. Four clips — two the gate failed, two it passed — have gone for rating.
+That answer also measures the gate's own accuracy, which is the more valuable
+number now that it has one confirmed true positive.
+
+### Standing count of my wrong calls in this spike
+
+Seven. The calibration space, "the distributions cross", the S0.4 dependency,
+turning being the worst motion, ADR 0003 being over-constrained, club-and-ball
+being beyond video models, and now the cut mechanism. Every one was caught by
+measuring rather than by thinking harder, which is the argument for measuring.
