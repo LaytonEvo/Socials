@@ -1,0 +1,100 @@
+# D1 — persona identity. BUILD_PLAN Section 1: these are human decisions and
+# Claude Code must not make them. Placeholders are flagged and the build stops
+# on them rather than inventing a value.
+#
+# Two of the four are already settled by Spike 0 and are filled in below.
+# Everything marked DECIDE is outstanding.
+
+persona:
+  id: persona_001
+
+  # ---------------------------------------------------------------- DECIDE --
+  name: PERSONA_NAME
+  # Blocks: everything public. Also the handle on every platform, so check
+  # availability before committing.
+
+  # ------------------------------------------------------------ SETTLED ----
+  look:
+    status: decided
+    decided_on: 2026-09-24
+    decision_record: docs/decisions/0008-persona-look-is-decided.md
+    # The owner chose the look from generated candidates ("This is her"), and
+    # the identity threshold is calibrated against this master set. Changing
+    # the look means recalibrating: the 0.9609 threshold is a property of
+    # these images, not a constant.
+    master_set: master_v2          # 105 stills
+    identity_threshold: 0.9609
+    scorer: dlib ResNet, 128-d, cosine vs the L2-normalised centroid
+
+  voice:
+    status: decided
+    decided_on: 2026-09-25
+    # Chosen after the owner rejected several: "they all still sound AI".
+    # A dedicated provider is also the only way to hold one voice across
+    # videos -- the video model's own speech is good and correctly lip
+    # synced, but its voice changes between takes (ADR 0005, 2026-09-28).
+    provider: elevenlabs
+    voice_id: sWsBiVcjjowceAScTnu3
+    model: tts/turbo-v2.5
+    options: {speed: 0.9, stability: 0.3, style: 0.4}
+    # BUILD_PLAN task 3.6 requires a DESIGNED synthetic voice, never one
+    # cloned from a real person without a contract. Confirm this voice's
+    # provenance with ElevenLabs before publishing.
+    provenance_checked: false      # DECIDE
+
+  # ---------------------------------------------------------------- DECIDE --
+  positioning: DECIDE_PLAYER_OR_PERSONALITY
+  # The upstream decision. ADR 0003 (updated 2026-09-28): the stack can now
+  # render both, so this is a free choice rather than a forced one, but it
+  # determines the backstory, the content promise and the ability claim.
+  #   player      -- she demonstrates golf. 64% clip yield on club-and-ball.
+  #   personality -- she talks about golf. 83% yield, the reliable half.
+  #   hybrid      -- D2's contracted, disclosed performer. A different business.
+
+  backstory: DECIDE
+  # What the build needs, concretely, because prompts and dialogue are
+  # generated from it (task 3.1 uses persona config and locked prompt
+  # fragments):
+  #   age, where she is from, accent
+  #   how she came to golf, and what she does besides it
+  #   ability claim -- see the warning below
+  #   what she is FOR: why someone follows her rather than anyone else
+  #
+  # The ability claim is a RENDERING COMMITMENT, not flavour. Claiming a low
+  # handicap commits the pipeline to swings that survive a golfer's eye, and
+  # club geometry is still wrong on this stack -- the owner rejected a driver
+  # and a putter as "not real" on 2026-09-28, and nothing in the harness
+  # measures club geometry. Claim what can be rendered.
+  #
+  # And she is OPENLY AI by design (BUILD_PLAN principle 3, enforced in code).
+  # So "backstory" cannot mean a fabricated human biography presented as real.
+  # How much fiction an openly-synthetic character may carry is itself a
+  # decision, and probably one for D7's counsel as well as the owner.
+
+  tone: DECIDE
+  # How she writes and speaks: what she is funny about, what she is serious
+  # about, what she never does. Feeds the locked prompt fragments, so vague
+  # here means inconsistent across every video.
+
+  boundaries: DECIDE
+  # Topics she never covers. Financial products are already forbidden
+  # permanently (D4) and the policy guard blocks them.
+
+content:
+  # Populated by task 2.5 from OWNER-RATED yield, not from automated verdicts.
+  # Measured 2026-09-28 on minimax/h3-max-turbo, 2 takes per format:
+  #   face-forward   10/12 usable (83%)  talking_head_course, clubhouse,
+  #                                      equipment_closeup, walking_fairway,
+  #                                      reaction all 2/2; apparel 0/2
+  #   club-and-ball   9/14 usable (64%)  full_swing_address, full_swing_follow,
+  #                                      putting_stroke all 2/2;
+  #                                      full_swing_top 0/2
+  allowed_formats: PENDING_TASK_2_5
+  blocked_formats: PENDING_TASK_2_5
+  platforms: DECIDE
+  cadence: DECIDE          # BUILD_PLAN Section 9 assumes two pieces a week
+
+# Adjacent human decisions this file does not hold, but which block publishing:
+#   D3 owning entity          D5 kill criteria
+#   D6 named operator         D7 counsel sign-off on disclosure
+#   D8 monthly budget ceiling
