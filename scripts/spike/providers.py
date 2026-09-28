@@ -40,6 +40,11 @@ class ImageRequest:
     seed: int
     ref: str
     lora_version: str | None = None
+    #: An existing still to edit, rather than a new image to invent. The
+    #: difference matters for identity: editing the wardrobe of a master still
+    #: keeps her face by construction, where generating a fresh still only
+    #: hopes for it. Left None, the provider is being asked for text-to-image.
+    source: Path | None = None
 
 
 @dataclass
@@ -318,7 +323,16 @@ def _fal_video(cfg: ProviderConfig) -> Any:
     )
 
 
+def _fal_image(cfg: ProviderConfig) -> Any:
+    from .fal import FalImageProvider
+
+    return FalImageProvider(
+        cfg, extra_arguments=cfg.options or None, request_shape=cfg.request or None
+    )
+
+
 register_provider("video", "fal", _fal_video)
+register_provider("image", "fal", _fal_image)
 register_provider("image", "fake", lambda cfg: FakeImageProvider(cfg))
 register_provider("video", "fake", lambda cfg: FakeVideoProvider(cfg))
 

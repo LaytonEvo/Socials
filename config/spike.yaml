@@ -149,6 +149,32 @@ providers:
       endpoint: null
       price_usd_per_image: null
       verified_on: null
+    wardrobe:
+      # Editing a master still, not inventing a new one. The wardrobe cannot be
+      # set in a video prompt without the model cutting and re-rendering her
+      # (docs/reports/wardrobe-control-2026-09-28.md), so it is set in the
+      # keyframe instead -- and an edit keeps the face the 0.9609 threshold was
+      # calibrated against, where a fresh generation only hopes for it.
+      #
+      # Price and schema read from fal's pricing API and queue OpenAPI on
+      # 2026-09-28. nano-banana-2 at $0.08 rather than nano-banana-pro at
+      # $0.15: measure the cheap one first and keep the dearer as a funded
+      # fallback, per the ADR 0002 pattern.
+      backend: fal
+      model: fal-ai/nano-banana-2/edit
+      endpoint: null
+      price_usd_per_image: 0.08
+      verified_on: 2026-09-28
+      request:
+        # This model takes an ARRAY of reference images, where the video slots
+        # take a single url. Which, is a property of the model.
+        image_field: image_urls
+        image_field_is_list: true
+        base:
+          output_format: png
+          num_images: 1
+          resolution: 2K
+          enable_web_search: false
 
   video:
     fake:

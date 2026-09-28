@@ -44,7 +44,7 @@ from PIL import Image
 from .config import ProviderConfig
 from .embedders import ASPECT_9_16, crop_to_aspect
 from .errors import ProviderFailed, ProviderNotConfigured, ProviderRefused, ProviderTimeout
-from .providers import LipSyncRequest, SpeechRequest, VideoRequest
+from .providers import ImageRequest, LipSyncRequest, SpeechRequest, VideoRequest
 
 QUEUE_ROOT = "https://queue.fal.run"
 API_KEY_ENV = "FAL_KEY"
@@ -310,6 +310,73 @@ def first_media_url(result: dict[str, Any]) -> str:
         f"fal returned a result with no recognisable media URL. Keys: {sorted(result)}. "
         "Per-model output shapes differ; check this model's page and extend first_media_url."
     )
+
+
+@dataclass
+class FalImageProvider:
+    """Stills through fal's queue: generate one, or edit one that exists.
+
+    Editing is the interesting half. The wardrobe cannot be set in a video
+    prompt without the model cutting and re-rendering her (2026-09-28), so it
+    has to be set in the keyframe -- and editing a master still changes her
+    clothes while keeping the face that the 0.9609 threshold was calibrated on.
+
+    Model id, price and the name of the input field all come from config.
+    """
+
+    cfg: ProviderConfig
+    client: FalClient | None = None
+    download: Callable[[str, Path], Path] | None = None
+    resolve_keyframe: Callable[[Path], str] | None = None
+    on_submit: Callable[[QueuedRequest], None] | None = None
+    extra_arguments: dict[str, Any] | None = None
+    request_shape: dict[str, Any] | None = None
+    name: str = field(default="fal-image", init=False)
+
+    def __post_init__(self) -> None:
+        if self.client is None:
+            self.client = FalClient(api_key=os.environ.get(API_KEY_ENV))
+        if self.download is None:
+            self.download = _download
+        if self.resolve_keyframe is None:
+            self.resolve_keyframe = data_uri_keyframe
+
+    def generate(self, req: ImageRequest, dest: Path) -> Path:
+        if not self.cfg.model:
+            raise ProviderNotConfigured(
+                f"providers.{self.cfg.kind}.{self.cfg.slot} has no model id. "
+                "Read the model's own page for its id and price, then record both "
+                "in config/spike.yaml with a verified_on date."
+            )
+        assert self.client is not None
+        assert self.download is not None
+        assert self.resolve_keyframe is not None
+
+        shape = self.request_shape or {}
+        arguments: dict[str, Any] = {"prompt": req.prompt, **dict(shape.get("base") or {})}
+
+        if req.source is not None:
+            field_name = shape.get("image_field")
+            if not field_name:
+                raise ProviderNotConfigured(
+                    f"providers.{self.cfg.kind}.{self.cfg.slot} was given a still to "
+                    f"edit but declares no request.image_field, so there is nowhere to "
+                    f"put it. A text-to-image slot cannot edit; record the edit model's "
+                    f"input field in config, or drop the source."
+                )
+            url = self.resolve_keyframe(req.source)
+            # Some edit models take a list of references, some take one URL.
+            # Which, is a property of the model and lives beside its id.
+            arguments[str(field_name)] = [url] if shape.get("image_field_is_list") else url
+
+        arguments.update(self.extra_arguments or {})
+        queued = self.client.submit(self.cfg.model, arguments)
+        if self.on_submit is not None:
+            self.on_submit(queued)
+        status = self.client.wait(queued)
+        raise_if_failed(status, queued.request_id)
+        result = self.client.result(queued)
+        return self.download(first_media_url(result), dest)
 
 
 @dataclass

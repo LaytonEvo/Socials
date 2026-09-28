@@ -36,6 +36,7 @@ from .contactsheet import build_contact_sheet, worst_first
 from .embed import (
     EmbeddingSet,
     centroid_similarities,
+    cosine,
     embed_images,
     leave_one_out_centroid_similarities,
     load_embedder,
@@ -1063,6 +1064,88 @@ def cmd_lipsync_probe(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_restyle(args: argparse.Namespace) -> int:
+    """Edit existing stills into a new wardrobe, and score each result as her.
+
+    The wardrobe cannot be set in a video prompt: the model cuts and re-renders
+    her, and the person after the cut fails identity
+    (docs/reports/wardrobe-control-2026-09-28.md). So it is set in the
+    keyframe. Editing a master still rather than generating a fresh one keeps
+    the face the threshold was calibrated against -- but keeps is a claim, so
+    every output is scored here and the number is printed. An edit that drifts
+    below threshold is not a keyframe, it is a different woman in the right
+    polo.
+    """
+    cfg = load_config(args.config)
+    run_dir = _run_dir(cfg, args.run)
+    log = RunLog(run_dir)
+    ledger = _ledger(cfg, log, args.budget)
+    embedder = _embedder(cfg, args.embedder)
+    master = _master_set(run_dir, embedder)
+    cal = _load_calibration(run_dir)
+
+    image_cfg = cfg.provider("image", args.image_slot)
+    provider = load_provider(image_cfg)
+    sources = _stills_in(Path(args.source), "source")[: args.count]
+    dest_dir = Path(args.out)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    print(f"editing {len(sources)} stills with {image_cfg.model}")
+    print(f'  "{args.prompt}"\n')
+
+    rows: list[dict[str, Any]] = []
+    for i, src in enumerate(sources):
+        ref = f"restyle-{i:02d}-{src.stem[:24]}"
+        out = dest_dir / f"{ref}.png"
+        try:
+            with ledger.paid_call(image_cfg, 1, ref=ref, prompt=args.prompt) as outcome:
+                provider.generate(
+                    ImageRequest(prompt=args.prompt, seed=i, ref=ref, source=src), out
+                )
+                outcome.ok = True
+                outcome.artifact = str(out)
+        except ProviderRefused as exc:
+            print(f"  {ref}: REFUSED ({str(exc).splitlines()[0][:60]})")
+            log.event("restyle_refused", ref=ref, error=str(exc))
+            continue
+
+        emb = embedder.embed_image(out)
+        centroid = master.centroid()
+        if emb.vector is None or centroid is None:
+            sim: float | None = None
+            verdict = f"no usable face ({emb.status})"
+        else:
+            sim = cosine(emb.vector, centroid)
+            verdict = "USABLE as a keyframe" if sim >= cal.threshold else "BELOW THRESHOLD"
+        rows.append(
+            {
+                "ref": ref,
+                "source": str(src),
+                "path": str(out),
+                "similarity": sim,
+                "verdict": verdict,
+            }
+        )
+        shown = f"{sim:.4f}" if sim is not None else "  --  "
+        print(f"  {ref:34} {shown}  {verdict}")
+
+    log.write_artifact(
+        "restyle.json",
+        {
+            "prompt": args.prompt,
+            "threshold": cal.threshold,
+            "model": image_cfg.model,
+            "results": rows,
+        },
+    )
+    usable = [r for r in rows if r["similarity"] is not None and r["similarity"] >= cal.threshold]
+    print(
+        f"\n{len(usable)} of {len(rows)} above the {cal.threshold:.4f} threshold"
+        f" · spent ${ledger.spent}"
+    )
+    print(f"stills in {dest_dir}")
+    return 0
+
+
 def cmd_contact_sheet(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     run_dir = _run_dir(cfg, args.run)
@@ -1606,6 +1689,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--count", type=int, default=3)
     sp.add_argument("--lipsync-slot", default="primary")
     sp.set_defaults(func=cmd_lipsync_probe)
+
+    sp = sub.add_parser("restyle", help="edit stills into a new wardrobe and score each as her")
+    add_run(sp)
+    add_embedder(sp)
+    add_budget(sp)
+    sp.add_argument("--source", required=True, help="directory of stills to edit")
+    sp.add_argument("--out", required=True, help="where to write the edited stills")
+    sp.add_argument("--prompt", required=True, help="the wardrobe to put her in")
+    sp.add_argument("--count", type=int, default=6, help="how many stills to edit")
+    sp.add_argument("--image-slot", default="wardrobe")
+    sp.set_defaults(func=cmd_restyle)
 
     sp = sub.add_parser("contact-sheet", help="worst-frame contact sheet")
     add_run(sp)

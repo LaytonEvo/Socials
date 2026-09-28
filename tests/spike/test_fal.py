@@ -781,3 +781,71 @@ def test_a_slot_with_no_request_block_sends_exactly_what_it_always_did(tmp_path)
 def test_an_unknown_duration_style_says_which_ones_exist(tmp_path):
     with pytest.raises(ProviderNotConfigured, match="duration_style"):
         _submit_body(tmp_path, {"duration_style": "milliseconds", "base": {}}, duration_s=5.0)
+
+
+def test_an_image_slot_that_cannot_edit_says_so_rather_than_guessing(tmp_path):
+    """A text-to-image slot handed a still to edit is a configuration error.
+
+    Silently dropping the source would bill for a freshly invented woman in
+    the right polo, which is the failure this whole path exists to avoid.
+    """
+    from scripts.spike.fal import FalImageProvider
+    from scripts.spike.providers import ImageRequest
+
+    src = tmp_path / "her.png"
+    src.write_bytes(b"PNG")
+    provider = FalImageProvider(_cfg(), client=_client([]), download=lambda u, d: d)
+    with pytest.raises(ProviderNotConfigured, match=r"request\.image_field"):
+        provider.generate(
+            ImageRequest(prompt="navy polo", seed=0, ref="r", source=src),
+            tmp_path / "out.png",
+        )
+
+
+def test_an_edit_slot_sends_the_source_under_its_own_field_name(tmp_path):
+    """nano-banana takes a LIST called image_urls; another model will differ."""
+    from scripts.spike.fal import FalImageProvider
+    from scripts.spike.providers import ImageRequest
+
+    c = _client(
+        [
+            (200, {"request_id": "abc"}),
+            (200, {"status": "COMPLETED"}),
+            (200, {"images": [{"url": "https://v3.fal.media/still.png"}]}),
+        ]
+    )
+    provider = FalImageProvider(
+        _cfg(),
+        client=c,
+        download=lambda _u, d: (d.write_bytes(b"PNG"), d)[1],
+        resolve_keyframe=lambda _p: "https://example.com/her.jpg",
+        request_shape={"image_field": "image_urls", "image_field_is_list": True, "base": {}},
+    )
+    src = tmp_path / "her.png"
+    src.write_bytes(b"PNG")
+    provider.generate(
+        ImageRequest(prompt="navy polo", seed=0, ref="r", source=src), tmp_path / "out.png"
+    )
+    _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert body["image_urls"] == ["https://example.com/her.jpg"]
+    assert body["prompt"] == "navy polo"
+
+
+def test_an_image_slot_with_no_source_is_plain_text_to_image(tmp_path):
+    """The same adapter still generates, for a slot that is not an editor."""
+    from scripts.spike.fal import FalImageProvider
+    from scripts.spike.providers import ImageRequest
+
+    c = _client(
+        [
+            (200, {"request_id": "abc"}),
+            (200, {"status": "COMPLETED"}),
+            (200, {"images": [{"url": "https://v3.fal.media/still.png"}]}),
+        ]
+    )
+    provider = FalImageProvider(
+        _cfg(), client=c, download=lambda _u, d: (d.write_bytes(b"PNG"), d)[1]
+    )
+    provider.generate(ImageRequest(prompt="a woman", seed=0, ref="r"), tmp_path / "out.png")
+    _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
+    assert "image_urls" not in body and "image_url" not in body
