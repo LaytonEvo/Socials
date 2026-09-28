@@ -138,6 +138,18 @@ Against the same two formats in the English setting, which returned 0.9725,
 0.9748, 0.9634 and 0.9571. Every Florida clip is below every English one, and
 the worst is well under the 0.9609 threshold.
 
+**The owner rated all four usable — *"all look ok"* — so the gap is not visible,
+and the concern above was most likely a false alarm.** It is recorded because it
+was raised, and because the gate scoring every Florida clip `indeterminate` has a
+cost even when the picture is fine: at five Shorts a week, a setting that
+systematically scores lower sends every clip of it to a human. That is a review
+load argument rather than a quality one, and it is the better reason to spend the
+50p below.
+
+The only other note was *"still strange language in the 3rd"* — the model's
+unconditional soundtrack, since this run used neither `--pin-audio` nor `--say`.
+Expected, already governed, and nothing to do with Florida.
+
 **Four clips against four is not a finding**, and the gate's failures have been
 right one time in three, so this may be nothing. But the mechanism is plausible:
 the persona was generated under soft English light and the identity centroid is
