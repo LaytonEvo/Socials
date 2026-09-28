@@ -326,13 +326,65 @@ def select_shots(
     return tuple(item for item in items if item["id"] in wanted)
 
 
-#: Failure tags from BUILD_PLAN task 2.3, used for manual rating in S0.7.
-FAILURE_TAGS = (
-    "hands_grip",
-    "club_distortion",
-    "contact_physics",
-    "ball",
-    "swing_plane",
-    "background",
-    "face_drift",
-)
+#: Failure tags for manual rating, grouped so a review UI can section them.
+#:
+#: BUILD_PLAN task 2.3 named seven tags, all of them about golf mechanics in the
+#: picture. Rating 66 clips against them found four defect classes the vocabulary
+#: could not express at all, each of which the owner reported in prose instead:
+#:
+#: - an outfit that changes mid-clip (every clip in one battery did this)
+#: - a club or ball that materialises out of nothing rather than being held
+#: - a different shot rendered than the one asked for, and a putt with no
+#:   readable target direction
+#: - any audio defect: wrong language, invented words, a voice that differs
+#:   between takes, lip sync that drifts
+#:
+#: A defect with no tag is a defect that never reaches the format matrix, so the
+#: matrix in `report.py` under-counts exactly the failures that were most common.
+#: Audio tags are separated because audio is muxed or replaced downstream, so an
+#: audio defect does not condemn the picture: see `docs/reports/audio-governance-2026-09-28.md`.
+FAILURE_TAG_GROUPS: dict[str, tuple[str, ...]] = {
+    # Is it her, and is it the same her throughout?
+    "identity": (
+        "face_drift",  # the face changes over the clip
+        "different_person",  # not the persona at all
+        "face_absent",  # no face where the format needs one
+    ),
+    # Does the clip hold together as one continuous take?
+    "continuity": (
+        "wardrobe_change",  # outfit changes mid-clip
+        "scene_cut",  # an unrequested cut or cutaway
+        "object_materialises",  # club or ball appears from nothing
+    ),
+    # Golf mechanics, the original seven minus the ones that were really the above.
+    "golf": (
+        "hands_grip",
+        "club_distortion",
+        "contact_physics",
+        "ground_impact",  # club passes through turf, or divot with no contact
+        "swing_plane",
+        "ball_absent",  # the shot needs a ball and none is present
+        "ball_physics",  # flight, bounce or roll that could not happen
+    ),
+    # Did we get the shot we asked for?
+    "framing": (
+        "wrong_shot",  # a different format rendered than the one prompted
+        "unclear_direction",  # no readable target line
+        "background",
+    ),
+    # Rated separately: audio is replaced or muxed downstream.
+    "audio": (
+        "wrong_language",
+        "nonsense_speech",  # invented or non-words
+        "voice_drift",  # voice differs from other takes of the same persona
+        "lipsync_drift",  # mouth and audio diverge over the clip
+        "audio_absent",
+    ),
+}
+
+#: Flat form, for the rating sheet's help text and for validating a tag cell.
+FAILURE_TAGS: tuple[str, ...] = tuple(tag for group in FAILURE_TAG_GROUPS.values() for tag in group)
+
+#: Tags that describe the audio rather than the picture. A clip can be usable as
+#: picture while carrying these, which is how the format catalogue was rated.
+AUDIO_FAILURE_TAGS: frozenset[str] = frozenset(FAILURE_TAG_GROUPS["audio"])

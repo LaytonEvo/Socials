@@ -48,7 +48,7 @@ from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
 from .inspect import format_inspection, inspect_sets
 from .ledger import CostLedger
 from .matrix import (
-    FAILURE_TAGS,
+    FAILURE_TAG_GROUPS,
     PROMPT_SETS,
     Condition,
     coverage,
@@ -825,7 +825,10 @@ def cmd_battery(args: argparse.Namespace) -> int:
     print(f"\n{len(rows)} takes · spent ${ledger.spent}")
     print(f"rating sheet: {sheet}")
     if prompt_set == "golf":
-        print(f"  fill in `rating` 1-5 and `failure_tags` from: {'|'.join(FAILURE_TAGS)}")
+        print("  fill in `rating` 1-5 (picture only) and `failure_tags`, pipe-separated, from:")
+        for group, tags in FAILURE_TAG_GROUPS.items():
+            print(f"    {group:<11} {' '.join(tags)}")
+        print("  audio tags do not lower the rating: audio is replaced downstream.")
     else:
         print("  measured face_presence and verdict are in the sheet, per shot.")
     return 0
