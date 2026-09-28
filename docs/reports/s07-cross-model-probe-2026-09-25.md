@@ -120,3 +120,72 @@ need for a human on every clip.
   on the shots where a face is actually visible.
 - `wan-3.0` with a longer poll window.
 - ADR 0003's amendment still waits. This probe could move it again.
+
+---
+
+## 2026-09-28: full swing on turbo, from a portrait keyframe
+
+`full_swing_impact` and `full_swing_follow`, three takes each, **$0.375**.
+
+**Deliberately a harder test than the putt.** There is no full-swing action
+keyframe anywhere in the project — `full_swing_address` take 1 turns out to be a
+pure portrait with no club and no ball, and it was rated 4 under the blanket
+"they all look good", which is one more mark against those take-1 ratings. So
+these ran from the **same portrait keyframes the original battery used**, which
+is also what the real pipeline has: the master set is 105 portraits.
+
+### veo3.1 pans away from a portrait. Turbo swings.
+
+This is the finding. Given a head-and-shoulders still and a swing prompt, veo3.1
+left the framing and fabricated (report §"Why both clips failed"). Turbo cuts to
+a wide shot and renders **address over a teed ball, backswing, downswing,
+contact, follow-through, and ball flight** — a recognisable golf swing in
+sequence.
+
+It also invents **multi-shot edits**: impact take 3 cuts between the swing, a
+close-up of the clubface at the ball, a close-up of the turf, the ball in flight,
+and a finishing pose. Nobody asked for that.
+
+### The gate has evidence again, and it fired
+
+| Shot | Take | Face presence | Verdict | Min |
+|---|---|---|---|---|
+| `full_swing_impact` | 1 | 0.300 | indeterminate | 0.9872 |
+| | 2 | 0.300 | indeterminate | 0.9894 |
+| | 3 | 0.300 | **fail** | **0.9106** |
+| `full_swing_follow` | 1 | 0.600 | indeterminate | 0.9481 |
+| | 2 | 0.100 | indeterminate | 0.9894 |
+| | 3 | 0.100 | indeterminate | 0.9884 |
+
+**Presence is non-zero, unlike every action-keyframe clip before it** (all
+0.000), because this model keeps cutting back to shots where the face is
+visible. The gate is not blind here.
+
+**And on impact take 3 it failed a clip on identity at 0.9106, well under the
+0.9609 threshold — and on inspection it looks right.** The face in the closing
+shots reads differently, and the outfit changes across the cuts. After a spike in
+which the gate caught nothing the owner cared about, this is the first clip it
+flagged that inspection supports. Owner rating will settle it.
+
+### Defects visible without owner input
+
+- **Debris.** Impact take 1 ends in an explosion of dark specks over the grass.
+- **Wardrobe drift across cuts.** White tee and skirt in the keyframe, a white
+  dress mid-clip, a beige skirt by the end of take 3. The multi-shot editing
+  makes this worse, because each cut is a fresh chance to re-render her outfit.
+- **Unrequested cutaways**, which is a content-control problem as much as a
+  quality one: a shot list that asks for one shot and receives five is not a
+  shot list.
+
+### What this does and does not change
+
+**Does:** the club-and-ball constraint is not a property of video generation. It
+was a property of veo3.1. A model at **$0.0125/s — a twelfth of the incumbent —**
+renders a full swing from the portrait stills the project already has.
+
+**Does not:** say the swings are good. A golfer's eye decides that and the
+owner's has not yet been applied. Six takes, one model, two shots.
+
+**D-D may close after all.** These came from portrait keyframes, so on this model
+the action-still sourcing problem does not arise. That reverses the 2026-09-25
+argument for reopening it, which was based on veo3.1's behaviour.
