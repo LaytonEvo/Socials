@@ -350,3 +350,66 @@ audio can replace the lip-sync stage — and parked it as a separate run.
 
 Untested. It is the cheapest large thing left: one turbo clip with a pinned
 ElevenLabs line, against the existing HeyGen result, for about **7p**.
+
+---
+
+## 2026-09-28: pinning the soundtrack, and what it would remove
+
+Two `talking_head_course` clips generated with the persona's ElevenLabs voice
+supplied as `target_audio_url`. **$0.1282 for both, speech included.**
+
+### The audio is pinned bit-exactly
+
+Not "sounds similar" — measured. The clips' audio tracks were extracted and
+correlated against the synthesised source:
+
+| | Duration | Correlation with the pinned speech |
+|---|---|---|
+| pinned take 1 | 5.18 s | **+1.000** |
+| pinned take 2 | 5.18 s | **+1.000** |
+| an unpinned clip, same format | 5.18 s | −0.017 |
+
+`target_audio_url` does exactly what the schema claims: the supplied track
+replaces the model's own, sample for sample, padded with silence past the 3.94 s
+of speech. **The unidentified-language problem is solved outright** — any clip
+that needs controlled audio can simply be given it.
+
+### Identity is unharmed
+
+| Take | Audio | Presence | Verdict | Min |
+|---|---|---|---|---|
+| 30 | model's own | 1.000 | indeterminate | 0.9569 |
+| 31 | model's own | 1.000 | pass | 0.9641 |
+| 40 | model's own | 1.000 | pass | 0.9725 |
+| 41 | model's own | 1.000 | pass | 0.9748 |
+| **50** | **pinned** | 1.000 | indeterminate | 0.9434 |
+| **51** | **pinned** | 1.000 | pass | 0.9767 |
+
+0.9434 and 0.9767 against 0.9569–0.9748 for the same format unvoiced. **Inside
+the spread of the unvoiced clips**, and n=2 either side, so the honest reading is
+that pinning audio does not obviously cost identity — not that it is free.
+
+Contrast what the current pipeline pays. S0.8 measured every lip-sync model
+against identity and chose HeyGen at **$0.40/clip** because it was the only one
+that did not take margin off: pixverse cost up to −0.0123 and dropped one passing
+clip in three below threshold. **A model handed the audio before generation has
+nothing to damage**, because no second model ever touches the face.
+
+### What it would remove, if the mouth matches
+
+| Stage | Now | With pinned audio |
+|---|---|---|
+| Video | veo3.1 fast, $0.15/s | turbo, $0.0125/s |
+| Lip sync | HeyGen precision, **$0.40/clip** | **gone** |
+| Identity cost of the sync pass | measured, mitigated by model choice | **not incurred** |
+| Providers in the chain | 3 | 2 |
+
+**This is the question ADR 0005 parked** — whether native audio can replace the
+lip-sync stage — and the mechanism now measurably works. The one thing not
+settled is the only thing that decides it: **whether the mouth moves to the
+English words** or to whatever the model intended to say. That is an owner
+judgement and the clips have gone for it.
+
+If the answer is yes, S0.8's provider choice and ADR 0005 both need revisiting,
+and the per-clip cost of a talking-head piece falls from roughly $0.60 + $0.40 to
+about $0.07.
