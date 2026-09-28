@@ -1,0 +1,119 @@
+# ADR 0009 — No golf knowledge base. A persona memory instead.
+
+- **Status:** Proposed 2026-09-28. Shapes `BUILD_PLAN.md` task 3.1; nothing built yet.
+- **Date:** 2026-09-28
+- **Deciders:** Layton (owner)
+- **Relates to:** `BUILD_PLAN.md` tasks 3.1, 3.6; `docs/spec/persona-spec-v1.md` §1, §3, §4; `config/persona.yaml`
+
+## Context
+
+The question was whether the persona needs golf knowledge fed into it — a
+retrieval layer, a corpus, a knowledge base.
+
+**The video model needs none.** `h3-max` renders pictures and never knows what
+a handicap is. Her words come from a different stage: task 3.1's shot-list
+generator, brief in, schema-validated JSON shot list out, via the Claude API,
+with `dialogue` on each shot. That is the only place golf knowledge could
+matter.
+
+## Decision
+
+**Build no golf knowledge base. Build a persona memory.**
+
+### 1. General golf knowledge needs no retrieval
+
+Rules, etiquette, equipment, course architecture, slow play, club politics, the
+terminology she would tease — the model writing her dialogue already has all of
+it. A retrieval layer would add cost, latency and a corpus to maintain in order
+to fetch what the model can already say.
+
+### 2. More knowledge would make the persona worse, not better
+
+This is the part that is easy to get backwards. Spec v1 §1: **"She is not a
+coach, not a pro"**, 14 handicap, honest about it. §4 is funny about *"men
+explaining her own swing to her"*.
+
+A retrieval-backed generator produces an **authority**. That is the register the
+spec spends an entire section avoiding, and the differentiator in §4 is tone,
+not facts. Golf content is already, in the spec's own words, *"mostly men being
+earnest at each other"*; a knowledge pipeline is a machine for producing more of
+it.
+
+A 14 handicap should occasionally be slightly wrong about something. That is
+characterisation, and a knowledge base actively removes it.
+
+### 3. What actually needs feeding is continuity, and the store already exists
+
+The thing that breaks a recurring character is not missing world knowledge. It
+is **contradicting herself**: a handicap that moves the wrong way, a course she
+has already "played", a joke told twice, a claim she made in week two and
+forgets in week nine.
+
+`BUILD_PLAN`'s schema already records every word she has spoken — `shot.dialogue`
+across every `content_piece` — and every persona decision in `decision_log`.
+
+**The gap is not storage. Nothing reads it back into the generator.** That is a
+real hole in task 3.1 as specified, and naming it is most of the value of this
+ADR.
+
+### 4. Current events are a cutoff problem, not a corpus problem
+
+Tournament results and equipment launches sit past any model's training cutoff.
+If the content calendar ever needs them, the answer is the **`web_search`
+server tool at request time** (`web_search_20260209` on Claude Opus 5), scoped
+with `allowed_domains`, not a corpus anyone maintains.
+
+It is also optional. Nothing in spec §3's content strands — the England/Florida
+contrast, trips home, the improvement arc, Dad's bafflement — needs this week's
+leaderboard. **Do not build it until a content format demands it.**
+
+### 5. Product data only if she reviews equipment
+
+And §7 forbids claiming a product she has not used on screen, which caps how
+much specification detail is even usable.
+
+## Shape for task 3.1
+
+Not an implementation, and not to be built before Phase 3:
+
+**System prompt** carries the locked fragments plus `persona.yaml` — stable
+across every request, and therefore the cacheable prefix. Prompt caching is a
+**prefix match** in render order `tools` → `system` → `messages`, so stable
+content goes first and anything volatile goes after the last breakpoint.
+
+**Two traps worth recording now:**
+
+- **The minimum cacheable prefix is 512–4096 tokens depending on model.** The
+  locked fragments plus persona config may fall under it, in which case caching
+  **silently does not happen** — no error, just full price. Verify with
+  `usage.cache_read_input_tokens`; if it is zero across repeated requests, the
+  prefix is too short or something is invalidating it.
+- **Anything varying in the prefix invalidates everything after it.** A
+  timestamp, a per-request id, an unsorted dict. The persona block must be
+  byte-stable between calls.
+
+**Messages** then carry the brief, and recent `shot.dialogue` for continuity.
+
+**Output** is schema-validated per task 3.1 — `output_config.format`, not the
+deprecated `output_format` parameter.
+
+## Consequences
+
+**If accepted:** no corpus to build, license, host or keep current. Task 3.1
+gains one requirement it did not have — read `shot.dialogue` back — and that is
+cheaper than any retrieval layer. The persona stays a 14 handicap rather than
+drifting into a golf encyclopedia.
+
+**If rejected:** a corpus needs sourcing, licensing and maintaining, and the
+tone risk in §2 above needs managing in the prompt instead — which is the harder
+of the two problems, because it is invisible until the content is already dull.
+
+**Either way:** the continuity gap is real and stands independently of the
+knowledge decision. Even a retrieval-backed generator contradicts itself about
+her own history unless something feeds her own words back.
+
+## Open
+
+The owner has not accepted this yet. The only part needing a decision before
+Phase 3 is whether current events are in scope for the content calendar — §4's
+answer assumes not.
