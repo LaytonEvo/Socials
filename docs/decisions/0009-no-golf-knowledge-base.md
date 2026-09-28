@@ -56,16 +56,38 @@ across every `content_piece` — and every persona decision in `decision_log`.
 real hole in task 3.1 as specified, and naming it is most of the value of this
 ADR.
 
-### 4. Current events are a cutoff problem, not a corpus problem
+### 4. Current events are out of scope — decided by the owner, 2026-09-28
 
-Tournament results and equipment launches sit past any model's training cutoff.
-If the content calendar ever needs them, the answer is the **`web_search`
-server tool at request time** (`web_search_20260209` on Claude Opus 5), scoped
-with `allowed_domains`, not a corpus anyone maintains.
+*"No current events to consider."*
 
-It is also optional. Nothing in spec §3's content strands — the England/Florida
-contrast, trips home, the improvement arc, Dad's bafflement — needs this week's
-leaderboard. **Do not build it until a content format demands it.**
+Tournament results and equipment launches sit past any model's training cutoff,
+so they would have needed the **`web_search` server tool at request time**
+(`web_search_20260209` on Claude Opus 5, scoped with `allowed_domains`) — never
+a corpus, but still a live dependency.
+
+They are out. Nothing in spec §3's content strands needs them: the
+England/Florida contrast, trips home, the improvement arc and Dad's bafflement
+are all evergreen, which is why the question was worth asking rather than
+assuming.
+
+**This is a larger simplification than it looks.** With current events out and
+no retrieval layer, **task 3.1 has no external data dependency at all.** Its
+inputs are the brief, `persona.yaml`, the locked fragments and her own prior
+`shot.dialogue` — every one of them local and under version control.
+
+Three things follow:
+
+- The shot-list generator can be **tested offline against fakes**, which is the
+  pattern the whole spike harness already uses.
+- There is **no network failure mode** at generation time beyond the Claude API
+  call itself, and no third-party rate limit, outage or scraped source to
+  degrade against.
+- **Nothing dates.** A brief written today produces the same shot list next
+  month, so the persona's voice does not drift with whatever the web returned
+  that morning.
+
+Evergreen content is also the right shape for a five-a-week Shorts calendar,
+where a piece may be generated well before it is published.
 
 ### 5. Product data only if she reviews equipment
 
@@ -112,8 +134,14 @@ of the two problems, because it is invisible until the content is already dull.
 knowledge decision. Even a retrieval-backed generator contradicts itself about
 her own history unless something feeds her own words back.
 
+**One thing to watch, given §4.** Evergreen content ages differently from dated
+content: it does not go stale, but it also cannot reference anything. If the
+persona is ever asked — by a comment, a trend, a moment in the sport — to have
+an opinion about something that happened, the pipeline has no way to give her
+one, and that is a content-strategy limit rather than a bug.
+
 ## Open
 
-The owner has not accepted this yet. The only part needing a decision before
-Phase 3 is whether current events are in scope for the content calendar — §4's
-answer assumes not.
+**Nothing.** The only item needing an owner decision — current events — was
+answered on 2026-09-28 and is recorded in §4. The ADR is ready to move from
+Proposed to Accepted on the owner's word.
