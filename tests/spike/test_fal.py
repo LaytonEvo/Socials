@@ -849,3 +849,22 @@ def test_an_image_slot_with_no_source_is_plain_text_to_image(tmp_path):
     provider.generate(ImageRequest(prompt="a woman", seed=0, ref="r"), tmp_path / "out.png")
     _url, _m, body, _h = c.transport.calls[0]  # type: ignore[attr-defined]
     assert "image_urls" not in body and "image_url" not in body
+
+
+def test_the_seed_is_actually_sent(tmp_path):
+    """It was computed, logged and recorded for nine days and never sent.
+
+    Every clip generated before 2026-09-28 therefore used a seed the provider
+    chose, so none of them is reproducible and the number in the rating sheet
+    described nothing.
+    """
+    body = _submit_body(tmp_path, {"duration_style": "seconds_int", "base": {}}, duration_s=5.0)
+    assert body["seed"] == 1
+
+
+def test_a_slot_can_name_its_own_seed_field_or_decline_one(tmp_path):
+    """Not every model takes a seed, and those that do may not call it that."""
+    body = _submit_body(tmp_path, {"seed_field": "noise_seed", "base": {}})
+    assert body["noise_seed"] == 1 and "seed" not in body
+    body = _submit_body(tmp_path, {"seed_field": None, "base": {}})
+    assert "seed" not in body

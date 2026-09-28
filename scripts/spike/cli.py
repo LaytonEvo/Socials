@@ -730,6 +730,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
     max_skips = max(3, (len(items) * len(args.video_slots) * takes) // 3)
     slots = args.video_slots
     seed = int(cfg.generation.get("seed", 0))
+    pinned_seed = getattr(args, "seed", None)
     rows: list[dict[str, Any]] = []
     scores: list[ClipScore] = []
     keyframe_cursor = 0
@@ -762,7 +763,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                         cal=cal,
                         ref=ref,
                         prompt=prompt,
-                        seed=seed + len(rows),
+                        seed=pinned_seed if pinned_seed is not None else seed + len(rows),
                         image_slot=args.image_slot,
                         video_slot=slot,
                         video_arguments=pinned_audio or None,
@@ -1663,6 +1664,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--keyframes",
         help="a directory of existing stills to animate, instead of generating "
         "keyframes from the image provider (which is the S0.4 LoRA, not yet built).",
+    )
+    sp.add_argument(
+        "--seed",
+        type=int,
+        help="pin the seed for every take instead of varying it. Takes normally get "
+        "different seeds, which is what makes two takes a measurement of variance. "
+        "Pinning one asks the opposite question: what is stable when nothing varies.",
     )
     sp.add_argument(
         "--mute",

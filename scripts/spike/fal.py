@@ -496,6 +496,14 @@ class FalVideoProvider:
             arguments[str(duration_field)] = _duration_for(
                 shape["duration_style"], req.duration_s, self.cfg.slot
             )
+        # The seed was computed, logged and written into the rating sheet from
+        # the first run of this spike, and never sent. Every clip generated
+        # before 2026-09-28 used a seed the provider chose, so none of them is
+        # reproducible and the recorded number meant nothing. A slot that names
+        # no seed_field still sends none, because not every model takes one.
+        seed_field = shape.get("seed_field", "seed")
+        if seed_field and req.seed is not None:
+            arguments[str(seed_field)] = req.seed
         arguments.update(self.extra_arguments or {})
         queued = self.client.submit(self.cfg.model, arguments)
         # Surfaced so a run whose polling fails can still be reconciled against
