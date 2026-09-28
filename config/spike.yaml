@@ -271,6 +271,13 @@ providers:
       price_usd_per_second: 0.0125
       verified_on: 2026-09-25
       request:
+        # This model generates a soundtrack unconditionally -- there is no
+        # on/off flag -- and 61 of 61 clips generated before 2026-09-28 came
+        # back speaking an unidentified language that nobody had listened to.
+        # target_audio_url pins a supplied soundtrack instead: fal's schema
+        # says "the original audio replaces the output soundtrack". Verified
+        # against the queue OpenAPI 2026-09-28.
+        audio_field: target_audio_url
         duration_s: 5
         duration_style: seconds_int
         base:

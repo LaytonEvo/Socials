@@ -387,6 +387,7 @@ def _generate_and_score(
     condition: dict[str, str] | None = None,
     keyframe: Path | None = None,
     last_keyframe: Path | None = None,
+    video_arguments: dict[str, Any] | None = None,
 ) -> ClipScore:
     """Keyframe -> clip -> score, with every paid step through the ledger.
 
@@ -399,6 +400,12 @@ def _generate_and_score(
     """
     video_cfg = cfg.provider("video", video_slot)
     video_provider = load_provider(video_cfg)
+    # Per-run arguments the slot's static config cannot carry, because their
+    # value is produced by this run -- a pinned soundtrack's URL exists only
+    # once the speech has been synthesised.
+    if video_arguments:
+        existing = getattr(video_provider, "extra_arguments", None) or {}
+        video_provider.extra_arguments = {**existing, **video_arguments}
     # A slot may pin its own clip length, because a model's schema can forbid
     # the run-wide default: the h3-max family rejects anything under 5 s and
     # gemini-omni-flash defaults to 8. Resolved once, so the figure the guard
@@ -683,6 +690,36 @@ def cmd_battery(args: argparse.Namespace) -> int:
         last_keyframes = _stills_in(Path(last_dir), "last-keyframes")
         print(f"using {len(last_keyframes)} last-frame stills from {last_dir}")
 
+    # One line, spoken once, pinned to every clip in the run. The alternative --
+    # generating a clip and lip-syncing it afterwards -- is a second provider and
+    # a measured identity cost (S0.8); a model that is handed the audio up front
+    # has nothing to damage.
+    pinned_audio: dict[str, str] = {}
+    line = str(getattr(args, "pin_audio", "") or "").strip()
+    if line:
+        slot_cfg = cfg.provider("video", args.video_slots[0])
+        audio_field = slot_cfg.request.get("audio_field")
+        if not audio_field:
+            raise SpikeError(
+                f"providers.video.{slot_cfg.slot} has no request.audio_field, so there "
+                f"is nowhere to put the audio. Read the model's schema for the field "
+                f"name and record it in config with a verified_on date, or drop "
+                f"--pin-audio. Refusing rather than generating clips that are billed "
+                f"and silent."
+            )
+        tts_cfg = cfg.provider("tts", "primary")
+        tts = load_provider(tts_cfg)
+        speech = run_dir / "pinned_speech.mp3"
+        with ledger.paid_call(
+            tts_cfg, len(line) / 1000, ref=f"{prefix}:pinned-speech", prompt=line
+        ) as outcome:
+            url = tts.synthesize(SpeechRequest(text=line, voice=None, ref="pinned"), dest=speech)
+            outcome.ok = True
+            outcome.artifact = str(speech)
+        pinned_audio[str(audio_field)] = url
+        log.event("audio_pinned", field=str(audio_field), line=line, seconds=_audio_seconds(speech))
+        print(f'pinning {_audio_seconds(speech) or 0:.1f}s of speech: "{line}"')
+
     retries = int(cfg.generation.get("refusal_retries", 3))
     skipped: list[tuple[str, str]] = []
     max_skips = max(3, (len(items) * len(args.video_slots) * takes) // 3)
@@ -715,6 +752,7 @@ def cmd_battery(args: argparse.Namespace) -> int:
                         seed=seed + len(rows),
                         image_slot=args.image_slot,
                         video_slot=slot,
+                        video_arguments=pinned_audio or None,
                     )
                 except (BudgetExceeded, BudgetNotSet) as exc:
                     log.event("battery_halted", ref=ref, error=str(exc))
@@ -1528,6 +1566,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--keyframes",
         help="a directory of existing stills to animate, instead of generating "
         "keyframes from the image provider (which is the S0.4 LoRA, not yet built).",
+    )
+    sp.add_argument(
+        "--pin-audio",
+        metavar="LINE",
+        help="speak LINE with the tts slot and pin it as the clip's soundtrack, for a "
+        "model that accepts one. The video is then generated TO the audio rather than "
+        "lip-synced to it afterwards, which is the question ADR 0005 parked. Needs "
+        "request.audio_field on the video slot; refuses otherwise rather than "
+        "generating a silent-but-billed clip.",
     )
     sp.set_defaults(func=cmd_battery)
 
