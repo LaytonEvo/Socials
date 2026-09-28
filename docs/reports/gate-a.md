@@ -387,7 +387,40 @@ licence question entirely.
 | A source of action-framed stills of the persona — see D-D | unknown |
 | Two matrix cells that never ran (balance exhausted) | $1.20 |
 | First/last-frame on the two rejected shots | $1.20 |
-| Operator time on a real end-to-end piece | time, not money |
+| ~~Operator time on a real end-to-end piece~~ — **cannot be closed inside Spike 0, see below** | moved to the Phase 3 gate |
+
+### The end-to-end measurement was mis-filed, and this report filed it
+
+*Added 2026-09-28.*
+
+"Operator time on a real end-to-end piece" has been on this list since the
+report was written, and it cannot be closed where it sits. A *finished* piece
+requires an assembler, captions and a disclosure overlay — `BUILD_PLAN` tasks
+3.8, 3.9 and 3.10. The spike harness has none of them and building throwaway
+versions would duplicate Phase 3 work to produce a number Phase 3's own gate
+already requires:
+
+> **Gate:** One complete 30–60 second piece produced end to end through the
+> system, with a cost and time report. Target: operator time per finished piece
+> is measured, because labour is the real cost line.
+
+So the measurement is not missing evidence for Gate A. It is the Phase 3 gate,
+and it was listed here in error. Moved rather than quietly dropped, because it
+is the number `BUILD_PLAN` §9 says decides whether the operation is viable.
+
+**What Spike 0 can do, and should:** amendment A1 asks for operator time to be
+logged manually from now on. `review.time_spent_s` and the two `content_piece`
+timestamps now exist in the schema (folded in 2026-09-28) to receive it. Rating
+time on the 66 battery clips was never recorded and is now unrecoverable; the
+next rating session is the first that can be.
+
+**Consequence for the schedule.** Amendment A8 recommends re-baselining the
+timeline after Gate A "when Spike 0 has produced real throughput numbers instead
+of estimates". Spike 0 produced real *cost* and *yield* numbers — 1 in 4
+discarded against §9's 3 in 5, and a Fast-tier cost model 2.7× too high — but no
+labour numbers at all. **The re-baseline can correct the money and not the time,
+which is the half that matters.** Phase 0's estimate should be treated as
+unvalidated on its largest input.
 
 ### What the spike changed about the plan
 
