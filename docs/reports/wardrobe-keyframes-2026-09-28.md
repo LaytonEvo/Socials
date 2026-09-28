@@ -50,3 +50,53 @@ nothing left for the prompt and the keyframe to disagree about. The theory has
 been wrong before. **Two clips, about 13p, settles it** — and until it is run,
 this report has only shown that a still can be re-dressed, not that the defect
 it was aimed at is gone.
+
+---
+
+## The clips: the cut is gone
+
+Four clips from the re-dressed keyframes, **no outfit mentioned in the prompt**,
+so nothing for the prompt and the keyframe to disagree about. **$0.25.**
+
+**Both talking-head takes open in the navy polo and stay in it.** No cut at
+0.3 s, no re-render, same face and light throughout. Measured on the same
+torso statistic that separated the earlier cases:
+
+| Clip | start → end | |
+|---|---|---|
+| `talking_head_course` take 1 | **0.014** | from a re-dressed keyframe |
+| `talking_head_course` take 2 | **0.009** | from a re-dressed keyframe |
+| `talking_head_course` take 90 | 0.689 | outfit set in the prompt — owner rejected |
+| `talking_head_course` take 91 | 0.610 | outfit set in the prompt — owner rejected |
+
+**Roughly fifty times lower.** The two walking clips still score high (0.619,
+0.356), but that statistic cannot tell a wardrobe change from the camera leaving
+her, which is exactly why it was withdrawn as an instrument — and `walking_fairway`
+is the format where she walks out of frame. Sent to the owner to separate.
+
+Identity: 0.9546, 0.9713, 0.9483, 0.9696 — two passes, two indeterminate, in the
+same band as ordinary clips of these formats and far above the 0.8854 the
+prompt-set outfit produced.
+
+**So the mechanism holds.** Clothing set in the keyframe survives; clothing
+asked for in the prompt causes a cut and a re-rendered person. Spec v1 §5 is
+enforceable, and the master set is a wardrobe.
+
+This is the first mechanism proposed today that survived its own test, against
+three that did not — the roll detector, cuts-causing-identity-drift, and the
+wardrobe continuity detector.
+
+## A bug of mine, and the fix
+
+The first attempt generated nothing: the restyled stills came back as **5.6MB 2K
+PNGs against the adapter's 4MB data-URI cap**, and the run refused before a
+single call. No spend, because the guard did its job.
+
+**The bug was mine and it was a design error, not a typo.** I set `resolution: 2K`
+on the wardrobe slot without checking that its output had to survive being
+inlined into the *next* request. A restyled still is a keyframe; an output that
+cannot be used as input is not an output.
+
+Slot corrected to `1K`, with the reason recorded beside it. The immediate unblock
+was downscaling to 816×1456 JPEG — the exact dimensions of the originals, 5.6MB
+to 340KB — which costs nothing that matters, since the video model works at 720p.

@@ -173,7 +173,12 @@ providers:
         base:
           output_format: png
           num_images: 1
-          resolution: 2K
+          # 1K, not 2K. A restyled still is a KEYFRAME, so it has to survive
+          # being inlined into the next request, and 2K PNGs came back at
+          # 5.6MB against the adapter's 4MB data-URI cap -- the whole run
+          # refused before a single call. An output that cannot be used as
+          # input is not an output.
+          resolution: 1K
           enable_web_search: false
 
   video:
