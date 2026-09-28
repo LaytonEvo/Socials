@@ -149,6 +149,18 @@ A human reads `docs/reports/gate-a.md` and decides. The three outcomes:
 
 ## 5. Plan amendments
 
+> **A1–A5 folded into `BUILD_PLAN.md` on 2026-09-28**, ahead of Phase 0 task 0.3,
+> so the first migration is written against the amended schema rather than
+> migrated afterwards. A2 also amended Section 5's adapter contract. The
+> amendments below stay as the record of *why* each change was made; Section 4
+> is now the specification.
+>
+> **A6–A10 are not folded in**: A6 (moderation) and A10 (platform API access)
+> are open decisions rather than edits, A7 is a proposed `CLAUDE.md` rule for
+> the owner to accept, A8 is a re-baselining recommendation, and A9 is guidance
+> on sizing rather than a change to a requirement.
+
+
 Gaps found in `BUILD_PLAN.md` that are independent of the reordering. Each names the task or table it lands in.
 
 ### A1 — Operator time has nowhere to live *(Section 4)*

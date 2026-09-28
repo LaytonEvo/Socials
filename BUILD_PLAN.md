@@ -158,28 +158,53 @@ persona-studio/
 
 Every generated artefact must be traceable back to the exact prompt, model, seed, reference assets, and cost that produced it. This is the provenance backbone and also the continuity record.
 
+> **Amended 2026-09-28.** Amendments A1–A5 of `docs/BUILD_ORDER.md` (accepted 2026-09-22) are folded in below, before task 0.3 writes a migration rather than after. Each is marked **[A*]**. The amendments are the accepted decision; this section previously contradicted them.
+
 | Table | Key fields | Purpose |
 |---|---|---|
 | `persona` | id, name, status, active_lora_version_id | One row for now; schema supports several |
-| `reference_asset` | id, persona_id, kind (face/body/outfit/lighting), storage_key, embedding, is_master | Master still set |
+| `reference_asset` | id, persona_id, kind (face/body/outfit/lighting), storage_key, embedding, **embedding_model**, **embedding_model_version**, is_master | Master still set **[A3]** |
 | `lora_version` | id, persona_id, base_model, base_model_licence, dataset_hash, params, storage_key, eval_score, created_at | Versioned identity layer |
-| `content_piece` | id, persona_id, brief, format, status, target_platforms | One finished video |
+| `content_piece` | id, persona_id, brief, format, status, target_platforms, **brief_started_at**, **render_completed_at** | One finished video **[A1]** |
 | `shot` | id, content_piece_id, order, description, duration_s, camera, lighting, dialogue, shot_type (face/broll) | From shot list |
-| `keyframe` | id, shot_id, lora_version_id, prompt, seed, provider, model, storage_key, identity_score | Start frame |
-| `generation` | id, shot_id, keyframe_id, provider, model, prompt, seed, params, duration_s, storage_key, identity_score_min, identity_score_mean, status, cost_usd | One take |
-| `review` | id, generation_id, reviewer, decision, rating, notes, failure_tags | Human QA |
+| `keyframe` | id, shot_id, lora_version_id, prompt, seed, provider, model, storage_key, identity_score, **embedding_model**, **embedding_model_version** | Start frame **[A3]** |
+| `generation` | id, shot_id, keyframe_id, provider, model, prompt, seed, params, duration_s, storage_key, identity_score_min, identity_score_mean, **embedding_model**, **embedding_model_version**, status, cost_usd | One take **[A3]** |
+| `job` | id, provider, provider_job_id, status, submitted_at, completed_at, cost_usd, error, generation_id (nullable) | **[A2]** Every provider call, including the ones that produced nothing |
+| `review` | id, generation_id, reviewer, decision, rating, notes, failure_tags, **time_spent_s** | Human QA **[A1]** |
 | `voice_line` | id, shot_id, text, voice_id, provider, storage_key, cost_usd | Voice layer |
-| `render` | id, content_piece_id, edl_json, aspect, disclosure_applied, c2pa_manifest_key, storage_key | Assembled output |
-| `publication` | id, render_id, platform, account, ai_label_set, approved_by, published_at, url | Publishing record |
+| `render` | id, content_piece_id, edl_json, aspect, disclosure_applied, c2pa_manifest_key, storage_key, **identity_score_min**, **identity_score_mean** | Assembled output **[A5]** |
+| `publication` | id, render_id, **disclosure_applied**, platform, account, ai_label_set, approved_by, published_at, url | Publishing record **[A4]** |
 | `metric_snapshot` | id, publication_id, captured_at, views, watch_time, retention_json, followers_delta, engagement | Analytics |
 | `cost_ledger` | id, ref_table, ref_id, provider, units, unit_price, total_usd, created_at | All spend |
 | `decision_log` | id, key, value, decided_by, rationale, created_at | Records D1–D8 and format decisions |
 
+### Why each amendment changes the schema
+
+**[A1] Operator time has nowhere to live.** Section 9 states that operator time is the real cost and "that number decides whether the operation is viable", and nothing recorded it. `review.time_spent_s` plus the two `content_piece` timestamps give per-piece labour. Task 3.14 must report it alongside provider spend.
+
+**[A2] A failed provider call still costs money.** `generation` rows only exist for calls that produced something, so a timeout or a refusal after billing had no home and the ledger was quietly incomplete. The `job` table is where a call lives from submit to outcome; the adapter contract in Section 5 must surface failed-call cost so `cost_ledger` stays whole. A `job` may end with no `generation`, which is the case that was previously unrepresentable.
+
+**[A3] A threshold belongs to one model at one version.** `reference_asset.embedding` had no stated type: use `pgvector`, dimension pinned to the configured model. More importantly, changing the scorer silently invalidates every stored vector *and* the calibrated threshold, and the failure is invisible — the numbers still compare, they just no longer mean anything. Recording the model and version on every row that holds a vector makes re-calibration enforceable rather than remembered. The spike harness already refuses to score with a calibration from a different model; the schema is what makes that hold in production.
+
+**[A4] The disclosure constraint cannot be a plain CHECK.** The requirement is that `render.disclosure_applied` is true for any render referenced by a `publication`. A Postgres CHECK cannot reference another table, so this would have quietly become an application rule — exactly what CLAUDE.md forbids. Implement it so the invalid state is unrepresentable:
+
+- `UNIQUE (id, disclosure_applied)` on `render`
+- `publication.disclosure_applied` as its own column
+- `FOREIGN KEY (render_id, disclosure_applied) REFERENCES render (id, disclosure_applied)`
+- `CHECK (disclosure_applied)` on `publication`
+
+A publication row can then only point at a render whose disclosure flag is true, and the database refuses the alternative. `publication.ai_label_set = true` and `approved_by IS NOT NULL` are single-table and stay ordinary CHECKs.
+
+**[A5] Identity is not re-scored after lip sync.** Task 3.7 applies lip sync to already-accepted takes and nothing scores the result, so `generation.identity_score_*` describes the face *before* its last transformation. `render.identity_score_min/mean` are scored after lip sync and after the overlay pass, and the render is gated on them.
+
 **Constraints to enforce in the schema, not just the code:**
 
-- `render.disclosure_applied` must be `true` for any render referenced by a `publication`.
+- `render.disclosure_applied` must be `true` for any render referenced by a `publication` — via the composite foreign key above, not a CHECK. **[A4]**
 - `publication.ai_label_set` must be `true` and `approved_by` must be non-null.
 - `generation.cost_usd` is written in the same transaction as the `cost_ledger` row.
+- `job.cost_usd` is written in the same transaction as its `cost_ledger` row, whether or not a `generation` resulted. **[A2]**
+
+Task 0.3 says "constraints tested". That means a test per constraint that asserts the bad row is **rejected by the database** — a publication pointing at an undisclosed render, a publication with `ai_label_set = false`, a publication with a null approver. A test that only exercises the happy path does not satisfy this.
 
 ---
 
@@ -210,7 +235,20 @@ Equivalent protocols for `ImageProvider`, `VoiceProvider`, `LipSyncProvider`, `L
 
 Some of these may be reachable directly and others only via an aggregator. **Claude Code must check current API availability, auth, and parameters from official documentation at implementation time** and record the result in `docs/decisions/`.
 
-Implement two video adapters first (one flagship, one budget) plus a `FakeVideoProvider` that returns fixture clips, for tests and UI development.
+Implement two video adapters first plus a `FakeVideoProvider` that returns fixture clips, for tests and UI development.
+
+> **Amended 2026-09-28.** This previously said "one flagship, one budget". Spike 0 measured that split backwards: the cheapest video model tested was also the only one that rendered club-and-ball golf content at all, at 1/12 the rate of the tier that could not. The two adapters to write first are therefore the golf-capable one and the one with verified face-forward quality — a capability split, not a price split. Slots and evidence in `config/providers.yaml`; the production choice is still Phase 2's, on the real persona look.
+
+**Every adapter must surface the cost of a call that produced nothing [A2].** A refusal after billing, a timeout, and a job that fails mid-generation all cost money. The contract therefore reports cost on the `job`, not only on a successful result:
+
+```python
+class VideoProvider(Protocol):
+    ...
+    async def poll(self, job: VideoJob) -> VideoResult: ...
+    def cost_of(self, job: VideoJob) -> Decimal: ...   # billable cost, success or failure
+```
+
+An adapter that can distinguish a free failure from a billed one must do so — a 403 before submission is free, a timeout after generation started is not. Where it cannot tell, it reports the cost as billed, for the same reason the price convention takes the higher published figure: a ledger that understates is worse than one that over-reserves.
 
 ---
 
