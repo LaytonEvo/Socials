@@ -42,7 +42,12 @@ persona:
     # BUILD_PLAN task 3.6 requires a DESIGNED synthetic voice, never one
     # cloned from a real person without a contract. Confirm this voice's
     # provenance with ElevenLabs before publishing.
-    provenance_checked: false      # DECIDE
+    provenance_checked: false      # DECIDE -- still outstanding, task 3.6
+    accent_vs_spec: accepted_as_is
+    # Spec v1 §3 asks for Southern English, warm, not posh. The owner chose
+    # this voice on sound before that was written and, asked on 2026-09-28
+    # whether to re-check it against the spec, said leave it. Recorded so it
+    # is a decision rather than an oversight, and not re-raised.
 
   # ------------------------------------------------------------ SETTLED ----
   positioning: personality_led_who_plays
@@ -62,7 +67,12 @@ persona:
 
   backstory:
     source: docs/spec/persona-spec-v1.md §3
-    age_stated: 25
+    age_stated: 23
+    # Spec v1 §3 said 25. Changed to 23 by the owner on 2026-09-28 to match the
+    # master set, every image of which came from a prompt beginning "photo of a
+    # 23 year old English woman". The look is locked (ADR 0008) and the 0.9609
+    # threshold is calibrated against those images, so the bio moved rather
+    # than the face.
     from: Hampshire/Surrey border, England
     lives: Florida — Jupiter / Naples area (never Orlando)
     accent: Southern English, warm, not posh; unchanged by living in the US

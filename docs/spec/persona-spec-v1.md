@@ -2,6 +2,16 @@
 
 Status: v1, answers the open questions from the personality stage. Name is TBC pending handle checks.
 
+> **Owner amendments, 2026-09-28.** Recorded here rather than edited into the
+> text above, so the original wording stands.
+>
+> - **§3 Age: 25 → 23.** To match the master set, generated from prompts
+>   beginning "photo of a 23 year old English woman". The look is locked and
+>   the identity threshold is calibrated against those images.
+> - **§3 Accent / voice: accepted as is.** The ElevenLabs voice was chosen
+>   before this spec existed; the owner elected not to re-check it against
+>   "Southern English, warm, not posh".
+
 ---
 
 ## 1. Positioning
