@@ -38,3 +38,19 @@ def test_a_slot_declares_where_its_pinned_audio_goes():
     assert cfg.provider("video", "alt_h3max_turbo").request["audio_field"] == "target_audio_url"
     # veo3.1 takes no pinned audio, and must not silently pretend to.
     assert "audio_field" not in cfg.provider("video", "fast").request
+
+
+def test_say_and_pin_audio_are_separate_levers():
+    """They do different things and must not be confused.
+
+    --say asks the model to speak the line itself, which its own lip sync
+    follows. --pin-audio replaces the soundtrack after generation, which the
+    mouth ignores. Answering ADR 0005 needs the first, not the second.
+    """
+    parser = build_parser()
+    args = parser.parse_args(
+        ["battery", "--budget", "1", "--say", "one more club", "--pin-audio", "other"]
+    )
+    assert args.say == "one more club"
+    assert args.pin_audio == "other"
+    assert parser.parse_args(["battery", "--budget", "1"]).say is None

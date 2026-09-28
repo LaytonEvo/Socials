@@ -720,6 +720,10 @@ def cmd_battery(args: argparse.Namespace) -> int:
         log.event("audio_pinned", field=str(audio_field), line=line, seconds=_audio_seconds(speech))
         print(f'pinning {_audio_seconds(speech) or 0:.1f}s of speech: "{line}"')
 
+    spoken_line = str(getattr(args, "say", "") or "").strip()
+    if spoken_line:
+        print(f'asking her to say, in English: "{spoken_line}"')
+
     retries = int(cfg.generation.get("refusal_retries", 3))
     skipped: list[tuple[str, str]] = []
     max_skips = max(3, (len(items) * len(args.video_slots) * takes) // 3)
@@ -734,6 +738,14 @@ def cmd_battery(args: argparse.Namespace) -> int:
             for take in range(offset, offset + takes):
                 ref = f"{prefix}-{item['id']}-{slot}-{take}"
                 prompt = f"{args.subject}, {item['prompt']}"
+                # Named language and quoted words, because the failure being
+                # tested is a language choice rather than a missing script: the
+                # model already speaks and already lip syncs what it speaks.
+                if spoken_line:
+                    prompt = (
+                        f"{prompt}. She speaks to camera in British English, "
+                        f'saying clearly: "{spoken_line}"'
+                    )
                 try:
                     score, keyframe_cursor = _generate_trying_keyframes(
                         keyframes,
@@ -1566,6 +1578,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--keyframes",
         help="a directory of existing stills to animate, instead of generating "
         "keyframes from the image provider (which is the S0.4 LoRA, not yet built).",
+    )
+    sp.add_argument(
+        "--say",
+        metavar="LINE",
+        help="write LINE into the prompt as dialogue, in English, and let the model "
+        "speak it itself. Tests whether the spoken language can be steered -- the "
+        "model's native lip sync is good and only its language is wrong, so if this "
+        "works it replaces the lip-sync stage. Distinct from --pin-audio, which "
+        "overwrites the soundtrack after the fact and does not move the mouth.",
     )
     sp.add_argument(
         "--pin-audio",
