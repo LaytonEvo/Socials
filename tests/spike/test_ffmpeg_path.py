@@ -127,3 +127,69 @@ def test_a_real_video_scores_end_to_end(encoded_clip: Path, tmp_path: Path):
 def test_missing_video_file_fails_loudly(tmp_path: Path):
     with pytest.raises(RuntimeError, match="ffmpeg failed"):
         FfmpegFrames().extract(tmp_path / "nope.mp4", tmp_path / "out", fps=2.0)
+
+
+def test_strip_audio_removes_a_soundtrack_and_leaves_the_video_alone(tmp_path):
+    """h3-max invents a soundtrack on every clip and has no flag to stop it.
+
+    The video must come through untouched: this is a stream copy, not a
+    re-encode, so a muted clip is bit-identical in the half that matters.
+    """
+    import shutil
+    import subprocess
+
+    import pytest
+
+    from scripts.spike.frames import strip_audio
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not on PATH")
+
+    clip = tmp_path / "noisy.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=8:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "-y",
+            str(clip),
+        ],
+        check=True,
+    )
+
+    def streams(path):
+        out = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        return out.stdout.split()
+
+    assert "audio" in streams(clip)
+    assert strip_audio(clip) is True
+    assert "audio" not in streams(clip)
+    assert "video" in streams(clip)
+    # Idempotent: nothing to remove the second time, and it says so.
+    assert strip_audio(clip) is False

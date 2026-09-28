@@ -90,3 +90,91 @@ class FfmpegFrames:
 def default_frame_source(clip: Path) -> FrameSource:
     """Pick a source by what the path is: a directory of stills, or a file."""
     return ImageSequenceFrames() if Path(clip).is_dir() else FfmpegFrames()
+
+
+def strip_audio(clip: Path) -> bool:
+    """Remove a clip's soundtrack in place. True if there was one to remove.
+
+    h3-max invents a soundtrack on every clip and has no flag to stop it, and
+    what it invents is speech in an unidentified language (2026-09-28). A clip
+    that goes on to the lip-sync stage is fine -- that pass replaces the audio
+    and the mouth together -- but a clip that does not is unpublishable as it
+    stands, for a reason nothing in the scoring pipeline can see, because
+    nothing in the scoring pipeline listens.
+
+    Stream copy, so the video is bit-identical and this costs nothing.
+    """
+    clip = Path(clip)
+    if clip.is_dir():
+        return False
+    if not ffmpeg_available():
+        raise RuntimeError(
+            "ffmpeg is not on PATH, and it is what removes a soundtrack. Refusing "
+            "rather than passing a clip through unchanged: a clip that silently "
+            "keeps its invented audio is the failure this exists to prevent."
+        )
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            str(clip),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if "audio" not in probe.stdout:
+        return False
+    # These clips have no file extension -- the ref IS the filename -- so
+    # ffmpeg cannot infer a muxer and has to be told. Ask the file what it is
+    # rather than assuming mp4: the container is the provider's choice.
+    fmt = (
+        subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=format_name",
+                "-of",
+                "csv=p=0",
+                str(clip),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        .stdout.strip()
+        # ffprobe's CSV quotes any value containing a comma, and format_name
+        # usually does: "mov,mp4,m4a,3gp,3g2,mj2". Strip the quote before
+        # splitting, or the muxer name arrives as `"mov` and ffmpeg refuses.
+        .strip('"')
+        .split(",")[0]
+    )
+    if not fmt:
+        raise RuntimeError(f"could not read the container format of {clip}")
+    muted = clip.with_name(clip.name + ".muted")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(clip),
+            "-c:v",
+            "copy",
+            "-an",
+            "-f",
+            fmt,
+            "-y",
+            str(muted),
+        ],
+        check=True,
+    )
+    muted.replace(clip)
+    return True

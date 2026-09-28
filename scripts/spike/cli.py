@@ -43,7 +43,7 @@ from .embed import (
 )
 from .embedders import DETECTORS
 from .errors import BudgetExceeded, BudgetNotSet, ProviderRefused, SpikeError
-from .frames import ImageSequenceFrames
+from .frames import ImageSequenceFrames, strip_audio
 from .ingest import IMAGE_SUFFIXES, find_images, format_report, ingest
 from .inspect import format_inspection, inspect_sets
 from .ledger import CostLedger
@@ -788,6 +788,8 @@ def cmd_battery(args: argparse.Namespace) -> int:
                         _write_battery_sheet(run_dir, rows, prefix)
                         return 1
                     continue
+                if getattr(args, "mute", False) and strip_audio(run_dir / "clips" / ref):
+                    log.event("audio_stripped", ref=ref)
                 scores.append(score)
                 rows.append(
                     {
@@ -1661,6 +1663,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--keyframes",
         help="a directory of existing stills to animate, instead of generating "
         "keyframes from the image provider (which is the S0.4 LoRA, not yet built).",
+    )
+    sp.add_argument(
+        "--mute",
+        action="store_true",
+        help="strip the generated soundtrack from every clip. h3-max invents one on "
+        "every clip with no flag to stop it, in an unidentified language. A clip bound "
+        "for the lip-sync stage does not need this -- that pass replaces the audio and "
+        "the mouth together -- but any other clip is unpublishable without it.",
     )
     sp.add_argument(
         "--say",
