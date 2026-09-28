@@ -130,6 +130,21 @@ identity property, and the ElevenLabs slot was chosen partly because a dedicated
 provider is the only way to hold a voice constant across videos. That reasoning
 survives this ADR's question being closed.
 
+**Amended 2026-09-28, and I had overstated it.** Asked to compare two takes
+generated on a pinned seed, the owner's verdict was *"they are a bit different
+but close"* — not the wholesale instability "the voice is not stable" implies.
+The variation is modest.
+
+It is still disqualifying, for a reason about the product rather than the clip:
+a single clip with a slightly-off voice is fine, and a back catalogue where the
+voice drifts from video to video is not. Cross-video consistency is the
+requirement, and "close" does not meet it when the alternative meets it exactly
+and is already in the pipeline.
+
+**The seed governs neither.** The same pair differed by 25.42/255 per pixel in
+the picture, so the voice variation is inherent to the model rather than
+something a seed could pin.
+
 ## What stands
 
 **The lip-sync stage stays**, currently HeyGen precision at **$0.40/clip**, and
