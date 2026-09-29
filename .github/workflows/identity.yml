@@ -1,0 +1,90 @@
+# The identity scorer's tests, which `make check` deliberately cannot run.
+#
+# check.yml installs the project WITHOUT the dlib extra, because a contributor who
+# cannot build dlib from source should still be able to run the suite. The consequence
+# is that app/identity/ has no coverage there, and a skipped test looks exactly like a
+# passing one in a green run — the same trap the database tests needed a guard for.
+#
+# So this job builds dlib, fetches the weights, and runs the identity tests INCLUDING
+# the slow ones. The slow ones are the point: they reproduce a median the spike
+# measured independently, which is the evidence that the rewritten embedder is faithful
+# rather than merely plausible.
+
+name: Identity
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/identity/**"
+      - "tests/app/test_identity.py"
+      - "config/providers.yaml"
+      - "spike/data/master_v2/**"
+      - ".github/workflows/identity.yml"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: identity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    # dlib builds from source and the master set is 105 images of descriptor work.
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+          POSTGRES_DB: persona_studio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://studio:studio@127.0.0.1:5432/persona_studio_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install, with dlib
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake build-essential
+          make install
+          python -m pip install dlib
+
+      # Not committed: 22 MB and 9 MB. The embedder verifies their SHA-256 against the
+      # version pinned in config and refuses to run on a mismatch, so a corrupt or
+      # substituted download fails here rather than producing numbers that compare and
+      # mean nothing.
+      - name: Fetch the weights
+        run: python -m scripts.spike.cli fetch-models --backend dlib --dest spike/models
+
+      - name: Migrate
+        run: make migrate
+
+      - name: Identity tests, including the slow reproduction
+        run: python -m pytest tests/app/test_identity.py -v -m "slow or not slow"
+
+      - name: They really ran
+        run: |
+          python -m pytest tests/app/test_identity.py -q -m "slow or not slow" 2>&1 | tee id.log
+          if grep -qE "[0-9]+ skipped" id.log; then
+            echo "::error::identity tests skipped -- dlib or the weights are missing"
+            exit 1
+          fi

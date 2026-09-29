@@ -56,6 +56,10 @@ VENDOR_SDK_HOMES: dict[str, str] = {
     "anthropic": "app.providers",
     "boto3": "app.storage",
     "botocore": "app.storage",
+    # dlib is the identity scorer's weights library. Same confinement as boto3: a
+    # threshold is valid for one model at one version, so the code that loads those
+    # weights lives in one place and verifies their hash before use.
+    "dlib": "app.identity",
     "elevenlabs": "app.providers",
     "fal": "app.providers",
     "fal_client": "app.providers",

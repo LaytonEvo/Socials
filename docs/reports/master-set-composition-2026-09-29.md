@@ -66,3 +66,45 @@ against the widened set.
 
 Not recommending one. The first is free and may be sufficient; the second costs money
 and a recalibration to remove a doubt that is currently unquantified.
+
+---
+
+## Addendum: the ingestion ran, and it reproduces the spike
+
+*Added 2026-09-29, after task 1.1's free half.*
+
+`app/identity/` is written — the embedder and master set ingestion — and the 105 stills
+are ingested with their embeddings. No provider call was needed: dlib runs locally, so
+this half of 1.1 cost nothing.
+
+BUILD_ORDER Section 3 required the embedder be **rewritten** for `app/` rather than
+promoted from `scripts/spike/`. The check that the rewrite is faithful:
+
+| | Fresh implementation | Spike, recorded |
+|---|---|---|
+| Stills considered | 108 | 108 |
+| Usable | **105** | 105 |
+| Rejected | `b1_11`, `b2_04`, `b4_10` — all no-face | 3 |
+| Median similarity to centroid | **0.98781** | 0.98757 |
+| Below the 0.9609 threshold | **1 of 105** | "one in a hundred reads low" |
+
+Same data, no shared code, agreement to three decimal places. The 0.02% difference on
+the median is consistent with dlib's jitter, which perturbs the crop.
+
+The version pinned in config is now the **SHA-256 of the weights file**, because dlib's
+models carry no semantic version — "v1" is part of a filename, not a release. The
+embedder verifies that hash on load and refuses a mismatch, so substituted or corrupt
+weights fail loudly rather than producing numbers that still compare and no longer mean
+anything.
+
+### What remains of 1.1, and what it costs
+
+The `face` kind is populated. `body`, `outfit` and `lighting` are empty, and filling
+them is the owner-approved option 2 above: edits of existing master stills, scored
+against the threshold, at $0.08 an image. **Waiting on a provider key** — none is
+present in this environment.
+
+One note for whoever runs it: an exploratory ingestion here committed 105 rows into the
+*test* database, because that is what `DATABASE_URL` pointed at. A real ingestion wants
+its own database. The rows were truncated and a test that asserted a global row count
+now scopes to its own persona, which it should have done anyway.

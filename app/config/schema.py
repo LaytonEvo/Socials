@@ -127,8 +127,13 @@ class EmbedderSettings(BaseModel):
 
     backend: str | None = None
     model: str | None = None
-    version: str | None = None
+    #: The SHA-256 of the weights. dlib's models carry no semantic version, and a
+    #: hash is the strongest pin available: it changes if a single byte does.
+    version: str | None = Field(default=None, max_length=64)
     dim: int | None = None
+    recognition_model: str | None = None
+    shape_predictor: str | None = None
+    shape_predictor_sha256: str | None = Field(default=None, max_length=64)
     frame_sample_fps: float = 2.0
     threshold: float | None = None
     threshold_calibrated_on: dt.date | None = None

@@ -123,4 +123,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: spends real money against a real provider. Never runs by default; needs `-m live` and an explicit `--live-budget`. See tests/conftest.py.",
+    "slow: costs real seconds rather than real money. Computing face descriptors for the 105-still master set is about 90 s of CPU, which is worth paying in CI and not on every local run. Opt in with `-m slow`.",
 ]
+# `slow` is excluded by default so `make check` stays usable. The identity CI job runs
+# it explicitly, because a skipped test and a passing one look identical in a green run
+# and the master-set reproduction is the evidence that the rewritten embedder is faithful.
+addopts = "-m 'not slow'"

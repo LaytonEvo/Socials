@@ -244,9 +244,21 @@ providers:
 embedder:
   backend: dlib                     # ADR 0004, on measured separation
   model: dlib_face_recognition_resnet_model_v1
-  version: null                     # pin before any vector is stored
+  # The SHA-256 of the weights file, which is the only version identifier dlib's
+  # models actually have — they carry no semantic version, and "v1" is part of the
+  # filename rather than a release. Amendment A3 requires the version pinned before
+  # any vector is stored, because a threshold is valid for one model at one version;
+  # a hash is the strongest form of that, since it changes if a single byte does.
+  # 64 hex characters, which is exactly what `embedding_model_version` holds.
+  version: 55533b28a95800a551ba546ba62fe69625c7e95a7061c338adffead08719da30
   dim: 128
   frame_sample_fps: 2.0
+  # Weights are not committed (2.5 MB and 9 MB), and these paths are where
+  # `fetch-models` puts them. The loader refuses to score if either is missing
+  # rather than silently falling back to a different model.
+  recognition_model: spike/models/dlib_face_recognition_resnet_model_v1.dat
+  shape_predictor: spike/models/shape_predictor_5_face_landmarks.dat
+  shape_predictor_sha256: c4b1e9804792707d3a405c2c16a80a20269e6675021f64a41d30fffafbc41888
   threshold: null                   # written by calibration; never hand-edited
   threshold_calibrated_on: null
   # Public domain by the author's statement, with a training-data caveat:
