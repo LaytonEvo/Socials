@@ -21,3 +21,7 @@ spike/models/*.dat
 # Build metadata. Globbed, not named: the distribution was renamed from
 # persona-studio-spike to persona-studio and the old entry stopped matching.
 *.egg-info/
+
+# setuptools wheel build artefacts (`pip install .` leaves these behind)
+build/
+dist/

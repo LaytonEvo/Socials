@@ -6,3 +6,5 @@ spike/runs/
 spike/models/
 .venv/
 *.egg-info/
+build/
+dist/
