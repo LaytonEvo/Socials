@@ -9,7 +9,7 @@
 #     make check PY=python3.12
 PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 
-.PHONY: check lint types test fmt install migrate migration worker demo fetch-models check-embedder clean-runs
+.PHONY: check lint types test fmt install migrate migration serve worker demo fetch-models check-embedder clean-runs
 
 check: lint types test
 
@@ -61,6 +61,11 @@ migrate:
 # third-party column types without the import they need.
 migration:
 	$(PY) -m alembic revision --autogenerate -m "$(MSG)"
+
+# Run the read-only web view locally. Needs no database and no dlib; spend appears
+# only when DATABASE_URL is reachable, and is reported as unavailable otherwise.
+serve:
+	$(PY) -m uvicorn app.api.main:app --reload --port 8000
 
 # Run the worker. Reads REDIS_URL and DATABASE_URL from the environment.
 #

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Persona Studio</title>
+<style>
+  :root{
+    --paper:#f1f4ef; --surface:#fff; --sunk:#e7ebe5;
+    --ink:#17241d; --ink-2:#3c4a42; --muted:#77857b; --rule:#d3dbd3;
+    --accent:#1f6f4a; --caution:#9a6b12; --critical:#a3311d;
+    color-scheme:light;
+    --sans:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+    --serif:"IBM Plex Serif",Georgia,serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#0f1512; --surface:#161d19; --sunk:#1c241f;
+    --ink:#e6ece7; --ink-2:#bcc7bf; --muted:#8b998f; --rule:#2a332d;
+    --accent:#61b98a; --caution:#d6a747; --critical:#e07a62;
+    color-scheme:dark;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:60rem;margin:0 auto;padding-inline:20px;padding-block:0 72px}
+  header{padding-block:40px 24px;border-bottom:2px solid var(--ink)}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--muted)}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(2rem,6vw,2.8rem);
+     margin:.2em 0 .1em;line-height:1.05}
+  .sub{color:var(--ink-2);margin:0}
+  section{padding-block:30px;border-bottom:1px solid var(--rule)}
+  h2{font-family:var(--serif);font-size:1.4rem;margin:0 0 14px}
+  h3{font-size:.95rem;margin:20px 0 8px}
+  p{margin:0 0 12px;max-width:66ch}
+  .m,code{font-family:var(--mono);font-size:.87em;background:var(--sunk);
+          padding:.1em .34em;border-radius:2px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .tile{border:1px solid var(--rule);background:var(--surface);padding:14px 16px}
+  .tile .k{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
+           text-transform:uppercase;color:var(--muted);display:block}
+  .tile .v{font-size:1.5rem;font-family:var(--serif);font-variant-numeric:tabular-nums}
+  .tile .n{font-size:.8rem;color:var(--muted)}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;
+        border:1px solid var(--rule);background:var(--surface)}
+  th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--rule)}
+  thead th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;
+           text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--sunk)}
+  tbody tr:last-child td{border-bottom:0}
+  td.n{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+  .tw{overflow-x:auto;margin-bottom:16px}
+  .pill{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;
+        padding:2px 8px;border:1px solid currentColor;white-space:nowrap}
+  .ok{color:var(--accent)} .warn{color:var(--caution)} .bad{color:var(--critical)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+  .grid img{width:100%;height:auto;display:block;border:1px solid var(--rule)}
+  .note{border-left:3px solid var(--rule);padding-left:14px;color:var(--ink-2);font-size:.92rem}
+  details{margin-top:10px} summary{cursor:pointer;color:var(--accent);font-size:.9rem}
+  a{color:var(--accent)}
+  @media (max-width:420px){.wrap{padding-inline:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Persona Studio</div>
+  <h1>{{ persona.name }}</h1>
+  <p class="sub">An openly-AI golf personality. This page is read-only — it shows what the system holds, and can change nothing.</p>
+</header>
+
+<section>
+  <h2>Where things stand</h2>
+  <div class="tiles">
+    <div class="tile"><span class="k">Reference images</span><span class="v">{{ reference_total }}</span><span class="n">{{ look.reference_stills }} carry a usable face</span></div>
+    <div class="tile"><span class="k">Identity threshold</span><span class="v">{{ look.identity_threshold }}</span><span class="n">recalibrated 29 Sep</span></div>
+    <div class="tile"><span class="k">Formats allowed</span><span class="v">{{ formats|length }}</span><span class="n">{{ blocked|length }} blocked</span></div>
+    <div class="tile"><span class="k">Spend</span>
+      {% if spend.available %}<span class="v">${{ spend.total }}</span><span class="n">${{ spend.month }} this month</span>
+      {% else %}<span class="v">—</span><span class="n">{{ spend.reason }}</span>{% endif %}
+    </div>
+  </div>
+  <p class="note" style="margin-top:16px">There is no content pipeline yet. No briefs, no shots, no takes, no renders — Phase 3 builds those, and the review UI that goes with them. This is the foundation, and what it can show is configuration and reference data.</p>
+</section>
+
+<section>
+  <h2>Human decisions</h2>
+  <p>BUILD_PLAN reserves eight of these. The build must not make them.</p>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>Decision</th><th>State</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for d in decisions %}
+      <tr><td class="m">{{ d.id }}</td><td>{{ d.what }}</td>
+      <td><span class="pill {{ 'ok' if d.state == 'decided' else 'warn' }}">{{ d.state }}</span></td>
+      <td>{{ d.detail }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Her reference set</h2>
+  <p>The images her identity is defined against. Every generated frame is scored by cosine similarity to the centroid of these, and <span class="m">{{ look.identity_threshold }}</span> is the line.</p>
+  {% for s in reference_sets %}
+    <h3>{{ s.name }} — {{ s.count }}</h3>
+    <div class="grid">
+      {% for f in s.files[:12] %}<img src="/reference/{{ s.name }}/{{ f }}" alt="{{ s.name }} reference" loading="lazy">{% endfor %}
+    </div>
+    {% if s.count > 12 %}<details><summary>{{ s.count - 12 }} more</summary>
+      <div class="grid" style="margin-top:10px">
+        {% for f in s.files[12:] %}<img src="/reference/{{ s.name }}/{{ f }}" alt="{{ s.name }} reference" loading="lazy">{% endfor %}
+      </div></details>{% endif %}
+  {% endfor %}
+</section>
+
+<section>
+  <h2>What she can be filmed doing</h2>
+  <p>Measured, not assumed — from {{ formats|length }} formats rated blind by the owner. Take counts carry the yield: the harder a format is, the more takes it is budgeted.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Format</th><th>Group</th><th class="n">Usable</th><th class="n">Takes</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for f in formats %}
+      <tr><td class="m">{{ f.id }}</td><td>{{ f.group.replace('_',' ') }}</td>
+      <td class="n">{{ f.usable[0] }}/{{ f.usable[1] }}</td><td class="n">{{ f.takes }}</td>
+      <td>{{ f.review or f.requires or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if not blocked %}<p class="note">Nothing is blocked. The plan expected full swing and ball flight to be impossible; one model family could not render them and another could.</p>{% endif %}
+</section>
+
+<section>
+  <h2>The identity layer</h2>
+  <div class="tw"><table>
+    <tbody>
+      <tr><td>Base model</td><td class="m">{{ lora.base_model }}</td></tr>
+      <tr><td>Trainer</td><td class="m">{{ lora.trainer }}</td></tr>
+      <tr><td>Price</td><td>${{ lora.price_usd_per_step }} per step — 1000 steps is ${{ "%.0f"|format(lora.price_usd_per_step * 1000) }}</td></tr>
+      <tr><td>Licence</td><td>{{ lora.base_model_licence }}</td></tr>
+      <tr><td>May run on</td><td><span class="pill bad">{{ lora.inference_must_run_on }} only</span></td></tr>
+      <tr><td>Trained</td><td><span class="pill warn">not yet</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Commercial use is fal's licence rather than ours, and it holds while the weights run on their platform. Taking them elsewhere falls back under a non-commercial licence, so the identity layer is <strong>rented, not owned</strong>.</p>
+</section>
+
+<section>
+  <h2>Spending</h2>
+  <p>Budget mode is <span class="m">{{ budget.mode }}</span>: every call is priced, guarded and recorded, and nothing is refused on a monthly ceiling because none is set yet. A per-run budget is still required — with no ceiling, it is the only thing bounding spend.</p>
+  {% if not spend.available %}<p class="note">The ledger is not reachable from this deployment ({{ spend.reason }}), so no figures are shown. It is deliberately not reported as zero.</p>{% endif %}
+</section>
+
+</div>
+</body>
+</html>
