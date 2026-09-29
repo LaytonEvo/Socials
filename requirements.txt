@@ -1,0 +1,9 @@
+# The dependency list lives in pyproject.toml and only there. This file exists
+# because Railway's builder detects a Python project from requirements.txt and
+# installs from it; a bare setuptools pyproject.toml is not a detection trigger,
+# so the first two deploys built an image with an interpreter and no packages,
+# reported SUCCESS and then crash-looped on a missing uvicorn.
+#
+# The single dot installs this project, which resolves its dependencies from
+# pyproject.toml. Do not list packages here — they would drift from the real set.
+.
