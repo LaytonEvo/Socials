@@ -57,11 +57,14 @@ def test_no_still_has_been_lost() -> None:
 
 
 def test_the_count_matches_what_config_claims() -> None:
-    """`persona.yaml` says 105 stills. A claim nothing checks is a claim that drifts."""
-    persona = yaml.safe_load((REPO / "config" / "persona.yaml").read_text())
-    comment = (REPO / "config" / "persona.yaml").read_text()
-    assert persona["persona"]["look"]["master_set"] == MASTER_SET.name
-    assert f"{USABLE_STILLS} stills" in comment
+    """A claim nothing checks is a claim that drifts.
+
+    `reference_stills` is the total the centroid is built from: 105 usable faces plus
+    the 16 ingested on 2026-09-29.
+    """
+    look = yaml.safe_load((REPO / "config" / "persona.yaml").read_text())["persona"]["look"]
+    assert look["master_set"] == MASTER_SET.name
+    assert look["reference_stills"] == USABLE_STILLS + 16
 
 
 def test_the_threshold_belongs_to_this_set() -> None:
@@ -72,6 +75,21 @@ def test_the_threshold_belongs_to_this_set() -> None:
     centroid, the calibration and every pass rate move with it.
     """
     look = yaml.safe_load((REPO / "config" / "persona.yaml").read_text())["persona"]["look"]
-    assert look["identity_threshold"] == 0.9609
+    # Recalibrated 2026-09-29 when the set was widened from 105 to 121. Was 0.9609.
+    assert look["identity_threshold"] == 0.9619
     assert look["master_set"] == "master_v2"
     assert look["status"] == "decided"
+
+
+def test_every_reference_set_config_names_exists() -> None:
+    """The centroid spans all four directories, so a missing one silently shrinks it."""
+    look = yaml.safe_load((REPO / "config" / "persona.yaml").read_text())["persona"]["look"]
+    counts = {}
+    for name in look["reference_sets"]:
+        directory = REPO / "spike" / "data" / name
+        assert directory.is_dir(), f"{directory} is named in config and does not exist"
+        counts[name] = len([p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES])
+    # master_v2 holds 108 of which 105 carry a usable face; the other three sets were
+    # filtered on the way in, so every file in them counts.
+    assert counts == {"master_v2": 108, "outfit": 6, "lighting": 7, "body": 3}
+    assert sum(counts.values()) - 3 == look["reference_stills"]

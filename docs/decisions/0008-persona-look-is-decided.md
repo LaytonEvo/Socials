@@ -52,6 +52,20 @@ by decision as well. The residual is documented in
 `identity-threshold-correction-2026-09-24.md`: at the operating point, one of
 her own stills in a hundred reads low and one stranger in ninety reads high.
 
+**Amended 2026-09-29: the set was widened, and the threshold moved to 0.9619.**
+Sixteen stills were added — 6 outfit, 7 lighting, 3 body — each an edit of an existing
+master still, each scored before being accepted. This ADR warned that her look is a
+hard dependency and that changing it invalidates the calibration. Widening it turned
+out not to: the cosine between the old centroid and the new is 0.99995, separation
+improved slightly (overlap 0.0204 to 0.0191, EER 0.0102 to 0.0096), and the threshold
+moved 0.0002. The Gate A identity figures therefore stand rather than becoming
+historical. Detail and caveats in
+`docs/reports/master-set-widening-2026-09-29.md`.
+
+The warning in this ADR is not weakened by that. Adding stills OF THE SAME FACE is not
+what it was about; changing the face still invalidates everything, and that remains
+closed by decision.
+
 **The reference set is source, not evidence.** `spike/data/` is tracked, so
 the 105 stills are version-controlled rather than living only in a run
 directory. That was already true and is now load-bearing.

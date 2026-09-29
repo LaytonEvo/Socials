@@ -68,3 +68,55 @@ this set.
 The first batch submitted and generated 24 images that were then unreachable, because
 the adapter built its poll URL instead of using the one fal returned. Detail in the
 commit; there is now a test that fails if that is ever done again.
+
+
+---
+
+## Ingested and recalibrated
+
+*Added 2026-09-29, on the owner's approval after reviewing all 24 edits.*
+
+All 16 that passed are in, under `spike/data/outfit`, `spike/data/lighting` and
+`spike/data/body`, tracked like the master set. Body's three are included rather than
+dropped: the recommendation was to leave the kind empty, and three stills that
+legitimately cleared the threshold are worth more than none. It is still thin coverage
+from a 38% technique, not the kind being properly filled.
+
+**The reference set is now 121 stills.** Recalibrated with the spike's own
+`calibrate()`, at a 1% false-positive target against 92 controls, so the new number is
+comparable with the old rather than computed a different way.
+
+| | Old, 105 | New, 121 |
+|---|---|---|
+| Threshold | 0.9617 | **0.9619** |
+| AUC | 0.9993 | 0.9994 |
+| Overlap | 0.0204 | **0.0191** |
+| EER | 0.0102 | **0.0096** |
+| TPR at threshold | 0.9905 | **0.9917** |
+| FPR at threshold | 0.0109 | 0.0109 |
+| Verdict | EXCELLENT | EXCELLENT |
+
+**Adding 16 stills changed almost nothing, and what it changed, it improved.** The
+cosine between the old centroid and the new is **0.99995**. Overlap fell, equal error
+rate fell, true-positive rate rose. The threshold moved by 0.0002.
+
+That is the reassuring answer to the risk this work carried: widening the set was
+supposed to force a recalibration that made every previous measurement historical. In
+practice the centroid did not move enough for that to bite, so the Gate A identity
+figures remain usable rather than being invalidated.
+
+### Two caveats worth stating
+
+**The old calibration reproduces as 0.9617, not the 0.9609 on record.** A 0.0008
+difference, consistent with dlib's jitter — the same jitter that made the reproduced
+master median 0.98781 against a recorded 0.98757. Nobody should treat a fourth decimal
+place here as meaningful.
+
+**The 1% target was clamped to 1.09%.** Ninety-two controls cannot express a
+false-positive rate finer than 1/92. Holding the finer target would have cost 1.7% of
+her own stills for no measurable reduction in false accepts. A larger control set is
+the only way to calibrate finer, and nothing so far suggests it is worth buying.
+
+`config/persona.yaml` carries the new threshold, the four reference directories and the
+evidence path. One still in 121 still reads below threshold, lowest 0.9524 — the
+documented residual, unchanged.

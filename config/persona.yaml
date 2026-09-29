@@ -41,9 +41,32 @@ persona:
     # the identity threshold is calibrated against this master set. Changing
     # the look means recalibrating: the 0.9609 threshold is a property of
     # these images, not a constant.
-    master_set: master_v2          # 105 stills
-    identity_threshold: 0.9609
+    # Four directories under spike/data/, and the centroid spans all of them:
+    #   master_v2  105  face
+    #   outfit       6  clothing variation, edited from master stills
+    #   lighting     7  lighting variation, same technique
+    #   body         3  wider framing. THIN — 3 of 8 survived, see below.
+    master_set: master_v2
+    reference_sets: [master_v2, outfit, lighting, body]
+    reference_stills: 121
+    # RECALIBRATED 2026-09-29 against the widened set, from 0.9609.
+    # Adding 16 stills barely moved anything: cosine between the old and new
+    # centroid is 0.99995, and separation improved slightly rather than degrading —
+    # overlap 0.0204 to 0.0191, EER 0.0102 to 0.0096, TPR 0.9905 to 0.9917, verdict
+    # EXCELLENT either way.
+    #
+    # Reproducing the OLD calibration here gives 0.9617 against the 0.9609 on record,
+    # a 0.0008 difference consistent with dlib's jitter — the same jitter that made
+    # the reproduced median 0.98781 against a recorded 0.98757. Worth knowing before
+    # anyone treats a fourth decimal place as meaningful.
+    identity_threshold: 0.9619
+    threshold_calibrated_on: 2026-09-29
+    threshold_evidence: docs/reports/master-set-widening-2026-09-29.md
     scorer: dlib ResNet, 128-d, cosine vs the L2-normalised centroid
+    # 92 controls can only express a false-positive rate to 1/92 = 0.0109, so the 1%
+    # target was clamped to that. Holding the finer target would have cost 1.7% of her
+    # own stills for no measurable gain.
+    calibrated_at_fpr: 0.0109
 
   voice:
     status: decided

@@ -63,7 +63,8 @@ def test_the_repositorys_own_config_is_valid() -> None:
 def test_settled_decisions_are_readable() -> None:
     cfg = load_all(REAL_CONFIG)
     # ADR 0008: the look is decided and the threshold belongs to that master set.
-    assert cfg.persona.persona.look.identity_threshold == pytest.approx(0.9609)
+    # Recalibrated 2026-09-29 when the reference set widened from 105 to 121 stills.
+    assert cfg.persona.persona.look.identity_threshold == pytest.approx(0.9619)
     assert cfg.persona.persona.production_mode == "synthetic"
     assert cfg.content_policy.blocked_formats == []
     assert len(cfg.content_policy.allowed_formats) == 13
