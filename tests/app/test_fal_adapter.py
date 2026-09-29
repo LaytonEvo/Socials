@@ -28,6 +28,8 @@ from app.storage import MemoryStorage, key_for
 from .test_storage import PERSONA
 
 MODEL = "fal-ai/nano-banana-2/edit"
+#: What fal actually returns for a submit to MODEL. Note the missing `/edit`.
+RETURNED_BASE = "https://queue.fal.run/fal-ai/nano-banana-2/requests/req-1"
 KEY = key_for(PERSONA, "reference", "outfit-m_000.png")
 IMAGE_BYTES = b"\x89PNG\r\n\x1a\n" + b"fake png payload"
 
@@ -61,7 +63,12 @@ def _provider(
 def _queue(
     *, images: list[dict[str, str]] | None = None, statuses: list[str] | None = None
 ) -> tuple[httpx.MockTransport, list[httpx.Request]]:
-    """A transport that walks the documented submit → status → retrieve sequence."""
+    """A transport that walks the documented submit -> status -> retrieve sequence.
+
+    It mirrors the detail that mattered: a submit to `.../nano-banana-2/edit` answers
+    with URLs under `.../nano-banana-2/requests/...`, WITHOUT the sub-path. Anything
+    else the adapter asks for gets a 405, exactly as fal gives.
+    """
     seen: list[httpx.Request] = []
     remaining = list(statuses or ["COMPLETED"])
     payload = {"images": images if images is not None else [{"url": "https://v3b.fal.media/x.png"}]}
@@ -70,14 +77,24 @@ def _queue(
         seen.append(request)
         url = str(request.url)
         if request.method == "POST":
-            return httpx.Response(200, json={"request_id": "req-1", "status": "IN_QUEUE"})
-        if url.endswith("/status"):
+            return httpx.Response(
+                200,
+                json={
+                    "request_id": "req-1",
+                    "status": "IN_QUEUE",
+                    "status_url": f"{RETURNED_BASE}/status",
+                    "response_url": RETURNED_BASE,
+                },
+            )
+        if url == f"{RETURNED_BASE}/status":
             return httpx.Response(
                 200, json={"status": remaining.pop(0) if remaining else "COMPLETED"}
             )
+        if url == RETURNED_BASE:
+            return httpx.Response(200, json=payload)
         if url.startswith("https://v3b.fal.media"):
             return httpx.Response(200, content=IMAGE_BYTES, headers={"content-type": "image/png"})
-        return httpx.Response(200, json=payload)
+        return httpx.Response(405, text="Method Not Allowed")
 
     return httpx.MockTransport(handle), seen
 
@@ -101,6 +118,38 @@ async def test_an_edit_is_submitted_polled_and_stored(still: Path) -> None:
 
     assert str(seen[0].url) == f"{QUEUE_ROOT}/{MODEL}"
     assert seen[0].headers["authorization"] == "Key test-key"
+
+
+async def test_it_polls_the_url_fal_returned_not_one_it_built(still: Path) -> None:
+    """The bug that cost 24 generated images on 2026-09-29.
+
+    A submit to `fal-ai/nano-banana-2/edit` answers with a status_url under
+    `fal-ai/nano-banana-2/requests/...` — the sub-path is dropped. Building the URL from
+    the model id looks obvious, is wrong, and fails with 405 only AFTER the work has
+    been submitted and billed. So the adapter uses what the response gives it, and the
+    mock answers 405 to anything else, exactly as fal does.
+    """
+    transport, seen = _queue()
+    provider = _provider(transport)
+    await provider.generate(ImageRequest(prompt="p"), key=KEY, source=still)
+
+    polled = [str(r.url) for r in seen if str(r.url).endswith("/status")]
+    assert polled == [f"{RETURNED_BASE}/status"]
+    assert not any(f"{MODEL}/requests" in str(r.url) for r in seen), (
+        "the adapter built a URL from the model id again"
+    )
+
+
+async def test_a_submit_with_no_urls_to_follow_is_a_billed_failure(still: Path) -> None:
+    """Accepted, billed, and uncollectable. Rare, and it must not read as success."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"request_id": "req-1", "status": "IN_QUEUE"})
+
+    provider = _provider(httpx.MockTransport(handle))
+    with pytest.raises(ProviderError, match="no status_url"):
+        await provider.generate(ImageRequest(prompt="p"), key=KEY, source=still)
+    assert provider.jobs[-1].billed is True
 
 
 async def test_it_polls_until_the_request_completes(still: Path) -> None:

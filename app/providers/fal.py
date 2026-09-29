@@ -182,13 +182,26 @@ class FalImageProvider:
             raise
 
         job.provider_job_id = str(submitted.get("request_id") or "")
+        # USE THE URLS FAL RETURNS. Constructing them from the model id looks obvious
+        # and is wrong: a submit to `fal-ai/nano-banana-2/edit` answers with a
+        # status_url under `fal-ai/nano-banana-2/requests/...` — the sub-path is
+        # dropped. A hand-built URL gets 405 Method Not Allowed, AFTER the work has
+        # been submitted and billed. That cost 24 generated images on 2026-09-29.
+        status_url = str(submitted.get("status_url") or "")
+        response_url = str(submitted.get("response_url") or "")
+        if not status_url or not response_url:
+            raise ProviderError(
+                f"{self.model} accepted the request but returned no status_url or "
+                f"response_url, so the result cannot be collected. It was still billed.",
+                billed=True,
+            )
         job.status = JobStatus.RUNNING
         # Billed from here: the request is accepted and generation has started, so a
         # later failure still costs. Reserved at the estimate rather than left null.
         job.cost_usd = self.estimate_cost(req)
 
         try:
-            payload = self._await_result(job)
+            payload = self._await_result(job, status_url, response_url)
             images = payload.get("images") or []
             if not images:
                 # ADR 0006: a COMPLETED status can mean the arguments were never
@@ -249,16 +262,19 @@ class FalImageProvider:
             )
         raise ProviderError(f"fal returned {response.status_code}: {detail}", billed=True)
 
-    def _await_result(self, job: ProviderJob) -> dict[str, Any]:
-        """Poll the queue until the request completes, then retrieve it."""
+    def _await_result(self, job: ProviderJob, status_url: str, response_url: str) -> dict[str, Any]:
+        """Poll until the request completes, then retrieve it.
+
+        Both URLs come from the submit response. See the note at the call site: the
+        obvious construction from the model id is wrong and fails only after billing.
+        """
         import time
 
-        base = f"{QUEUE_ROOT}/{self.model}/requests/{job.provider_job_id}"
         deadline = time.monotonic() + self.timeout_s
         while True:
-            status = self._get(f"{base}/status").get("status")
+            status = self._get(status_url).get("status")
             if status == COMPLETED:
-                return self._get(base)
+                return self._get(response_url)
             if status not in {IN_QUEUE, IN_PROGRESS}:
                 # An unknown status is not assumed benign. Generation may well have
                 # happened, so this is reported as billed.
