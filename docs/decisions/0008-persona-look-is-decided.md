@@ -56,6 +56,22 @@ her own stills in a hundred reads low and one stranger in ninety reads high.
 the 105 stills are version-controlled rather than living only in a run
 directory. That was already true and is now load-bearing.
 
-**Still open in D1:** name, backstory and voice. Voice is the live one --
-everything generated so far is silent, and whether Veo's native audio can
-carry her or a separate voice is needed is untested.
+**Still open in D1:** *nothing, as of 2026-09-29.* This section previously read
+"name, backstory and voice", and all three have since landed:
+
+- **Voice**, 2026-09-25. A dedicated provider rather than the video model's own
+  speech, because that speech is good and correctly lip synced but the voice
+  changes between takes (ADR 0005, amended 2026-09-28). A recurring persona whose
+  voice drifts is as broken as one whose face does.
+- **Backstory**, from `docs/spec/persona-spec-v1.md`, with her stated age moved to
+  23 on 2026-09-28 to match the master set rather than moving the face to match
+  the bio.
+- **Name: Mollie**, 2026-09-29.
+
+**D1 is closed.** Recorded here because this ADR is where someone looks to find
+out what remains of it, and a stale "still open" list is worse than none.
+
+Two sub-items of the name are outstanding and are the owner's, not the build's.
+Spec v1 §2 asks for two words and one was given, so a surname may still be
+coming; and the handles and domains are unchecked. Both are tracked as flags in
+`config/persona.yaml` and both block publishing rather than building.
