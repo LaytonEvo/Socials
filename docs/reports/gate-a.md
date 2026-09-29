@@ -1,5 +1,21 @@
 # Gate A — Spike 0 report
 
+> ## ⬤ VERDICT: NOT YET RECORDED
+>
+> **This is the gate's open item, and the oldest one in the project.**
+> `BUILD_ORDER.md` §4 says a human reads this report and decides between
+> **proceed**, **change approach** and **stop**. The report recommends proceed
+> (§8). That recommendation is not a verdict, and nothing below has been
+> ratified by the owner.
+>
+> Phase 0 was built anyway. `BUILD_ORDER.md`'s status line states Phase 0 *"has
+> not started and does not start until Gate A passes"*, and it started. That is a process breach, not a
+> technical one — the evidence supports proceeding — but it should be recorded
+> rather than tidied away, and it is the reason this block exists.
+>
+> **To close it**, fill in the block in §9 and commit. See §9 for what the
+> decision actually commits to and what it does not.
+
 **Date:** 2026-09-25 · **Recommendation: proceed, with four decisions attached**
 
 > **Amended 2026-09-28.** A cross-model probe overturned this report's two
@@ -28,6 +44,24 @@ incomplete and say so.
 ---
 
 ## 1. Threshold calibration
+
+> **Superseded 2026-09-29 — the numbers below are the 105-still calibration.**
+> The reference set was widened to **121 stills** across four directories
+> (`master_v2`, `outfit`, `lighting`, `body`) and recalibrated: the threshold is
+> now **0.9619**, in `config/persona.yaml`. Evidence:
+> `master-set-widening-2026-09-29.md`.
+>
+> **Everything below carries forward, and that is the point of the re-run.**
+> The cosine between the old centroid and the new is **0.99995** — adding 16
+> stills barely moved it. Overlap fell, equal error rate fell from 0.0102 to
+> 0.0096, true-positive rate rose from 0.9905 to 0.9917, false-positive rate
+> was unchanged at 0.0109. The threshold moved by 0.0002. So §2's pass rates,
+> measured at 0.9609, are not invalidated by the recalibration.
+>
+> **One caveat worth more than the recalibration itself.** Re-running the old
+> calibration on the old data reproduces **0.9617, not the 0.9609 on record** —
+> a 0.0008 discrepancy from non-determinism in the pipeline. Nothing in this
+> report should be read to a fourth decimal place, here or anywhere else.
 
 **Scorer:** dlib ResNet, 128-d, cosine against the L2-normalised centroid of
 the master set. **Threshold 0.9609**, calibrated 2026-09-24.
@@ -356,6 +390,14 @@ Cheapest option is a margin; correct option is a calibration run.
 non-commercial. Everything measured here rests on it. Accept, buy InsightFace,
 or revert to DINOv2.
 
+> **Still open, 2026-09-29.** Unchanged since the report was written, and it is
+> the one open decision that reaches published output rather than measurement.
+> ADR 0004 is accepted *conditional* on it. Scoring during development is
+> unaffected; a published render is not. It does not block Gate A's verdict —
+> nothing measured here becomes wrong if the scorer is later swapped — but it
+> blocks publication, so it must be closed before Phase 4 and ideally before
+> the Phase 3 gate.
+
 **D-D. Is S0.4's LoRA still wanted?** *Reopened 2026-09-25, and closed again
 2026-09-28: the swings above were generated from ordinary portrait keyframes,
 so on this model no action-framed still is needed and the sourcing problem does
@@ -366,6 +408,29 @@ It is no longer on the critical path —
 the finding that a fixed portrait could not produce the battery was wrong, and
 Midjourney stills cover keyframes. Skipping it saves GPU spend and the FLUX
 licence question entirely.
+
+> **Reopened again, and answered differently, 2026-09-29.** The owner chose to
+> build it: task 1.4's pipeline — dataset prep, training, versioned artefact,
+> holdout evaluation — now exists and is testable offline. **No training run has
+> been paid for.**
+>
+> The licence question the 2026-09-28 note said skipping would avoid was
+> therefore faced, and the owner resolved it directly (**ADR 0010**). The
+> finding that matters for planning: FLUX.1-dev's licence is non-commercial and
+> derived LoRAs inherit that restriction. Generating *on fal* is covered because
+> fal pays BFL for a commercial licence; **running the same weights anywhere
+> else is not.** So `inference_must_run_on: fal` and
+> `self_hosting_permitted: false` are recorded in `config/providers.yaml`, and
+> the identity layer is **rented, not owned** — a standing dependency on one
+> vendor, not a one-off cost.
+>
+> `commercial_grant_confirmed_in_writing: false`. The commercial-rights reading
+> rests on fal's marketing copy, not on a contract. Worth confirming in writing
+> before a campaign depends on it.
+>
+> **What it costs to close:** roughly $24 at 1000 steps, $48 at 2000. That is
+> the decision in front of the owner, and it is the first spend that needs the
+> Gate A verdict behind it.
 
 > **Reopened 2026-09-25.** Midjourney stills cover *portrait* keyframes. Frame
 > inspection of the two rejected clips shows both failures begin at the moment
@@ -445,3 +510,61 @@ which is not the same claim and should not have been written as though it were.
 Each was caught by checking rather than by reasoning. **The owner's eye caught every bad clip; the automated gate caught
 none of them.** That asymmetry is the most important thing in this report and
 it should shape how much the Phase 3 automation is trusted.
+
+---
+
+## 9. The verdict — for the owner
+
+*Added 2026-09-29. Everything above is evidence; this section is the decision.*
+
+`BUILD_ORDER.md` §4 offers three outcomes. On the evidence in this report:
+
+| Outcome | Does the evidence support it? |
+|---|---|
+| **Proceed** | **Yes.** Identity separates cleanly (AUC 0.9989, overlap 0.020, and the widened set moved the centroid by a cosine of 0.00005). The formats survive — the constraint that looked fatal was one model family, and turbo renders swings the owner accepted at 1/12th the price. Every stage of the chain is chosen and reproducible. |
+| **Change approach** | **Partly, and it is already folded in.** The scorer is not trustworthy as an auto-reject (§3, D-A), and that is a real finding — but it changes a Phase 3 design, not the approach. It is captured as D-A rather than as a reason to restart. |
+| **Stop** | **No.** Nothing measured suggests the concept cannot be built. |
+
+**My recommendation is proceed.** It is the same recommendation §8 made; what
+this section adds is that the decision is yours to record, not mine to assume.
+
+### What proceeding commits you to
+
+- **Phase 1 continues**, and the first real spend is the LoRA training run:
+  **$24 at 1000 steps, $48 at 2000**.
+- **A rented identity layer.** Inference must run on fal for as long as the
+  LoRA is FLUX-derived (D-D, ADR 0010). That is a standing vendor dependency.
+- **Nothing about publication.** No account, no posting, no audience test.
+  Those sit behind D3 and D7 and are untouched by this verdict.
+
+### What it does not resolve
+
+Four decisions stay open and none of them is a reason to withhold the verdict:
+
+- **D-A** — auto-reject cannot rest on identity scoring. A Phase 3 design task.
+- **D-B** — recalibrate for lip-synced output, or gate before the lip-sync pass.
+- **D-C** — the dlib FaceScrub licence. **Blocks publication, not measurement.**
+- **D-D** — the LoRA is being built; the spend is not yet authorised.
+
+### Two things this report is honest about lacking
+
+- **Operator time was never measured.** §7. It is the number `BUILD_PLAN` §9
+  says decides viability, and the re-baseline can correct the money but not the
+  time. The instrumentation now exists; the measurement moves to the Phase 3
+  gate.
+- **Yield rests on thin samples.** Nine turbo takes across three shots. The
+  discard rate is a floor, not a rate.
+
+### Record the decision here
+
+```
+Gate A verdict:     [ proceed | change approach | stop ]
+Decided by:
+Date:
+Conditions, if any:
+```
+
+**Note on sequencing.** Phase 0 was built before this verdict was recorded,
+against `BUILD_ORDER.md`'s explicit instruction. Recording the verdict now does
+not undo that; it stops the gap widening, and the honest version of the record
+is that the gate was passed in practice before it was passed on paper.
