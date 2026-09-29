@@ -29,7 +29,15 @@ def project(pytester: pytest.Pytester) -> pytest.Pytester:
 
     conftest = Path(__file__).resolve().parents[1] / "conftest.py"
     pytester.makeconftest(conftest.read_text())
-    pytester.makeini("[pytest]\nmarkers =\n    live: spends real money\n")
+    # asyncio_default_fixture_loop_scope is set here only to keep the nested run
+    # quiet: pytest-asyncio warns when it is unset, and this synthetic ini does not
+    # inherit the project's pyproject.toml. Nothing in these tests is async.
+    pytester.makeini(
+        "[pytest]\n"
+        "markers =\n"
+        "    live: spends real money\n"
+        "asyncio_default_fixture_loop_scope = function\n"
+    )
     pytester.makepyfile(test_sample=LIVE_TEST)
     return pytester
 

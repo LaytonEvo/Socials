@@ -9,7 +9,7 @@
 #     make check PY=python3.12
 PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 
-.PHONY: check lint types test fmt install migrate migration demo fetch-models check-embedder clean-runs
+.PHONY: check lint types test fmt install migrate migration worker demo fetch-models check-embedder clean-runs
 
 check: lint types test
 
@@ -61,6 +61,14 @@ migrate:
 # third-party column types without the import they need.
 migration:
 	$(PY) -m alembic revision --autogenerate -m "$(MSG)"
+
+# Run the worker. Reads REDIS_URL and DATABASE_URL from the environment.
+#
+# `make dev` (web + worker, per CLAUDE.md) arrives with the API in Phase 3 — there
+# is no web process to run yet, and a target that starts half of what it claims is
+# worse than one that does not exist.
+worker:
+	$(PY) -m arq workers.settings.WorkerSettings
 
 demo:
 	$(PY) -m scripts.spike.cli demo

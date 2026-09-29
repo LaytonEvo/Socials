@@ -42,8 +42,19 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
       DATABASE_URL: postgresql+psycopg://studio:studio@127.0.0.1:5432/persona_studio_test
+      REDIS_URL: redis://127.0.0.1:6379/1
 
     strategy:
       fail-fast: false
@@ -71,16 +82,16 @@ jobs:
       - name: Check
         run: make check
 
-      # The database tests skip themselves when DATABASE_URL is unset, so a green
-      # run would otherwise prove nothing about the schema. This asserts they
-      # actually ran.
-      - name: The database tests really ran
+      # The service-backed tests skip themselves when DATABASE_URL or REDIS_URL is
+      # unset, so a green run would otherwise prove nothing about the schema or the
+      # queue. This asserts they actually ran.
+      - name: The service-backed tests really ran
         run: |
           python -m pytest tests/app/test_models.py tests/app/test_migrations.py \
-            -q --no-header -p no:randomly 2>&1 | tee db.log
+            tests/app/test_workers.py -q --no-header 2>&1 | tee db.log
           grep -qE "[0-9]+ passed" db.log
           if grep -qE "[0-9]+ skipped" db.log; then
-            echo "::error::database tests skipped -- DATABASE_URL or pgvector is missing"
+            echo "::error::service-backed tests skipped -- DATABASE_URL, REDIS_URL or pgvector is missing"
             exit 1
           fi
 

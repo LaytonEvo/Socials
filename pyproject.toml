@@ -41,7 +41,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
+# pytest-asyncio because the stack is async: arq's queue and worker are, and
+# FastAPI's test client will be. Without it pytest rejects an async test outright
+# rather than running it, so the alternative is an asyncio.run() wrapper in every
+# async test — which is the same dependency, hand-rolled and less correct.
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "types-PyYAML",
+]
 # ADR 0002 candidates. Installed only when you run the bake-off; neither is
 # needed for `make check` or the offline demo.
 dlib = ["dlib>=19.24"]
@@ -106,6 +116,11 @@ check_untyped_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `auto` so an async test needs no decorator. The alternative, `strict`, means a
+# forgotten marker silently skips the test — and a skipped async test looks exactly
+# like a passing one.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: spends real money against a real provider. Never runs by default; needs `-m live` and an explicit `--live-budget`. See tests/conftest.py.",
 ]
