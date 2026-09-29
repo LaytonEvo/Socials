@@ -177,12 +177,44 @@ class ProvidersConfig(BaseModel):
 
 # ------------------------------------------------------------------ budget --
 class BudgetSettings(BaseModel):
+    """D8. A null ceiling is "not set", which is not the same as zero.
+
+    `mode: observe` is the owner's answer of 2026-09-29: price, guard and record
+    every call, but do not refuse on a monthly or per-piece ceiling until there is a
+    month of real spend to set one from. CLAUDE.md still requires every paid call to
+    go through the guard and write a ledger row, and that part is not optional — so
+    observe mode changes what the guard *does*, never whether it runs.
+    """
+
     model_config = STRICT
 
-    monthly_usd: Pendable[Decimal]
-    per_piece_usd: Pendable[Decimal]
+    mode: Literal["observe", "enforce"] = "enforce"
+    monthly_usd: Decimal | None = None
+    per_piece_usd: Decimal | None = None
     warn_at_fraction: Fraction = 0.8
+    #: Amendment A7, and NOT part of what was deferred. This is what actually
+    #: bounds spend in observe mode: a per-run budget the caller states explicitly.
     require_explicit_budget_per_run: bool = True
+    review_after: str | None = None
+
+    @model_validator(mode="after")
+    def _enforce_mode_needs_a_ceiling(self) -> BudgetSettings:
+        """`enforce` with nothing to enforce is a guard that quietly permits everything.
+
+        Observe mode is the honest way to say "no ceiling yet". Claiming to enforce
+        against a null ceiling is the failure this catches.
+        """
+        if self.mode == "enforce" and self.monthly_usd is None and self.per_piece_usd is None:
+            raise ValueError(
+                "budget.mode is 'enforce' but neither monthly_usd nor per_piece_usd is "
+                "set, so there is nothing to enforce. Set a ceiling, or say "
+                "mode: observe — which still prices, guards and records every call."
+            )
+        return self
+
+    @property
+    def observing(self) -> bool:
+        return self.mode == "observe"
 
 
 class BudgetConfig(BaseModel):
@@ -263,6 +295,48 @@ class ContentPolicyConfig(BaseModel):
         return self
 
 
+# ----------------------------------------------------------- kill criteria --
+class AudienceCriteria(BaseModel):
+    model_config = STRICT
+
+    min_retention_pct: Pendable[float]
+    min_views_by_piece_n: Pendable[int]
+    evaluate_after_pieces: Pendable[int]
+
+
+class EconomicsCriteria(BaseModel):
+    model_config = STRICT
+
+    max_cost_per_finished_piece_usd: Pendable[Decimal]
+    #: The threshold BUILD_PLAN Section 9 says decides viability, and the one Spike 0
+    #: could not measure. Pending against an unmeasured quantity is worse than pending
+    #: against a known one, and the file itself says so.
+    max_operator_minutes_per_piece: Pendable[int]
+
+
+class QualityCriteria(BaseModel):
+    model_config = STRICT
+
+    min_identity_pass_rate_pct: Pendable[float]
+    max_owner_reject_rate_pct: Pendable[float]
+
+
+class KillCriteriaSettings(BaseModel):
+    model_config = STRICT
+
+    audience: AudienceCriteria
+    economics: EconomicsCriteria
+    quality: QualityCriteria
+    #: Not thresholds, and not the owner's to trade away later.
+    absolute: list[str] = Field(min_length=1)
+
+
+class KillCriteriaConfig(BaseModel):
+    model_config = STRICT
+
+    kill_criteria: KillCriteriaSettings
+
+
 # ----------------------------------------------------------------- persona --
 class PersonaLook(BaseModel):
     model_config = OPEN
@@ -337,6 +411,9 @@ class PersonaSettings(BaseModel):
     production_mode: Literal["synthetic", "hybrid"]
     disclosure: PersonaDisclosure
     boundaries: PersonaBoundaries
+    #: Spec v1 §2 requires both before publishing, and neither is the build's to do.
+    handles_checked: bool = False
+    domains_registered: bool = False
 
 
 class PersonaConfig(BaseModel):

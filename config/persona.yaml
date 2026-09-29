@@ -8,12 +8,29 @@
 persona:
   id: persona_001
 
-  # ---------------------------------------------------------------- DECIDE --
-  name: PENDING_D1_NAME
-  # Still the only field of D1 outstanding. Spec v1 §2 sets the rules: two
-  # words, easy to say aloud, no golf pun; YouTube, TikTok and Instagram
-  # handles checked together; .co.uk and .com registered. Candidates listed
-  # there are for the owner to check, not for the build to choose.
+  # ------------------------------------------------------------ SETTLED ----
+  name: Mollie
+  name_decided_on: 2026-09-29
+  # Chosen by the owner, recorded verbatim. D1's last field.
+  #
+  # RECORDED AS GIVEN, NOT INTERPRETED. Two things about it are worth flagging
+  # rather than quietly resolving, because spec v1 §2 says the name is "a brand
+  # decision made by the owner, not generated":
+  #
+  #   1. The spec asks for TWO words and this is one. A surname is still open,
+  #      and the build must not invent one. Not blocking: Phase 1's master set
+  #      needs a name, not a full name.
+  #   2. "Mollie" is one letter from "Millie Hart", the first candidate the spec
+  #      lists. If that was the intended name, correct it here — the point of
+  #      recording it verbatim is that neither reading gets assumed.
+  #
+  # Still outstanding from §2, and all owner tasks the build cannot do:
+  #   - surname, if the two-word rule stands
+  #   - YouTube, TikTok and Instagram handles, checked TOGETHER before committing
+  #   - .co.uk and .com registered
+  # These block publishing, not building.
+  handles_checked: false
+  domains_registered: false
 
   # ------------------------------------------------------------ SETTLED ----
   look:
@@ -183,4 +200,6 @@ content:
 # Adjacent human decisions this file does not hold, but which block publishing:
 #   D3 owning entity          D5 kill criteria
 #   D6 named operator         D7 counsel sign-off on disclosure
-#   D8 monthly budget ceiling
+#
+# D8 was answered on 2026-09-29: no ceiling yet, observe real cost first. See
+# config/budget.yaml — the guard still runs, per-run budgets are still required.

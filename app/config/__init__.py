@@ -34,6 +34,7 @@ from .pending import Pending, is_pending, require
 from .schema import (
     BudgetConfig,
     ContentPolicyConfig,
+    KillCriteriaConfig,
     PersonaConfig,
     ProvidersConfig,
     ProviderSlot,
@@ -47,6 +48,7 @@ __all__ = [
     "ContentPolicyConfig",
     "DecisionPending",
     "DisclosureWeakened",
+    "KillCriteriaConfig",
     "Pending",
     "PersonaConfig",
     "PolicyWeakened",
@@ -68,6 +70,7 @@ FILES: dict[str, type[BaseModel]] = {
     "providers.yaml": ProvidersConfig,
     "content_policy.yaml": ContentPolicyConfig,
     "budget.yaml": BudgetConfig,
+    "kill_criteria.yaml": KillCriteriaConfig,
 }
 
 M = TypeVar("M", bound=BaseModel)
@@ -129,6 +132,7 @@ class Config(BaseModel):
     providers: ProvidersConfig
     content_policy: ContentPolicyConfig
     budget: BudgetConfig
+    kill_criteria: KillCriteriaConfig
 
     @property
     def persona_name(self) -> str:
@@ -154,4 +158,5 @@ def load_all(config_dir: Path | None = None) -> Config:
         providers=loaded["providers"],  # type: ignore[arg-type]
         content_policy=loaded["content_policy"],  # type: ignore[arg-type]
         budget=loaded["budget"],  # type: ignore[arg-type]
+        kill_criteria=loaded["kill_criteria"],  # type: ignore[arg-type]
     )

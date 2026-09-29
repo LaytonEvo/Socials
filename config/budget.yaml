@@ -1,35 +1,48 @@
-# D8 — spend ceilings. BUILD_PLAN Section 1: a human decision, and Claude Code
-# must not invent one.
+# D8 — spend ceilings. ANSWERED 2026-09-29: no ceiling yet.
 #
-# Every null below is a deliberate blocker. Task 0.7's cost guard refuses a job
-# that would exceed a ceiling, and a guard with no ceiling is not a guard — so
-# the loader accepts this file while the decision is outstanding, and the guard
-# raises the moment something tries to spend against it.
+# The owner's decision, verbatim in intent: "I would want to run it for a bit and
+# see what the cost looks like before restricting the system."
 #
-# Spike 0 evidence, for sizing the decision rather than making it:
-#   - 66 clips across two batteries cost roughly $14 in total.
-#   - h3-max-turbo is $0.0125/s, so a 5-second take is 6 cents.
-#   - Measured discard rate was 1 in 4, not BUILD_PLAN Section 9's 3 in 5.
-#   - Section 9's cost model ran 2.7x too high at the Fast tier.
-# Generation is not where the money goes. Operator time is, and it has never
-# been measured (see the Phase 3 gate).
+# That is a reasonable call on this evidence. Spike 0 spent about $14 across 66
+# clips, a 5-second take on the cheapest video model is 6 cents, and the measured
+# discard rate was 1 in 4 against the plan's assumed 3 in 5. Generation is not
+# where the money goes.
+#
+# WHAT THIS DOES NOT MEAN. CLAUDE.md requires every paid call to go through the
+# cost guard and write a cost_ledger row in the same transaction, and that is not
+# a ceiling — it is the record. So the guard still runs. What is switched off is
+# only the monthly and per-piece REFUSAL.
 
 budget:
-  # Hard ceiling across all providers for a calendar month. The guard refuses
-  # before the API call, never after.
-  monthly_usd: PENDING_D8
+  # Observe rather than refuse. Every call is still priced, guarded and recorded;
+  # the guard reports instead of blocking when a ceiling is null.
+  mode: observe
 
-  # Ceiling for one content piece, across every take, retry and stage. Phase
-  # one cadence in persona.yaml is 5 shorts a week, so this figure multiplied
-  # by about 22 is the real monthly floor.
-  per_piece_usd: PENDING_D8
+  # null means "no ceiling set", which is different from zero. Fill either in and
+  # the guard starts refusing against it with no other change.
+  monthly_usd: null
+  per_piece_usd: null
 
-  # Warn rather than refuse at this fraction of a ceiling, so a run that is
-  # going to fail does so visibly rather than at the last call.
-  warn_at_fraction: 0.8
+  # THE GAP THIS LEAVES, stated so it is accepted rather than discovered.
+  #
+  # A per-run budget bounds one run. Nothing bounds the SUM of many runs, which is
+  # exactly what a monthly ceiling is for. In observe mode the protection against a
+  # runaway month is a human looking at the spend report, so the report has to
+  # exist and has to be easy to read — which is why `app.costs` provides
+  # spend-to-date queries rather than waiting for task 3.14's full cost report.
+  #
+  # Revisit when there is a month of real numbers. That is the whole point of
+  # observing first.
+  review_after: one_month_of_real_spend
 
-  # Amendment A7, proposed for CLAUDE.md and not yet accepted: no live provider
-  # call outside an explicitly budgeted run. The spike already works this way —
-  # budgets are passed per command and never read from the environment, which is
-  # why there is no budget variable in .env.example.
+  # Still enforced, and not part of what was deferred.
+  #
+  # Amendment A7: no live provider call outside an explicitly budgeted run. Scripts
+  # and pipelines that call a paid provider require an explicit budget argument and
+  # refuse to start without one. This is what actually bounds spend today, and it
+  # is how the spike already worked — every battery ran against a `--budget` the
+  # owner set deliberately.
   require_explicit_budget_per_run: true
+
+  # Warn at this fraction of a ceiling, once there is one. Inert in observe mode.
+  warn_at_fraction: 0.8

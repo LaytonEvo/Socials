@@ -69,12 +69,37 @@ def test_settled_decisions_are_readable() -> None:
     assert len(cfg.content_policy.allowed_formats) == 13
 
 
-def test_outstanding_decisions_load_but_are_not_values() -> None:
-    """D1's name and D8's ceilings are outstanding, and the config still loads."""
+def test_the_decisions_the_owner_has_made_are_recorded() -> None:
+    """Updated 2026-09-29, when two of them landed.
+
+    This previously asserted persona.name and the budget ceilings were still pending,
+    and failed the moment they were answered — which is the test working. It now pins
+    the answers, so a later change is deliberate rather than drift.
+    """
     cfg = load_all(REAL_CONFIG)
-    assert is_pending(cfg.persona.persona.name)
-    assert is_pending(cfg.budget.budget.monthly_usd)
-    assert is_pending(cfg.budget.budget.per_piece_usd)
+    assert cfg.persona.persona.name == "Mollie"
+    # D8 was answered as "no ceiling yet, observe first", which is null rather than
+    # pending: a decision was made, and it was to leave these unset.
+    assert cfg.budget.budget.mode == "observe"
+    assert cfg.budget.budget.monthly_usd is None
+
+
+def test_outstanding_decisions_load_but_are_not_values() -> None:
+    """D5's thresholds are still unmade, and the config still loads.
+
+    This is what the Pending machinery is for, exercised against a real file rather
+    than a synthetic value: the build proceeds while the decision waits, and asking
+    for the value raises instead of returning a placeholder string.
+    """
+    cfg = load_all(REAL_CONFIG)
+    criteria = cfg.kill_criteria.kill_criteria
+    assert is_pending(criteria.economics.max_operator_minutes_per_piece)
+    assert is_pending(criteria.audience.min_retention_pct)
+    with pytest.raises(DecisionPending, match="D5"):
+        require(
+            criteria.quality.max_owner_reject_rate_pct,
+            "kill_criteria.quality.max_owner_reject_rate_pct",
+        )
 
 
 # ----------------------------------------------------- malformed fails fast --
@@ -217,10 +242,22 @@ def test_pending_is_neither_falsy_nor_a_string() -> None:
     assert not isinstance(pending, str)
 
 
-def test_the_persona_name_accessor_explains_which_decision() -> None:
-    cfg = load_all(REAL_CONFIG)
-    with pytest.raises(DecisionPending, match="D1_NAME"):
-        _ = cfg.persona_name
+def test_the_persona_name_is_now_readable() -> None:
+    """D1's last field landed on 2026-09-29."""
+    assert load_all(REAL_CONFIG).persona_name == "Mollie"
+
+
+def test_the_name_is_recorded_as_given_not_interpreted() -> None:
+    """Spec v1 §2 says the name is the owner's decision, "not generated".
+
+    It asks for two words and one was given, and it lists "Millie Hart" as a
+    candidate one letter away. Neither gap is the build's to close, so both are
+    recorded as outstanding rather than resolved — and these flags are what stop a
+    publish happening before the handles and domains exist.
+    """
+    persona = load_all(REAL_CONFIG).persona.persona
+    assert persona.handles_checked is False
+    assert persona.domains_registered is False
 
 
 # ------------------------------------------------------------------ pricing --
