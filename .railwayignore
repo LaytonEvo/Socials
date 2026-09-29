@@ -1,0 +1,8 @@
+# The repository carries 193 MB of reference and evidence imagery. The web view serves
+# the reference sets, so spike/data stays; everything below is build-time weight with no
+# runtime use.
+docs/evidence/
+spike/runs/
+spike/models/
+.venv/
+*.egg-info/
