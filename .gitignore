@@ -17,3 +17,7 @@ ci-spike.yaml
 # has no working download (ADR 0002), so the file itself is the only copy.
 spike/models/*.dat
 !spike/models/face_recognition_densenet_model_v1.dat
+
+# Build metadata. Globbed, not named: the distribution was renamed from
+# persona-studio-spike to persona-studio and the old entry stopped matching.
+*.egg-info/

@@ -1,0 +1,70 @@
+# Task 0.1's acceptance criteria, as a job: `make check` passes on a clean clone.
+#
+# The two existing workflows are Spike 0's and are neither: `calibrate.yml` and
+# `embedder-check.yml` run on specific paths, install heavy optional extras, and
+# exist because this project's development environment blocks huggingface.co and
+# dlib.net. Nothing ran lint, types and tests on an ordinary push until this.
+
+name: Check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # BUILD_PLAN Section 3 targets 3.12 and mypy is pinned to it. 3.11 is
+        # here because `requires-python` claims to support it, and a claim that
+        # nothing tests is a claim that quietly stops being true.
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # Deliberately NOT the dlib or dinov2 extras. `make check` must pass
+      # without them: a contributor who cannot build dlib should still be able
+      # to run the suite, and CI proves that stays true.
+      - name: Install
+        run: make install
+
+      - name: Check
+        run: make check
+
+      # The scaffold is meant to be importable from an INSTALLED distribution,
+      # not just from the repo root where every directory is on sys.path. A
+      # package missing from pyproject passes the suite and then fails in a
+      # deployed container, so it is checked from a directory where the repo
+      # layout cannot help.
+      - name: Imports survive installation
+        run: |
+          cd "$(mktemp -d)"
+          python -c "
+          import importlib
+          mods = [
+              'app', 'app.analytics', 'app.api', 'app.compliance', 'app.costs',
+              'app.identity', 'app.models', 'app.pipeline', 'app.providers',
+              'app.publishing', 'app.ui', 'workers',
+          ]
+          for m in mods:
+              importlib.import_module(m)
+          print(f'{len(mods)} packages import outside the repo root')
+          "
