@@ -59,7 +59,8 @@ dinov2 = [
 [tool.setuptools]
 packages = [
   "app",
-  "app.analytics", "app.api", "app.compliance", "app.costs", "app.identity",
+  "app.analytics", "app.api", "app.compliance", "app.config", "app.costs",
+  "app.identity",
   "app.models", "app.pipeline", "app.providers", "app.publishing", "app.ui",
   "workers",
   "scripts", "scripts.spike",

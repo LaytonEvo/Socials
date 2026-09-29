@@ -1,0 +1,48 @@
+# D5 — the conditions under which this project stops. BUILD_PLAN Section 1: a
+# human decision.
+#
+# Every null is a deliberate blocker. Written down in advance because the point
+# of kill criteria is that they are agreed before the sunk cost exists; decided
+# afterwards they are a negotiation, not a criterion.
+#
+# BUILD_PLAN Phase 4 asks the prior question — "does disclosed synthetic golf
+# content hold attention at all?" — and Phase 4's own gate is where these
+# thresholds first get tested. Note the pre-condition there: no public account
+# exists before D3 (owning entity) and D7 (counsel sign-off).
+
+kill_criteria:
+  # Audience. Measured on the throwaway test identity first (task 4.1), so the
+  # real persona's look is not burned proving the concept.
+  audience:
+    min_retention_pct: PENDING_D5        # average view duration as % of length
+    min_views_by_piece_n: PENDING_D5     # views on piece N or the format is dead
+    evaluate_after_pieces: PENDING_D5    # how many pieces before judging at all
+
+  # Economics. The figure that actually decides viability is the third one, and
+  # it is the one Spike 0 could not measure.
+  economics:
+    max_cost_per_finished_piece_usd: PENDING_D8   # follows from budget.yaml
+    max_operator_minutes_per_piece: PENDING_D5
+    # BUILD_PLAN Section 9: "The real cost is operator time ... That number
+    # decides whether the operation is viable." Spike 0 produced real cost and
+    # yield numbers and no labour numbers at all, so this threshold is being set
+    # against an unmeasured quantity until the Phase 3 gate produces one.
+
+  # Quality. A floor below which the output is not publishable regardless of how
+  # it performs.
+  quality:
+    min_identity_pass_rate_pct: PENDING_D5
+    # Set with care: measured against owner verdicts the identity gate was right
+    # once in three on failures and caught 14% of what a human rejected. It
+    # routes, it does not reject, so its pass rate is a triage statistic and not
+    # a quality measure. A kill criterion built on it would be measuring the
+    # instrument rather than the output.
+    max_owner_reject_rate_pct: PENDING_D5
+
+  # Non-negotiable stops. These are not thresholds and are not the owner's to
+  # trade away later; they are recorded here so the list is in one place.
+  absolute:
+    - a platform requires undisclosed AI content to continue
+    - counsel (D7) advises against publication and the advice is not resolved
+    - the identity scorer's licence cannot be cleared for commercial publication
+    - a real person's likeness is found in the master set or any output

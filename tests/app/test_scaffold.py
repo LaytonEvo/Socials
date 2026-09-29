@@ -25,6 +25,11 @@ APP_PACKAGES = (
     "app.analytics",
     "app.api",
     "app.compliance",
+    # Not in BUILD_PLAN Section 3's layout, which lists ten subpackages and gives
+    # config loading none of them. It is cross-cutting rather than a layer, so it
+    # sits beside them; too small a placement choice to need an ADR, recorded
+    # here so it reads as a decision and not an oversight.
+    "app.config",
     "app.costs",
     "app.identity",
     "app.models",

@@ -1,0 +1,35 @@
+# D8 — spend ceilings. BUILD_PLAN Section 1: a human decision, and Claude Code
+# must not invent one.
+#
+# Every null below is a deliberate blocker. Task 0.7's cost guard refuses a job
+# that would exceed a ceiling, and a guard with no ceiling is not a guard — so
+# the loader accepts this file while the decision is outstanding, and the guard
+# raises the moment something tries to spend against it.
+#
+# Spike 0 evidence, for sizing the decision rather than making it:
+#   - 66 clips across two batteries cost roughly $14 in total.
+#   - h3-max-turbo is $0.0125/s, so a 5-second take is 6 cents.
+#   - Measured discard rate was 1 in 4, not BUILD_PLAN Section 9's 3 in 5.
+#   - Section 9's cost model ran 2.7x too high at the Fast tier.
+# Generation is not where the money goes. Operator time is, and it has never
+# been measured (see the Phase 3 gate).
+
+budget:
+  # Hard ceiling across all providers for a calendar month. The guard refuses
+  # before the API call, never after.
+  monthly_usd: PENDING_D8
+
+  # Ceiling for one content piece, across every take, retry and stage. Phase
+  # one cadence in persona.yaml is 5 shorts a week, so this figure multiplied
+  # by about 22 is the real monthly floor.
+  per_piece_usd: PENDING_D8
+
+  # Warn rather than refuse at this fraction of a ceiling, so a run that is
+  # going to fail does so visibly rather than at the last call.
+  warn_at_fraction: 0.8
+
+  # Amendment A7, proposed for CLAUDE.md and not yet accepted: no live provider
+  # call outside an explicitly budgeted run. The spike already works this way —
+  # budgets are passed per command and never read from the environment, which is
+  # why there is no budget variable in .env.example.
+  require_explicit_budget_per_run: true

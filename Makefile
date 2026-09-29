@@ -1,7 +1,13 @@
 # Always go through `python3 -m` so the tooling runs on the same interpreter
 # that holds the dependencies. A `mypy` on PATH can belong to a different
 # Python and will report every third-party import as missing.
-PY ?= python3
+#
+# A local .venv wins automatically when one exists. On Debian and Ubuntu a
+# virtualenv is not optional — see the `install` target — so without this every
+# command needs PY= spelled out, and forgetting it fails as a missing pydantic
+# rather than as a missing venv. Override explicitly whenever you want:
+#     make check PY=python3.12
+PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 
 .PHONY: check lint types test fmt install demo fetch-models check-embedder clean-runs
 
