@@ -9,9 +9,15 @@
 #     make check PY=python3.12
 PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 
-.PHONY: check lint types test fmt install migrate migration serve worker demo fetch-models check-embedder clean-runs
+.PHONY: check lint types test fmt install migrate migration serve worker demo fetch-models check-embedder clean-runs requirements
 
 check: lint types test
+
+# Regenerate requirements.txt from pyproject.toml. The deployment builder detects a
+# Python project from requirements.txt and not from a setuptools pyproject.toml, so the
+# list is mirrored; tests/test_requirements_sync.py fails if the mirror falls behind.
+requirements:
+	$(PY) scripts/gen_requirements.py
 
 # SRC is every path the tooling covers. `app` and `workers` are the production
 # system; `scripts/spike` is the throwaway harness, still linted because it is

@@ -1,9 +1,30 @@
-# The dependency list lives in pyproject.toml and only there. This file exists
-# because Railway's builder detects a Python project from requirements.txt and
-# installs from it; a bare setuptools pyproject.toml is not a detection trigger,
-# so the first two deploys built an image with an interpreter and no packages,
-# reported SUCCESS and then crash-looped on a missing uvicorn.
+# GENERATED FROM pyproject.toml — do not edit by hand.
 #
-# The single dot installs this project, which resolves its dependencies from
-# pyproject.toml. Do not list packages here — they would drift from the real set.
-.
+# pyproject.toml remains the single source of truth for dependencies. This file is a
+# mirror of its [project].dependencies, kept in step by tests/test_requirements_sync.py,
+# which fails if the two drift apart. Regenerate with `make requirements`.
+#
+# It exists because Railway's builder (Railpack) detects a Python project from
+# requirements.txt; a setuptools pyproject.toml with no lockfile is not a detection
+# trigger, so without this the image builds with an interpreter and no packages, reports
+# SUCCESS and then crash-loops on a missing uvicorn.
+#
+# The list is spelled out rather than a single `.` installing this project. Railpack
+# installs dependencies in a layer that is cached before the source is copied, so at
+# install time there is no pyproject.toml beside this file for `.` to resolve to.
+pyyaml>=6
+numpy>=1.26
+pillow>=10
+pydantic>=2.7
+pydantic-settings>=2.2
+sqlalchemy>=2.0
+alembic>=1.13
+psycopg[binary]>=3.1
+pgvector>=0.2.5
+boto3>=1.34
+arq>=0.26
+redis>=5.0
+fastapi>=0.111
+jinja2>=3.1
+uvicorn[standard]>=0.30
+httpx>=0.27
