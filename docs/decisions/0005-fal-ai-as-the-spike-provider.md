@@ -60,6 +60,31 @@ known.
 
 ## Base model: FLUX.1 [schnell] first
 
+> [!IMPORTANT]
+> **Checked 2026-09-29 at implementation time, and this plan is not executable on
+> fal.** There is no schnell LoRA trainer. fal lists `fal-ai/flux-1/schnell` and
+> `fal-ai/flux/schnell` for inference and no training endpoint for either. Its two
+> FLUX trainers — `fal-ai/flux-lora-fast-training` and
+> `fal-ai/flux-lora-portrait-trainer` — necessarily target `dev`, which is the
+> licence this section was written to avoid.
+>
+> Both are tagged `licenseType: commercial` in fal's own listing. That is fal's
+> statement about its endpoint, not about the FLUX weights, and it does not by itself
+> establish that a LoRA trained through it may be used commercially. Whether fal's
+> arrangement with Black Forest Labs extends commercial rights to derived LoRAs is a
+> legal question, and ADR 0002's precedent is that a licence grey area is a counsel
+> question rather than one the build resolves.
+>
+> **Training is also priced per step**, not per run: $0.02/step on the fast trainer and
+> $0.024/step on the portrait one. A realistic 1000–2000 step run is $20–48, and
+> BUILD_ORDER budgeted 1–3 runs. That is a different order of spend from anything so
+> far, and it needs authorising rather than assuming.
+>
+> Task 1.4 is therefore blocked on both counts. Detail in
+> `docs/reports/lora-base-model-2026-09-29.md`.
+
+
+
 Apache 2.0, commercial use permitted, free. **Do not buy a licence before
 knowing one is needed** — the ADR 0002 pattern: measure the free options, keep
 the paid one as a funded fallback, and buy with evidence rather than a guess.
