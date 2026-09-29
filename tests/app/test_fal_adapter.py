@@ -22,7 +22,7 @@ import httpx
 import pytest
 
 from app.providers import ImageProvider, ImageRequest, JobStatus, ProviderError
-from app.providers.fal import QUEUE_ROOT, FalImageProvider, FalNotConfigured, api_key, data_uri
+from app.providers.fal import QUEUE_ROOT, FalImageProvider, api_key, data_uri
 from app.storage import MemoryStorage, key_for
 
 from .test_storage import PERSONA
@@ -228,10 +228,40 @@ def test_cost_is_estimated_from_the_configured_price() -> None:
 
 
 # ------------------------------------------------------------------- key --
-def test_no_key_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_absent_key_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Because a proxy may be holding the credential.
+
+    Claude Code's cloud environments offer API credentials as a separate thing from
+    environment variables: an egress proxy holds the value, scoped to fal's hostnames,
+    and the session never sees it. Verified on 2026-09-29 — an unauthenticated POST and
+    one with a deliberately wrong key both returned 404 rather than 401, which only
+    happens if the header is being replaced.
+
+    So `api_key()` returns None and the adapter sends no header, rather than raising on
+    a configuration that is working correctly.
+    """
     monkeypatch.delenv("FAL_KEY", raising=False)
-    with pytest.raises(FalNotConfigured, match="lives only for that session"):
-        api_key()
+    assert api_key() is None
+
+
+async def test_no_authorization_header_is_sent_when_there_is_no_key(
+    monkeypatch: pytest.MonkeyPatch, still: Path
+) -> None:
+    """`Key None` would be worse than nothing: it turns a proxy-authenticated request
+    into an explicitly bad one."""
+    monkeypatch.delenv("FAL_KEY", raising=False)
+    transport, seen = _queue()
+    provider = FalImageProvider(
+        model=MODEL,
+        price_usd_per_image=Decimal("0.08"),
+        price_verified_on=dt.date(2026, 9, 28),
+        storage=MemoryStorage(),
+        request_shape={"image_field": "image_urls", "image_field_is_list": True},
+        client=httpx.Client(transport=transport),
+        poll_interval_s=0.0,
+    )
+    await provider.generate(ImageRequest(prompt="p"), key=KEY, source=still)
+    assert "authorization" not in seen[0].headers
 
 
 def test_a_data_uri_carries_the_right_media_type(tmp_path: Path) -> None:

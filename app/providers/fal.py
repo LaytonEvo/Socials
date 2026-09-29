@@ -62,18 +62,29 @@ FREE_STATUS_CODES = frozenset({401, 403, 404, 422})
 
 
 class FalNotConfigured(RuntimeError):
-    """No API key. Never defaulted, and never read from anywhere but the environment."""
+    """No route to an authenticated fal request."""
 
 
-def api_key() -> str:
-    key = os.environ.get(KEY_VAR, "").strip()
-    if not key:
-        raise FalNotConfigured(
-            f"{KEY_VAR} is not set. Add it to the environment's settings so a new session "
-            f"picks it up; a key pasted into a session lives only for that session. "
-            f"See .env.example."
-        )
-    return key
+def api_key() -> str | None:
+    """The key from the environment, or None when something else authenticates.
+
+    Two ways this runs, and the second is why this returns None rather than raising.
+
+    **From a deployment**, `FAL_KEY` is in the environment and the adapter sends it.
+
+    **From a Claude Code cloud session**, the credential is configured as an
+    environment *API credential* rather than a variable: an egress proxy holds it,
+    scoped to `*.fal.run`, `*.fal.ai` and `*.fal.media`, and injects it into outbound
+    requests. The session never sees the value — that is the point of the feature.
+    Verified here on 2026-09-29: an unauthenticated POST and one carrying a
+    deliberately wrong key returned the same 404 for a nonexistent model rather than a
+    401, which only happens if the header is being replaced.
+
+    So an absent key is not an error. Sending no Authorization header lets the proxy
+    supply one; if nothing does, fal answers 401 and the adapter reports it as a free
+    refusal, which is accurate.
+    """
+    return os.environ.get(KEY_VAR, "").strip() or None
 
 
 def data_uri(path: Path) -> str:
@@ -121,9 +132,12 @@ class FalImageProvider:
     # ----------------------------------------------------------------- calls --
     def _client(self) -> httpx.Client:
         if self.client is None:
-            self.client = httpx.Client(
-                headers={"Authorization": f"Key {api_key()}"}, timeout=self.timeout_s
-            )
+            key = api_key()
+            # No header when there is no key: an egress proxy may be holding the
+            # credential and injecting it. Sending `Key None` would be worse than
+            # sending nothing.
+            headers = {"Authorization": f"Key {key}"} if key else {}
+            self.client = httpx.Client(headers=headers, timeout=self.timeout_s)
         return self.client
 
     def _arguments(self, req: ImageRequest, source: Path | None) -> dict[str, Any]:
