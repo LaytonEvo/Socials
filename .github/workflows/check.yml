@@ -23,6 +23,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # pgvector is part of the schema, not an optional extra (amendment A3), so the
+    # image is one that ships it. A plain `postgres` image would make every
+    # database test skip, and a skipped test looks identical to a passing one in a
+    # green run.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+          POSTGRES_DB: persona_studio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://studio:studio@127.0.0.1:5432/persona_studio_test
+
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +70,25 @@ jobs:
 
       - name: Check
         run: make check
+
+      # The database tests skip themselves when DATABASE_URL is unset, so a green
+      # run would otherwise prove nothing about the schema. This asserts they
+      # actually ran.
+      - name: The database tests really ran
+        run: |
+          python -m pytest tests/app/test_models.py tests/app/test_migrations.py \
+            -q --no-header -p no:randomly 2>&1 | tee db.log
+          grep -qE "[0-9]+ passed" db.log
+          if grep -qE "[0-9]+ skipped" db.log; then
+            echo "::error::database tests skipped -- DATABASE_URL or pgvector is missing"
+            exit 1
+          fi
+
+      - name: Migration runs up and down
+        run: |
+          make migrate
+          python -m alembic check
+          python -m alembic downgrade base
 
       # The scaffold is meant to be importable from an INSTALLED distribution,
       # not just from the repo root where every directory is on sys.path. A

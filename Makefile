@@ -9,7 +9,7 @@
 #     make check PY=python3.12
 PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 
-.PHONY: check lint types test fmt install demo fetch-models check-embedder clean-runs
+.PHONY: check lint types test fmt install migrate migration demo fetch-models check-embedder clean-runs
 
 check: lint types test
 
@@ -50,6 +50,17 @@ install:
 
 test:
 	$(PY) -m pytest -q
+
+# Apply migrations. Reads DATABASE_URL from the environment; there is no default,
+# so this cannot quietly run against the wrong database.
+migrate:
+	$(PY) -m alembic upgrade head
+
+# Generate a migration from the models. ALWAYS read what it produced before
+# committing it: autogenerate misses a CREATE EXTENSION, and it renders some
+# third-party column types without the import they need.
+migration:
+	$(PY) -m alembic revision --autogenerate -m "$(MSG)"
 
 demo:
 	$(PY) -m scripts.spike.cli demo
