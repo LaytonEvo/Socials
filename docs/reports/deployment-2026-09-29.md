@@ -68,11 +68,18 @@ before pushing them. That was the actual mistake; the builder confusion followed
 
 ## Open, needs the owner
 
-- **Delete two duplicate services.** `Socials` (`2bf4692e-…`) and `virtuous-art`
-  (`66ca4ecb-…`), both created by me in error. All three services point at the same
-  repository and branch, so every push now triggers three builds. `delete-service` times
-  out after 60s through the MCP transport — four attempts, nothing deleted — so this
-  needs doing in the dashboard. Keep **web**; it holds the domain.
+- **Apply the staged service deletions.** `Socials` (`2bf4692e-…`) and `virtuous-art`
+  (`66ca4ecb-…`), both created by me in error, are **staged for deletion** and need one
+  Apply in the dashboard. Deleting a service requires two-factor verification, which an
+  API token cannot perform — that is why `delete-service` timed out four times rather
+  than reporting a permission error. Keep **web**; it holds the domain.
+
+  This is now blocking, not cosmetic. All three services point at the same repository and
+  branch, so the two pushes here queued six deployments. The workspace will not run six
+  builds at once, so every one of them sits in INITIALIZING and nothing proceeds — with
+  zero failures reported, which makes it look like a slow build rather than a jam.
+  Applying the patch cancels the four deployments belonging to the deleted services and
+  should let web's build through.
 - **Bucket credentials.** `persona-media` exists, but Railway does not expose its
   credentials through the API. They need copying from the dashboard into the environment
   before anything can write to it, the same route the fal key took. Nothing uses the
