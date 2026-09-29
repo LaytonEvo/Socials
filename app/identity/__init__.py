@@ -14,6 +14,17 @@ LoRA base model weights must permit commercial use, and the licence is recorded 
 
 from __future__ import annotations
 
+from .dataset import (
+    DEFAULT_HOLDOUT_FRACTION,
+    NO_FACE_STILLS,
+    TRAIN_EDGE_PX,
+    Still,
+    TrainingSet,
+    build_archive,
+    caption_for,
+    collect,
+    split,
+)
 from .embedder import (
     MIN_FACE_PIXELS,
     DlibEmbedder,
@@ -25,6 +36,14 @@ from .embedder import (
     cosine,
     sha256_of,
 )
+from .evaluation import (
+    MIN_HOLDOUT,
+    Evaluation,
+    HoldoutTooSmall,
+    evaluate,
+    holdout_reference,
+    sanity_check,
+)
 from .master_set import (
     KINDS,
     IngestReport,
@@ -35,23 +54,52 @@ from .master_set import (
     read_still,
     similarities,
 )
+from .training import (
+    FakeLoraTrainer,
+    FalLoraTrainer,
+    LicenceViolation,
+    LoraArtefact,
+    LoraTrainer,
+    TrainingRequest,
+)
 
 __all__ = [
+    "DEFAULT_HOLDOUT_FRACTION",
     "KINDS",
     "MIN_FACE_PIXELS",
+    "MIN_HOLDOUT",
+    "NO_FACE_STILLS",
+    "TRAIN_EDGE_PX",
     "DlibEmbedder",
     "EmbedderNotConfigured",
     "Embedding",
+    "Evaluation",
     "FaceOutcome",
     "FaceReading",
+    "FakeLoraTrainer",
+    "FalLoraTrainer",
+    "HoldoutTooSmall",
     "IngestReport",
+    "LicenceViolation",
+    "LoraArtefact",
+    "LoraTrainer",
     "Rejection",
+    "Still",
+    "TrainingRequest",
+    "TrainingSet",
     "WeightsMismatch",
+    "build_archive",
+    "caption_for",
     "centroid",
+    "collect",
     "cosine",
+    "evaluate",
     "find_images",
+    "holdout_reference",
     "ingest",
     "read_still",
+    "sanity_check",
     "sha256_of",
     "similarities",
+    "split",
 ]
