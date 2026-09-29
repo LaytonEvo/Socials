@@ -8,3 +8,12 @@ spike/models/
 *.egg-info/
 build/
 dist/
+
+# Control sets and the superseded master. The view serves only the four sets named in
+# persona.yaml (master_v2, outfit, lighting, body); the controls exist for calibration
+# and evaluation, which run offline and never in the web service. Excluding them halves
+# the build context — 352 MB to ~187 MB — and nothing the deployed app can reach.
+spike/data/control/
+spike/data/control_v2/
+spike/data/control_hard/
+spike/data/master/
