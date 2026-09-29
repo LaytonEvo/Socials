@@ -61,7 +61,8 @@ packages = [
   "app",
   "app.analytics", "app.api", "app.compliance", "app.config", "app.costs",
   "app.identity",
-  "app.models", "app.pipeline", "app.providers", "app.publishing", "app.ui",
+  "app.models", "app.pipeline", "app.providers", "app.publishing", "app.storage",
+  "app.ui",
   "workers",
   "scripts", "scripts.spike",
 ]

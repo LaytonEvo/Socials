@@ -36,32 +36,35 @@ APP_PACKAGES = (
     "app.pipeline",
     "app.providers",
     "app.publishing",
+    # Also outside BUILD_PLAN Section 3's layout, for the same reason as
+    # app.config: the database stores keys and not blobs, so storage is
+    # cross-cutting rather than one of the ten layers.
+    "app.storage",
     "app.ui",
     "workers",
 )
 
-#: Model-provider SDKs. CLAUDE.md: "No vendor SDK outside `app/providers/`.
-#: Pipeline code uses the adapter protocols only."
+#: Vendor SDKs, each with the ONE package allowed to import it.
 #:
-#: Storage and database drivers are not on this list. They are infrastructure
-#: rather than swappable model vendors, and task 0.4 confines the storage client
-#: to its own wrapper. Add a vendor here when an adapter for it is written.
-VENDOR_SDKS = frozenset(
-    {
-        "anthropic",
-        "elevenlabs",
-        "fal",
-        "fal_client",
-        "google",
-        "heygen",
-        "openai",
-        "replicate",
-        "runwayml",
-    }
-)
-
-#: The only package allowed to import one.
-VENDOR_SDK_HOME = "app.providers"
+#: CLAUDE.md states the rule for model providers: "No vendor SDK outside
+#: `app/providers/`. Pipeline code uses the adapter protocols only." The same
+#: reasoning covers infrastructure clients, which is why boto3 is here with
+#: `app.storage` as its home rather than being exempt: an adapter is what makes a
+#: dependency swappable and a call testable, and storage needs both as much as a
+#: video model does. Add a vendor when its adapter is written.
+VENDOR_SDK_HOMES: dict[str, str] = {
+    "anthropic": "app.providers",
+    "boto3": "app.storage",
+    "botocore": "app.storage",
+    "elevenlabs": "app.providers",
+    "fal": "app.providers",
+    "fal_client": "app.providers",
+    "google": "app.providers",
+    "heygen": "app.providers",
+    "openai": "app.providers",
+    "replicate": "app.providers",
+    "runwayml": "app.providers",
+}
 
 
 def _pyproject_list(*path: str) -> list[str]:
@@ -137,24 +140,24 @@ def test_type_checking_covers_the_production_code() -> None:
     assert "app" in files and "workers" in files
 
 
-def test_no_vendor_sdk_outside_the_providers_package() -> None:
-    """CLAUDE.md: no vendor SDK outside `app/providers/`.
+def test_every_vendor_sdk_stays_in_its_own_package() -> None:
+    """CLAUDE.md: no vendor SDK outside the package that adapts it.
 
-    An adapter is what makes a provider swappable and a call testable. A pipeline
-    module that reaches for a vendor client directly defeats both, and the damage
-    is only visible when the provider has to change — which, in this project,
-    it already has: the video model that renders golf is not the one the spike
-    started on.
+    An adapter is what makes a dependency swappable and a call testable. A module
+    that reaches for a vendor client directly defeats both, and the damage is only
+    visible when the vendor has to change — which in this project it already has:
+    the video model that renders golf is not the one the spike started on.
     """
     offenders: list[str] = []
     for path in _app_source_files():
         module = _module_of(path)
-        if module == VENDOR_SDK_HOME or module.startswith(f"{VENDOR_SDK_HOME}."):
-            continue
-        for vendor in sorted(_imported_roots(path) & VENDOR_SDKS):
-            offenders.append(f"{path.relative_to(REPO)} imports {vendor}")
-    assert not offenders, (
-        "vendor SDKs may only be imported inside app/providers/:\n  " + "\n  ".join(offenders)
+        for vendor in sorted(_imported_roots(path) & set(VENDOR_SDK_HOMES)):
+            home = VENDOR_SDK_HOMES[vendor]
+            if module == home or module.startswith(f"{home}."):
+                continue
+            offenders.append(f"{path.relative_to(REPO)} imports {vendor}, allowed only in {home}")
+    assert not offenders, "vendor SDKs are confined to one package each:\n  " + "\n  ".join(
+        offenders
     )
 
 
