@@ -146,11 +146,44 @@ class EmbedderSettings(BaseModel):
 
 
 class LoraSettings(BaseModel):
+    """The identity layer's base model and the licence constraint on where it runs.
+
+    ADR 0010: commercial use of a FLUX.1 [dev] LoRA is fal's licence, not ours, and it
+    covers work trained and run on their platform. Taking the weights elsewhere falls
+    back under Black Forest Labs' non-commercial terms.
+    """
+
     model_config = STRICT
 
     base_model: str | None = None
+    trainer: str | None = None
+    price_usd_per_step: Decimal | None = None
+    price_verified_on: dt.date | None = None
     base_model_licence: str | None = None
     base_model_licence_verified_on: dt.date | None = None
+    base_model_licence_verified_by: str | None = None
+    #: Where inference is licensed to run. Not a preference.
+    inference_must_run_on: str | None = None
+    self_hosting_permitted: bool = False
+    commercial_grant_confirmed_in_writing: bool = False
+    max_training_runs: int = 3
+
+    @model_validator(mode="after")
+    def _self_hosting_needs_its_own_licence(self) -> LoraSettings:
+        """Config cannot quietly authorise running the weights off-platform.
+
+        CLAUDE.md requires model weights permit commercial use and that the licence be
+        recorded. Here the permission is conditional on WHERE the weights run, so
+        flipping one flag without the other is the mistake worth making unrepresentable.
+        """
+        if self.self_hosting_permitted and not self.commercial_grant_confirmed_in_writing:
+            raise ValueError(
+                "lora.self_hosting_permitted is true while "
+                "commercial_grant_confirmed_in_writing is false. Running the weights off "
+                "fal falls under Black Forest Labs' non-commercial licence (ADR 0010). "
+                "Get it in writing, or buy a BFL licence, before setting this."
+            )
+        return self
 
 
 class ProvidersConfig(BaseModel):

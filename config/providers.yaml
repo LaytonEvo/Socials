@@ -271,6 +271,27 @@ embedder:
 
 # --- LoRA ------------------------------------------------------------------
 lora:
-  base_model: null
-  base_model_licence: null          # must permit commercial use (task 1.4)
-  base_model_licence_verified_on: null
+  # ADR 0010. FLUX.1 [dev] via fal's hosted trainer. ADR 0005 chose schnell to avoid
+  # dev's non-commercial licence; fal has no schnell trainer, so that route does not
+  # exist and this is the one that does.
+  base_model: FLUX.1-dev
+  trainer: fal-ai/flux-lora-portrait-trainer
+  price_usd_per_step: 0.024
+  price_verified_on: 2026-09-29
+  # Commercial use is fal's, not ours. fal pays Black Forest Labs for a commercial
+  # licence and extends it to work trained and run on their platform.
+  base_model_licence: "FLUX.1 [dev] Non-Commercial (BFL); commercial use via fal's own licence, while running on fal"
+  base_model_licence_verified_on: 2026-09-29
+  base_model_licence_verified_by: owner
+  # THE CONSTRAINT THAT MATTERS. Downloading the weights and running them on our own
+  # FLUX.1 [dev] setup falls back under BFL's non-commercial licence. Inference must
+  # go through fal until either fal confirms otherwise in writing or a BFL licence is
+  # bought. lora_version.storage_key is a backup and a version record, NOT a
+  # deployment artefact.
+  inference_must_run_on: fal
+  self_hosting_permitted: false
+  # Outstanding, and a blocker for scale rather than for training: fal's commercial
+  # grant is stated on a model page rather than in the terms. Get it in writing before
+  # a large campaign.
+  commercial_grant_confirmed_in_writing: false
+  max_training_runs: 3

@@ -247,6 +247,7 @@ Worth stating explicitly, because the list above is all criticism and the plan i
 - The adapter-per-provider contract with prices in config and a `verified_on` date. Correct for a domain that churns quarterly.
 - Disclosure enforced in the schema rather than in a flag. Correct, and the reason amendment A4 matters.
 - The two-stage identity pipeline. The flagship video models do not accept custom LoRAs; keyframe-then-animate is the way to own the identity layer rather than rent it.
+  > **Corrected 2026-09-29 by [ADR 0010](decisions/0010-lora-base-model-and-the-rented-identity-layer.md).** The pipeline is right and the word "own" is not. FLUX.1 [dev] is the only base fal will train, and its commercial use is fal's licence rather than ours — valid while the weights run on their platform. The two-stage design still buys control over the face rather than hoping a video model holds it, but the identity layer is **rented**. fal is therefore a hard dependency for keyframe generation, not a swappable provider.
 - The provenance backbone — prompt, seed, model, references and cost per artefact. This is the right spine and everything else hangs off it.
 - Human approval before any publication, permanently.
 - Section 9's judgement that operator time, not generation spend, decides viability. Amendment A1 exists only to make that measurable.

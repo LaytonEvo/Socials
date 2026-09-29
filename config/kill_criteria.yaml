@@ -46,3 +46,8 @@ kill_criteria:
     - counsel (D7) advises against publication and the advice is not resolved
     - the identity scorer's licence cannot be cleared for commercial publication
     - a real person's likeness is found in the master set or any output
+    # Added 2026-09-29 (ADR 0010). Her face is trained on FLUX.1 [dev] and is licensed
+    # for commercial use only while it runs on fal. That is not a procurement
+    # annoyance: moving the identity layer means retraining on another base and
+    # recalibrating against a new master centroid.
+    - fal withdraws or narrows the commercial rights its licence extends to trained LoRAs
