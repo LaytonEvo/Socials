@@ -42,7 +42,8 @@ from app.identity import (
     split,
 )
 from app.identity.dataset import NO_FACE_STILLS, TRAIN_EDGE_PX
-from app.providers.types import JobStatus, ProviderError
+from app.identity.training import MAX_DATA_URI_BYTES, _refuse_oversized_data_uri
+from app.providers.types import JobStatus, ProviderError, ProviderRefused
 
 REPO = Path(__file__).resolve().parents[2]
 ROOTS = {k: REPO / "spike" / "data" / k for k in ("master_v2", "outfit", "lighting", "body")}
@@ -243,6 +244,53 @@ def _artefact(host: str = "fal") -> LoraArtefact:
         licence="FLUX.1 [dev] Non-Commercial; commercial via fal",
         inference_host=host,
     )
+
+
+async def test_an_oversized_data_uri_is_refused_before_it_is_billed(
+    settings: LoraSettings,
+) -> None:
+    """The failure this prevents cost real money to find.
+
+    fal accepts the submission, queues it, spends GPU time, and only then rejects the
+    URL as too long — reporting COMPLETED with no weights. A 22.31 MB data URI did
+    exactly that on 2026-09-30. The refusal has to happen before the POST or it is not
+    a refusal, it is a receipt.
+    """
+    trainer = FalLoraTrainer(settings=settings)
+    oversized = "data:application/zip;base64," + "A" * (MAX_DATA_URI_BYTES + 1)
+
+    with pytest.raises(ProviderRefused, match="presigned URL"):
+        await trainer.train(
+            TrainingRequest(
+                archive_url=oversized,
+                trigger_word="mollie",
+                steps=1000,
+                dataset_hash="h",
+            )
+        )
+
+    assert trainer.jobs == [], "nothing may be recorded as a job before the guard passes"
+
+
+async def test_a_small_data_uri_is_still_allowed(settings: LoraSettings) -> None:
+    """The guard bounds the size, it does not ban the mechanism."""
+    trainer = FalLoraTrainer(
+        settings=settings, client=httpx.Client(transport=_transport()), poll_interval_s=0.0
+    )
+    job = await trainer.train(
+        TrainingRequest(
+            archive_url="data:application/zip;base64,QUFB",
+            trigger_word="mollie",
+            steps=1000,
+            dataset_hash="h",
+        )
+    )
+    assert job.status is JobStatus.SUCCEEDED
+
+
+def test_a_plain_url_is_never_size_checked(settings: LoraSettings) -> None:
+    """A presigned URL is short whatever the archive weighs; only data URIs carry it."""
+    _refuse_oversized_data_uri("https://example.invalid/" + "a" * 5000)
 
 
 def test_weights_refuse_a_host_the_licence_does_not_cover() -> None:

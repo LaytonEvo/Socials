@@ -25,6 +25,19 @@ from app.config import LoraSettings
 from app.providers.fal import QUEUE_ROOT, api_key
 from app.providers.types import JobStatus, ProviderError, ProviderJob, ProviderRefused
 
+#: fal fetches `images_data_url` itself, and rejects a data URI past some length it does
+#: not publish. Measured on 2026-09-30: a **22.31 MB** data URI (102 stills at 1024px)
+#: was accepted by the queue, ran for about two and a half minutes and then failed
+#: validation with `Failed to download archive: Invalid URL: URL too long` — reported as
+#: COMPLETED, which is ADR 0006's trap at training prices rather than image prices.
+#:
+#: The exact ceiling is unknown and is NOT worth probing at roughly $0.24 and three
+#: minutes per attempt. This cap is deliberately far below the one measured failure, and
+#: it exists to turn a paid discovery into a free refusal. A training set of any real
+#: size belongs behind a presigned URL from our own bucket, which is what
+#: `TrainingRequest.archive_url` was documented to carry.
+MAX_DATA_URI_BYTES = 2 * 1024 * 1024
+
 
 class LicenceViolation(RuntimeError):
     """Something tried to use the weights somewhere the licence does not reach."""
@@ -146,6 +159,27 @@ class FakeLoraTrainer:
         return self._artefacts[job.provider_job_id]
 
 
+def _refuse_oversized_data_uri(archive_url: str) -> None:
+    """Refuse before paying to be told, rather than after.
+
+    fal accepts the submission, queues it, spends GPU time and only then rejects the
+    URL — so the failure arrives as a billed COMPLETED with no weights. Catching it here
+    costs nothing.
+    """
+    if not archive_url.startswith("data:"):
+        return
+    size = len(archive_url.encode())
+    if size > MAX_DATA_URI_BYTES:
+        raise ProviderRefused(
+            f"the training archive is a {size / 1048576:.2f} MB data URI, past the "
+            f"{MAX_DATA_URI_BYTES / 1048576:.0f} MB this adapter will send. fal fetches "
+            "this URL itself and rejects a long one AFTER queueing and running, so the "
+            "refusal would arrive as a billed COMPLETED with no weights. Host the "
+            "archive and pass a presigned URL instead — S3_BUCKET and its credentials "
+            "are what this needs."
+        )
+
+
 @dataclass
 class FalLoraTrainer:
     """The real trainer. Written, never run.
@@ -186,6 +220,7 @@ class FalLoraTrainer:
         trainer = self.settings.trainer
         if not trainer:
             raise ProviderRefused("lora.trainer is not set in config/providers.yaml")
+        _refuse_oversized_data_uri(req.archive_url)
 
         job = ProviderJob(provider=self.name, model=trainer)
         self.jobs.append(job)
