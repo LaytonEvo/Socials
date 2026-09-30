@@ -197,3 +197,70 @@ def test_the_edit_list_records_which_audio_policy_was_used() -> None:
 
     edl = EditList(cuts=[Cut(Path("a"), "1", 1.0)])
     assert edl.to_json()["audio"] == "silent"
+
+
+@needs_ffmpeg
+def test_a_cut_keeps_its_audio_only_when_asked(clips: list[Path], tmp_path: Path) -> None:
+    """The decision is a flag on the cut, never inferred from the file.
+
+    Every clip from the video model carries an audio stream — an unconditional invented
+    soundtrack in no identifiable language — so "does this file have audio" selects
+    exactly the takes whose audio has to go. Detecting instead of asking put the loudest
+    thing in the first assembled piece under a b-roll shot: -18.8 dB of gibberish where
+    the speaking shot managed -29.8.
+    """
+    edl = edit_list(
+        [(clips[0], "a", "speaks", True), (clips[1], "b", "b-roll", False)],
+        audio="keep_source",
+    )
+    assert [c.use_audio for c in edl.cuts] == [True, False]
+
+    rough = assemble(edl, tmp_path / "mixed.mp4")
+
+    def loudness(start: float, length: float) -> float:
+        probe = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-hide_banner",
+                "-ss",
+                str(start),
+                "-t",
+                str(length),
+                "-i",
+                str(rough.path),
+                "-af",
+                "volumedetect",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        line = next(ln for ln in probe.stderr.splitlines() if "mean_volume" in ln)
+        return float(line.split("mean_volume:")[1].replace("dB", "").strip())
+
+    first = loudness(0.1, 0.7)
+    second = loudness(1.3, 0.6)
+    assert first > second + 20, (
+        f"the b-roll cut is not silent: {second:.1f} dB against {first:.1f} dB on the "
+        "cut that is meant to carry sound"
+    )
+
+
+def test_a_cut_defaults_to_dropping_its_audio() -> None:
+    """Silence is what you get by not deciding, because the model's track is not a
+    recording of anything."""
+    from app.pipeline.assembler import Cut
+
+    assert Cut(Path("a"), "1", 1.0).use_audio is False
+
+
+@needs_ffmpeg
+def test_the_edit_list_records_which_cuts_speak(clips: list[Path], tmp_path: Path) -> None:
+    """So a silent stretch in a finished render is explainable rather than suspicious."""
+    edl = edit_list([(clips[0], "a", "speaks", True), (clips[1], "b", "quiet", False)])
+    payload = edl.to_json()
+    assert [c["use_audio"] for c in payload["cuts"]] == [True, False]

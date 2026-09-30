@@ -34,6 +34,28 @@ AudioPolicy = Literal["silent", "keep_source"]
 DEFAULT_AUDIO: Final[AudioPolicy] = "silent"
 
 
+def has_audio(video: Path) -> bool:
+    """Whether a file carries an audio stream at all."""
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            str(video),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return bool(result.stdout.strip())
+
+
 @dataclass(frozen=True)
 class Cut:
     """One clip's place in the edit.
@@ -47,6 +69,14 @@ class Cut:
     source_id: str
     duration_s: float
     label: str = ""
+    #: Whether THIS cut's own audio belongs in the render.
+    #:
+    #: Explicit, never inferred from whether the file has an audio stream. Every clip
+    #: from the video model has one — an unconditional invented soundtrack in no
+    #: identifiable language — so "has audio" is true of exactly the takes whose audio
+    #: must be discarded. Only a lip-synced take, carrying the voice its mouth was
+    #: generated against, is worth keeping.
+    use_audio: bool = False
 
 
 @dataclass
@@ -120,7 +150,7 @@ def duration_of(video: Path) -> float:
 
 
 def edit_list(
-    clips: list[tuple[Path, str, str]],
+    clips: list[tuple[Path, str, str]] | list[tuple[Path, str, str, bool]],
     *,
     aspect: str = "9:16",
     audio: AudioPolicy = DEFAULT_AUDIO,
@@ -134,10 +164,20 @@ def edit_list(
     if not clips:
         raise AssemblyFailed("an edit list needs at least one cut")
     cuts = []
-    for path, source_id, label in clips:
+    for entry in clips:
+        path, source_id, label = entry[0], entry[1], entry[2]
+        use_audio = bool(entry[3]) if len(entry) > 3 else False
         if not path.is_file():
             raise AssemblyFailed(f"cut source is missing: {path}")
-        cuts.append(Cut(path=path, source_id=source_id, duration_s=duration_of(path), label=label))
+        cuts.append(
+            Cut(
+                path=path,
+                source_id=source_id,
+                duration_s=duration_of(path),
+                label=label,
+                use_audio=use_audio,
+            )
+        )
     return EditList(cuts=cuts, aspect=aspect, audio=audio)
 
 
@@ -158,10 +198,33 @@ def assemble(edl: EditList, dest: Path) -> RoughCut:
         args += ["-i", str(cut.path)]
 
     if edl.audio == "keep_source":
-        streams = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(len(edl.cuts)))
+        # Per cut, and by the cut's own `use_audio` flag rather than by looking for an
+        # audio stream. Every clip from the video model HAS one — an unconditional
+        # invented soundtrack — so detecting a stream selects precisely the takes whose
+        # audio must go. Keeping it put the loudest thing in the first assembled piece
+        # under a b-roll shot.
+        #
+        # A lip-synced take is the case worth keeping: it arrives carrying the audio its
+        # mouth was generated against, and a separately-laid copy drifts because the
+        # sync stretches time slightly (5.208s out for 5.184s in).
+        #
+        # Cuts without it get generated silence of their own length rather than being
+        # skipped, so the concat receives one audio stream per cut and the picture does
+        # not slide against the sound.
+        parts: list[str] = []
+        pairs: list[str] = []
+        for i, cut in enumerate(edl.cuts):
+            if cut.use_audio and has_audio(cut.path):
+                parts.append(f"[{i}:a:0]aresample=44100,asetpts=N/SR/TB[a{i}];")
+            else:
+                parts.append(
+                    f"anullsrc=r=44100:cl=stereo,atrim=duration={cut.duration_s:.3f}[a{i}];"
+                )
+            pairs.append(f"[{i}:v:0][a{i}]")
+        filters = "".join(parts) + "".join(pairs) + f"concat=n={len(edl.cuts)}:v=1:a=1[v][a]"
         args += [
             "-filter_complex",
-            f"{streams}concat=n={len(edl.cuts)}:v=1:a=1[v][a]",
+            filters,
             "-map",
             "[v]",
             "-map",

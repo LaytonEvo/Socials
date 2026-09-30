@@ -29,7 +29,7 @@ from app.costs.guard import BudgetGuard
 from app.pipeline.assembler import assemble, duration_of, edit_list
 from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.lipsync import lip_sync, should_lip_sync
-from app.pipeline.voice import VoiceLine, narrate, pad_to
+from app.pipeline.voice import pad_to
 from app.providers.fal import QUEUE_ROOT, api_key
 from app.storage.keys import key_for
 from app.storage.s3 import S3Storage, bucket_from_env
@@ -72,8 +72,8 @@ SHOTS: list[Shot] = [
         "still": "a photo of {w}, a young woman in a white golf polo and visor, "
         "head and shoulders, standing on a golf course fairway, smiling at "
         "the camera, golden hour, shallow depth of field",
-        "motion": "she looks at the camera and speaks, small natural head movements, "
-        "gentle breeze in her hair, camera static",
+        "motion": "she looks at the camera and speaks, head still and level, "
+        "eyes on the lens, gentle breeze in her hair, camera static",
         "label": "opening — to camera on the fairway",
         "face_forward": True,
         "line": "Morning. First tee, and for once it isn't raining.",
@@ -163,7 +163,7 @@ def main() -> int:
     image_base = dict((image_slot.request or {}).get("base") or {})
     video_shape = dict(video_slot.request or {})
 
-    clips: list[tuple[Path, str, str]] = []
+    clips: list[tuple[Path, str, str, bool]] = []
     for shot in SHOTS:
         keyframe = args.out / f"{shot['name']}_key.png"
         clip = args.out / f"{shot['name']}.mp4"
@@ -185,7 +185,7 @@ def main() -> int:
             clip.write_bytes(client.get(url, timeout=300.0).content)
             print(f"  -> {clip.name} ({clip.stat().st_size / 1048576:.2f} MB)")
 
-        clips.append((clip, f"piece-golf/{shot['name']}", str(shot["label"])))
+        clips.append((clip, f"piece-golf/{shot['name']}", str(shot["label"]), False))
 
     # ---------------------------------------------------------- her voice --
     voice = config.persona.persona.voice
@@ -233,7 +233,7 @@ def main() -> int:
     persona_id = persona_storage_id(config.persona.persona.id)
     synced: set[str] = set()
 
-    for shot, (clip_path, source_id, label) in zip(SHOTS, list(clips), strict=True):
+    for shot, (clip_path, source_id, label, _) in zip(SHOTS, list(clips), strict=True):
         name = str(shot["name"])
         decision = should_lip_sync(
             face_forward=bool(shot.get("face_forward")), has_dialogue=bool(shot.get("line"))
@@ -266,33 +266,28 @@ def main() -> int:
                 base=sync_base,
                 dest=dest,
             )
-        clips[SHOTS.index(shot)] = (dest, source_id, label)
+        # The synced take keeps its own audio; that is the only track that matches
+        # the mouth it was generated against.
+        clips[SHOTS.index(shot)] = (dest, source_id, label, True)
         synced.add(name)
         print(f"       -> {dest.name}")
 
-    # ----------------------------------------------------------- assemble --
-    edl = edit_list(clips, aspect="9:16")
+    # A synced take arrives carrying the audio its mouth was generated against, so the
+    # assembler keeps that track rather than a separately-laid copy — the copy drifted,
+    # because the sync stretches time slightly.
+    #
+    # Everything else stays silent. Laying her voice over a shot where she is visible
+    # and NOT talking is worse than silence: the first cut of this piece had her
+    # speaking over the swing with her mouth shut.
+    edl = edit_list(clips, aspect="9:16", audio="keep_source")
     print(f"\nedit list     {len(edl.cuts)} cuts, {edl.duration_s:.2f}s, audio={edl.audio}")
+    for shot, cut in zip(SHOTS, edl.cuts, strict=True):
+        speaks = str(shot["name"]) in synced
+        print(f"  {shot['name']:<10} {'speaks' if speaks else 'silent'}  {cut.duration_s:.2f}s")
     rough = assemble(edl, args.out / "rough.mp4")
 
-    # A synced take's mouth is aligned to audio starting at ITS zero, so its line goes
-    # at the cut offset exactly. An unsynced line gets half a second so she is not
-    # already talking as the cut lands.
-    lines: list[VoiceLine] = []
-    offset = 0.0
-    for shot, cut in zip(SHOTS, edl.cuts, strict=True):
-        name = str(shot["name"])
-        at = offset if name in synced else offset + 0.5
-        lines.append(
-            VoiceLine(text=str(shot["line"]), audio=spoken_lines[name], at_s=at, voice_id=voice_id)
-        )
-        offset += cut.duration_s
-
-    spoken = narrate(rough.path, lines, args.out / "spoken.mp4")
-    print(f"narration     {spoken.name}  {len(lines)} lines, {len(synced)} lip-synced")
-
     final = apply_disclosure(
-        spoken, args.out / "final.mp4", overlay=config.persona.persona.disclosure.overlay
+        rough.path, args.out / "final.mp4", overlay=config.persona.persona.disclosure.overlay
     )
     print(f"rough         {rough.path.name}")
     print(f"FINAL         {final.path.name}  '{final.disclosure_text}' at {final.position}")
