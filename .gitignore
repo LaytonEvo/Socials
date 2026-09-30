@@ -25,3 +25,9 @@ spike/models/*.dat
 # setuptools wheel build artefacts (`pip install .` leaves these behind)
 build/
 dist/
+
+# Renders copied to the repository root so the desktop app can open them — it
+# cannot reach into spike/runs/. Same bytes, same reasoning as spike/runs/:
+# evidence, not source. The scores that make a render worth keeping are in
+# docs/reports/, which is where the finding actually lives.
+/*.mp4
