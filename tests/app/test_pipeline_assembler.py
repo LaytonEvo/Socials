@@ -123,3 +123,77 @@ def test_an_edit_list_totals_its_cuts() -> None:
 
     edl = EditList(cuts=[Cut(Path("a"), "1", 2.5), Cut(Path("b"), "2", 3.25)])
     assert edl.duration_s == pytest.approx(5.75)
+
+
+# ------------------------------------------------------------- audio policy --
+def test_assembly_is_silent_by_default() -> None:
+    """The model's soundtrack is not a recording of anything.
+
+    It is generated unconditionally, in an unidentified language nobody chose — 61 of 61
+    clips before 2026-09-28. Carrying it into an assembled piece ships audio no human
+    selected under a persona whose whole premise is being openly accountable. So
+    including it is a choice a caller makes out loud; dropping it is the default.
+    """
+    from app.pipeline.assembler import DEFAULT_AUDIO, EditList
+
+    assert DEFAULT_AUDIO == "silent"
+    assert EditList().audio == "silent"
+
+
+@needs_ffmpeg
+def test_a_silent_assembly_carries_no_audio_stream(clips: list[Path], tmp_path: Path) -> None:
+    """Not a muted track — no track. Nothing downstream can un-mute it by accident."""
+    edl = edit_list([(clips[0], "a", "one"), (clips[1], "b", "two")])
+    rough = assemble(edl, tmp_path / "silent.mp4")
+    streams = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            str(rough.path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert streams.stdout.strip() == "", "a silent assembly must have no audio stream at all"
+
+
+@needs_ffmpeg
+def test_keeping_the_source_audio_has_to_be_asked_for(clips: list[Path], tmp_path: Path) -> None:
+    """The escape hatch exists — it just is not the default."""
+    edl = edit_list([(clips[0], "a", "one")], audio="keep_source")
+    assert edl.audio == "keep_source"
+    rough = assemble(edl, tmp_path / "loud.mp4")
+    streams = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            str(rough.path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert streams.stdout.strip() != ""
+
+
+def test_the_edit_list_records_which_audio_policy_was_used() -> None:
+    """`render.edl_json` should say, so a silent render is explainable later."""
+    from app.pipeline.assembler import Cut, EditList
+
+    edl = EditList(cuts=[Cut(Path("a"), "1", 1.0)])
+    assert edl.to_json()["audio"] == "silent"

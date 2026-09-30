@@ -16,9 +16,22 @@ import shutil
 import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal
 
 from app.pipeline.errors import AssemblyFailed, FfmpegMissing
+
+#: What to do with the audio the source clips arrived with.
+#:
+#: **The default is silence, and that is a deliberate refusal.** The video model
+#: generates a soundtrack unconditionally — there is no flag to turn it off — and it
+#: speaks an unidentified language nobody chose. `config/providers.yaml` has recorded
+#: this since 2026-09-28, after 61 clips came back that way.
+#:
+#: Carrying that into an assembled piece ships audio no human selected, in a language
+#: nobody can read, under a persona who is supposed to be openly and accountably
+#: synthetic. Including it requires saying so; leaving it out does not.
+AudioPolicy = Literal["silent", "keep_source"]
+DEFAULT_AUDIO: Final[AudioPolicy] = "silent"
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,7 @@ class EditList:
 
     cuts: list[Cut] = field(default_factory=list)
     aspect: str = "9:16"
+    audio: AudioPolicy = DEFAULT_AUDIO
 
     @property
     def duration_s(self) -> float:
@@ -55,7 +69,12 @@ class EditList:
             entry = asdict(cut) | {"path": str(cut.path), "offset_s": round(offset, 3)}
             entries.append(entry)
             offset += cut.duration_s
-        return {"aspect": self.aspect, "duration_s": round(self.duration_s, 3), "cuts": entries}
+        return {
+            "aspect": self.aspect,
+            "duration_s": round(self.duration_s, 3),
+            "audio": self.audio,
+            "cuts": entries,
+        }
 
 
 @dataclass(frozen=True)
@@ -100,8 +119,18 @@ def duration_of(video: Path) -> float:
         raise AssemblyFailed(f"unreadable duration for {video}: {result.stdout!r}") from exc
 
 
-def edit_list(clips: list[tuple[Path, str, str]], *, aspect: str = "9:16") -> EditList:
-    """Build an edit list from (path, source_id, label) triples, in order."""
+def edit_list(
+    clips: list[tuple[Path, str, str]],
+    *,
+    aspect: str = "9:16",
+    audio: AudioPolicy = DEFAULT_AUDIO,
+) -> EditList:
+    """Build an edit list from (path, source_id, label) triples, in order.
+
+    `audio` defaults to silence. Keeping the source soundtrack is a choice a caller has
+    to make out loud, because on this model it is not a recording of anything — see
+    `AudioPolicy`.
+    """
     if not clips:
         raise AssemblyFailed("an edit list needs at least one cut")
     cuts = []
@@ -109,7 +138,7 @@ def edit_list(clips: list[tuple[Path, str, str]], *, aspect: str = "9:16") -> Ed
         if not path.is_file():
             raise AssemblyFailed(f"cut source is missing: {path}")
         cuts.append(Cut(path=path, source_id=source_id, duration_s=duration_of(path), label=label))
-    return EditList(cuts=cuts, aspect=aspect)
+    return EditList(cuts=cuts, aspect=aspect, audio=audio)
 
 
 def assemble(edl: EditList, dest: Path) -> RoughCut:
@@ -127,26 +156,35 @@ def assemble(edl: EditList, dest: Path) -> RoughCut:
     args: list[str] = ["ffmpeg", "-nostdin", "-y", "-loglevel", "error"]
     for cut in edl.cuts:
         args += ["-i", str(cut.path)]
-    streams = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(len(edl.cuts)))
-    args += [
-        "-filter_complex",
-        f"{streams}concat=n={len(edl.cuts)}:v=1:a=1[v][a]",
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        "20",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        str(dest),
-    ]
+
+    if edl.audio == "keep_source":
+        streams = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(len(edl.cuts)))
+        args += [
+            "-filter_complex",
+            f"{streams}concat=n={len(edl.cuts)}:v=1:a=1[v][a]",
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+        ]
+    else:
+        # Video only. Not "mute the track" — the track is not carried at all, so there
+        # is nothing for anything downstream to un-mute by accident.
+        streams = "".join(f"[{i}:v:0]" for i in range(len(edl.cuts)))
+        args += [
+            "-filter_complex",
+            f"{streams}concat=n={len(edl.cuts)}:v=1:a=0[v]",
+            "-map",
+            "[v]",
+            "-an",
+        ]
+
+    args += ["-c:v", "libx264", "-preset", "medium", "-crf", "20", str(dest)]
+
     result = subprocess.run(args, capture_output=True, text=True, check=False)
     if result.returncode != 0 or not dest.is_file():
         raise AssemblyFailed(f"assembly failed: {result.stderr.strip()[:500]}")
