@@ -402,11 +402,32 @@ class PersonaVoice(BaseModel):
     provenance_checked: bool = False
 
 
+class DisclosureOverlay(BaseModel):
+    """The on-video overlay's appearance (task 3.10).
+
+    Every field here is about how it LOOKS. There is deliberately no field about
+    whether it appears: `apply_disclosure` takes no such argument, and `FinalRender`
+    cannot be constructed without running the pass.
+    """
+
+    model_config = OPEN
+
+    #: Refused if blank at render time — config may choose the wording, not silence.
+    text: str = "AI-generated"
+    position: str = "bottom-left"
+    font_height_fraction: float = Field(default=0.03, gt=0.0, le=0.5)
+    margin_fraction: float = Field(default=0.025, ge=0.0, le=0.4)
+    text_colour: str = "white"
+    box_colour: str = "black@0.55"
+    box_padding_px: int = Field(default=10, ge=0, le=200)
+
+
 class PersonaDisclosure(BaseModel):
     model_config = OPEN
 
     openly_ai: bool
     never_claims_to_be_human: bool
+    overlay: DisclosureOverlay = Field(default_factory=DisclosureOverlay)
 
     @model_validator(mode="after")
     def _disclosure_cannot_be_turned_off(self) -> PersonaDisclosure:

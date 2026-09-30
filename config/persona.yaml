@@ -204,6 +204,22 @@ persona:
     source: docs/spec/persona-spec-v1.md §6
     openly_ai: true                  # in bio, from day one
     never_claims_to_be_human: true
+    # The ON-VIDEO overlay (task 3.10). Text and position are configurable;
+    # WHETHER it appears is not. There is no flag here that turns it off, and
+    # the render path has no branch that skips it — `FinalRender` cannot be
+    # constructed except by the pass that burns this in.
+    overlay:
+      text: "AI-generated"
+      # top-left | top-right | bottom-left | bottom-right
+      position: bottom-left
+      # Fraction of video height. 0.030 puts ~23px on a 768p frame, which
+      # survives the 9:16 crop and platform re-encoding.
+      font_height_fraction: 0.030
+      # Fraction of the shorter edge, so the inset scales with the frame.
+      margin_fraction: 0.025
+      text_colour: "white"
+      box_colour: "black@0.55"
+      box_padding_px: 10
     # Consistent with BUILD_PLAN principle 3, which enforces this in code:
     # no render exports without the overlay, no publication record without
     # the AI-label flag. Spec v1 adds the commercial reasoning.
