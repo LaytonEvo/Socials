@@ -72,12 +72,16 @@ class TrainingSet:
         Covers the trigger word and both sides of the split, because a version trained
         on the same images with a different holdout is a different version — its
         evaluation numbers are not comparable.
+
+        Identifies the stills by `name` rather than by path, so the same split hashes the
+        same wherever the repository is checked out. A provenance value that changes with
+        the working directory identifies nothing.
         """
         payload = json.dumps(
             {
                 "trigger_word": self.trigger_word,
-                "train": sorted(s.path.as_posix() for s in self.train),
-                "holdout": sorted(s.path.as_posix() for s in self.holdout),
+                "train": sorted(s.name for s in self.train),
+                "holdout": sorted(s.name for s in self.holdout),
             },
             sort_keys=True,
         )
@@ -118,9 +122,17 @@ def split(
 ) -> TrainingSet:
     """Split into train and holdout, deterministically and stratified by kind.
 
-    Deterministic by hashing each path with a seed rather than shuffling with a random
+    Deterministic by hashing each still with a seed rather than shuffling with a random
     number generator: the same inputs give the same split on any machine and any Python
     version, which a seeded RNG does not reliably promise across releases.
+
+    Keyed on `Still.name` — `kind-stem` — and NOT on the path. Hashing the path made the
+    split depend on where the repository happened to be checked out: an absolute path and
+    a relative one to the same file ranked differently, so the same images produced a
+    different train/holdout split and a different `dataset_hash` on another machine. That
+    defeats both the reproducibility this promises and the provenance the hash records.
+    `name` is already required to be unique, because `build_archive` uses it as the
+    filename inside the training archive.
     """
     if not 0.0 < holdout_fraction < 1.0:
         raise ValueError(f"holdout_fraction must be between 0 and 1, got {holdout_fraction}")
@@ -133,7 +145,7 @@ def split(
     for _kind, members in sorted(by_kind.items()):
         ranked = sorted(
             members,
-            key=lambda s: hashlib.sha256(f"{seed}:{s.path.as_posix()}".encode()).hexdigest(),
+            key=lambda s: hashlib.sha256(f"{seed}:{s.name}".encode()).hexdigest(),
         )
         # At least one held back per kind where the kind has more than one member, so
         # every kind can say something at evaluation. A kind of one contributes nothing
@@ -143,8 +155,8 @@ def split(
         result.holdout.extend(ranked[:take])
         result.train.extend(ranked[take:])
 
-    result.train.sort(key=lambda s: s.path.as_posix())
-    result.holdout.sort(key=lambda s: s.path.as_posix())
+    result.train.sort(key=lambda s: s.name)
+    result.holdout.sort(key=lambda s: s.name)
     return result
 
 

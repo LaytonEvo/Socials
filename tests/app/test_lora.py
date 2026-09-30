@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import os
 import zipfile
 from decimal import Decimal
 from pathlib import Path
@@ -77,6 +78,38 @@ def test_the_split_is_deterministic(stills: list[Still]) -> None:
     second = split(stills, trigger_word="MOLLIE")
     assert first.dataset_hash() == second.dataset_hash()
     assert [s.path for s in first.holdout] == [s.path for s in second.holdout]
+
+
+def test_the_split_does_not_depend_on_where_the_repo_is_checked_out(
+    stills: list[Still],
+) -> None:
+    """The same images must split the same way from an absolute or a relative path.
+
+    This failed before the split was keyed on `Still.name`: it hashed
+    `path.as_posix()`, so an absolute path and a relative one to the same file ranked
+    differently and produced different halves. A holdout that changes with the working
+    directory cannot validate anything, and the `dataset_hash` recorded on the artefact
+    identified the checkout rather than the data.
+    """
+    relative = [Still(Path(os.path.relpath(s.path, Path.cwd())), s.kind) for s in stills]
+    absolute = [Still(s.path.resolve(), s.kind) for s in stills]
+
+    a = split(relative, trigger_word="mollie")
+    b = split(absolute, trigger_word="mollie")
+
+    assert [s.name for s in a.holdout] == [s.name for s in b.holdout]
+    assert [s.name for s in a.train] == [s.name for s in b.train]
+    assert a.dataset_hash() == b.dataset_hash()
+
+
+def test_the_dataset_hash_survives_a_move(stills: list[Still]) -> None:
+    """Provenance that changes when the directory changes identifies nothing."""
+    here = split(stills, trigger_word="mollie")
+    moved = split(
+        [Still(Path("/somewhere/else") / s.kind / s.path.name, s.kind) for s in stills],
+        trigger_word="mollie",
+    )
+    assert here.dataset_hash() == moved.dataset_hash()
 
 
 def test_a_different_trigger_word_is_a_different_dataset(stills: list[Still]) -> None:
