@@ -93,6 +93,46 @@ def video_duration(video: Path) -> float:
         raise NarrationFailed(f"unreadable duration for {video}: {result.stdout!r}") from exc
 
 
+def pad_to(audio: Path, seconds: float, dest: Path) -> Path:
+    """Pad a spoken line with trailing silence until it is `seconds` long.
+
+    The lip-sync provider refuses a take whose audio and video lengths are "too
+    different" — 2.77 seconds of speech against a 5.18 second clip was enough to be
+    rejected, even with duration adjustment enabled. Padding makes the line as long as
+    the shot it belongs to, so the sync has matching inputs and the mouth simply closes
+    once she stops talking.
+
+    Trailing, never leading: the speech must still begin at zero, because a synced
+    take's mouth is aligned to its own audio from the first frame.
+    """
+    _require_ffmpeg()
+    if not audio.is_file():
+        raise NarrationFailed(f"no such audio to pad: {audio}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(audio),
+            "-af",
+            f"apad=whole_dur={seconds:.3f}",
+            "-t",
+            f"{seconds:.3f}",
+            str(dest),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not dest.is_file():
+        raise NarrationFailed(f"could not pad {audio}: {result.stderr.strip()[:300]}")
+    return dest
+
+
 def _require_ffmpeg() -> None:
     if shutil.which("ffmpeg") is None:
         raise NarrationFailed("ffmpeg is not on PATH; narration cannot be laid down")

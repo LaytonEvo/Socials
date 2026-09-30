@@ -18,7 +18,7 @@ import sys
 import time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 
@@ -26,14 +26,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import load_all
 from app.costs.guard import BudgetGuard
-from app.pipeline.assembler import assemble, edit_list
+from app.pipeline.assembler import assemble, duration_of, edit_list
 from app.pipeline.disclosure import apply_disclosure
-from app.pipeline.voice import VoiceLine, narrate
+from app.pipeline.lipsync import lip_sync, should_lip_sync
+from app.pipeline.voice import VoiceLine, narrate, pad_to
 from app.providers.fal import QUEUE_ROOT, api_key
+from app.storage.keys import key_for
+from app.storage.s3 import S3Storage, bucket_from_env
 from scripts.evaluate_lora import generate as generate_image
+from scripts.train_lora import persona_storage_id
 from scripts.video_identity_test import submit_clip
 
 ROOT = Path(__file__).resolve().parent.parent
+
 
 #: The shot list. Golf content, in her clothes, on a course — which is what the persona
 #: is for. Each entry is a still prompt, the motion applied to it, and what she says.
@@ -50,7 +55,18 @@ ROOT = Path(__file__).resolve().parent.parent
 #: there was simply not enough face to measure. Apparent face size is the variable the
 #: spike's condition matrix kept finding underneath its other results, and a shot list
 #: that leaves it to the model is one that will sometimes produce unmeasurable footage.
-SHOTS = [
+class Shot(TypedDict):
+    """One entry in the shot list. Typed because `face_forward` drives real spend."""
+
+    name: str
+    still: str
+    motion: str
+    label: str
+    face_forward: bool
+    line: str
+
+
+SHOTS: list[Shot] = [
     {
         "name": "01_intro",
         "still": "a photo of {w}, a young woman in a white golf polo and visor, "
@@ -59,6 +75,7 @@ SHOTS = [
         "motion": "she looks at the camera and speaks, small natural head movements, "
         "gentle breeze in her hair, camera static",
         "label": "opening — to camera on the fairway",
+        "face_forward": True,
         "line": "Morning. First tee, and for once it isn't raining.",
     },
     {
@@ -70,6 +87,7 @@ SHOTS = [
         "motion": "she walks forward carrying her bag, camera tracks alongside at the "
         "same height, her face stays in frame",
         "label": "b-roll — walking the fairway",
+        "face_forward": False,
         "line": "Long way to the green from here.",
     },
     {
@@ -80,6 +98,7 @@ SHOTS = [
         "motion": "she takes the club back and swings through, full follow through, "
         "camera static at chest height",
         "label": "the swing",
+        "face_forward": False,
         "line": "Right. Let's see where that one goes.",
     },
 ]
@@ -116,6 +135,19 @@ def main() -> int:
     voice_cost = guard.estimate("voice", "primary", Decimal(chars) / Decimal(1000))
     estimate += voice_cost
     print(f"voice         {chars} characters = ${voice_cost}")
+    sync_slot, _, _ = guard.price("lipsync", "primary")
+    to_sync = [
+        s
+        for s in SHOTS
+        if should_lip_sync(face_forward=s["face_forward"], has_dialogue=bool(s["line"])).sync
+    ]
+    sync_cost = guard.estimate("lipsync", "primary", seconds * len(to_sync))
+    estimate += sync_cost
+    print(f"lip sync      {sync_slot.model}")
+    print(
+        f"              {len(to_sync)} of {len(SHOTS)} shots (face-forward + dialogue) "
+        f"= ${sync_cost}"
+    )
     print("audio         the model's own soundtrack is dropped; her voice replaces it")
     if args.dry_run:
         print("\n--dry-run: nothing billed.")
@@ -155,27 +187,23 @@ def main() -> int:
 
         clips.append((clip, f"piece-golf/{shot['name']}", str(shot["label"])))
 
-    edl = edit_list(clips, aspect="9:16")
-    print(f"\nedit list     {len(edl.cuts)} cuts, {edl.duration_s:.2f}s, audio={edl.audio}")
-    rough = assemble(edl, args.out / "rough.mp4")
-
-    # Her voice, laid over the silent cut. Not the video model's invented soundtrack.
+    # ---------------------------------------------------------- her voice --
     voice = config.persona.persona.voice
     if not voice.voice_id:
         raise SystemExit("persona.voice.voice_id is not set; there is no voice to speak in")
     voice_id = str(voice.voice_id)
     voice_slot, _, _ = guard.price("voice", "primary")
-    shape = dict(voice_slot.request or {})
-    lines: list[VoiceLine] = []
-    offset = 0.0
-    for shot, cut in zip(SHOTS, edl.cuts, strict=True):
+    voice_shape = dict(voice_slot.request or {})
+
+    spoken_lines: dict[str, Path] = {}
+    for shot in SHOTS:
         text = str(shot["line"])
         audio = args.out / f"{shot['name']}_voice.mp3"
         if not (args.skip_generate and audio.is_file()):
             assert voice_slot.model is not None
             arguments: dict[str, Any] = {
-                str(shape.get("text_field", "text")): text,
-                str(shape.get("voice_field", "voice")): voice_id,
+                str(voice_shape.get("text_field", "text")): text,
+                str(voice_shape.get("voice_field", "voice")): voice_id,
                 **dict(voice.options or {}),
             }
             r = client.post(f"{QUEUE_ROOT}/{voice_slot.model}", json=arguments)
@@ -194,13 +222,74 @@ def main() -> int:
             if not url:
                 raise SystemExit(f"TTS returned no audio: {str(payload)[:300]}")
             audio.write_bytes(client.get(url, timeout=120.0).content)
-        # Half a second in, so she is not already talking as the cut lands.
-        lines.append(VoiceLine(text=text, audio=audio, at_s=offset + 0.5, voice_id=voice_id))
+        spoken_lines[str(shot["name"])] = audio
         print(f"  voice {shot['name']}: {text!r}")
+
+    # ----------------------------------------------------------- lip sync --
+    # Task 3.7's rule, applied per take rather than to the assembled piece: sync is a
+    # property of a shot, not of a render.
+    sync_base = dict((sync_slot.request or {}).get("base") or {})
+    storage = S3Storage(bucket=bucket_from_env())
+    persona_id = persona_storage_id(config.persona.persona.id)
+    synced: set[str] = set()
+
+    for shot, (clip_path, source_id, label) in zip(SHOTS, list(clips), strict=True):
+        name = str(shot["name"])
+        decision = should_lip_sync(
+            face_forward=bool(shot.get("face_forward")), has_dialogue=bool(shot.get("line"))
+        )
+        print(f"  sync {name}: {'YES' if decision.sync else 'no '} — {decision.reason}")
+        if not decision.sync:
+            continue
+        dest = args.out / f"{name}_synced.mp4"
+        if not (args.skip_generate and dest.is_file()):
+            # Presigned rather than a public upload: the provider must fetch these, and
+            # fal's own CDN is public (ADR 0006).
+            # The provider refuses inputs whose durations differ much, so the line is
+            # padded with trailing silence to the length of the shot it belongs to.
+            padded = pad_to(
+                spoken_lines[name],
+                duration_of(clip_path),
+                args.out / f"{name}_voice_padded.mp3",
+            )
+            video_key = key_for(persona_id, "take", f"{name}-take.mp4")
+            audio_key = key_for(persona_id, "voice", f"{name}-line.mp3")
+            storage.put(video_key, clip_path.read_bytes(), content_type="video/mp4", overwrite=True)
+            storage.put(audio_key, padded.read_bytes(), content_type="audio/mpeg", overwrite=True)
+            assert sync_slot.model is not None
+            lip_sync(
+                client,
+                queue_root=QUEUE_ROOT,
+                model=sync_slot.model,
+                video_url=storage.presign_get(video_key, expires_in=3600),
+                audio_url=storage.presign_get(audio_key, expires_in=3600),
+                base=sync_base,
+                dest=dest,
+            )
+        clips[SHOTS.index(shot)] = (dest, source_id, label)
+        synced.add(name)
+        print(f"       -> {dest.name}")
+
+    # ----------------------------------------------------------- assemble --
+    edl = edit_list(clips, aspect="9:16")
+    print(f"\nedit list     {len(edl.cuts)} cuts, {edl.duration_s:.2f}s, audio={edl.audio}")
+    rough = assemble(edl, args.out / "rough.mp4")
+
+    # A synced take's mouth is aligned to audio starting at ITS zero, so its line goes
+    # at the cut offset exactly. An unsynced line gets half a second so she is not
+    # already talking as the cut lands.
+    lines: list[VoiceLine] = []
+    offset = 0.0
+    for shot, cut in zip(SHOTS, edl.cuts, strict=True):
+        name = str(shot["name"])
+        at = offset if name in synced else offset + 0.5
+        lines.append(
+            VoiceLine(text=str(shot["line"]), audio=spoken_lines[name], at_s=at, voice_id=voice_id)
+        )
         offset += cut.duration_s
 
     spoken = narrate(rough.path, lines, args.out / "spoken.mp4")
-    print(f"narration     {spoken.name}  {len(lines)} lines in voice {voice_id}")
+    print(f"narration     {spoken.name}  {len(lines)} lines, {len(synced)} lip-synced")
 
     final = apply_disclosure(
         spoken, args.out / "final.mp4", overlay=config.persona.persona.disclosure.overlay

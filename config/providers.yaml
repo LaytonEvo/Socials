@@ -229,11 +229,21 @@ providers:
       verified_on: 2026-09-24
       request:
         base:
-          # Refused without this: our clips are silent by design and heygen
-          # requires an audio track, then rejects a speech/video duration
-          # mismatch outright where other models silently trim.
+          # "Allow duration adjustment to match the new audio." Required, because
+          # without it the model rejects a speech/video duration mismatch outright
+          # where other models silently trim — and our lines are shorter than our
+          # clips almost every time.
+          #
+          # The consequence is deliberate and worth stating: a synced take comes back
+          # at the LENGTH OF ITS LINE, not the length of the source clip. The edit
+          # list is therefore built AFTER the sync, never before.
           enable_dynamic_duration: true
-          end_time: auto
+      # Schema read from the endpoint's own OpenAPI on 2026-09-30. `end_time` was
+      # previously set to the string "auto" here, which is not a value it accepts —
+      # it takes a number of seconds for a PARTIAL sync, or nothing at all. It was
+      # never exercised, so the error sat in config until the first real call
+      # returned 422. Validation rejections are free; this one cost nothing but the
+      # time to read the schema properly.
 
   # --- Voice ---------------------------------------------------------------
   voice:
