@@ -30,6 +30,16 @@
      margin:.2em 0 .1em;line-height:1.05}
   .sub{color:var(--ink-2);margin:0}
   section{padding-block:30px;border-bottom:1px solid var(--rule)}
+  .compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));
+           gap:16px;margin:20px 0}
+  .compare figure{margin:0}
+  .compare img{width:100%;max-width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;
+               border:1px solid var(--rule);display:block;background:var(--sunk)}
+  .compare figcaption{font-size:.82rem;color:var(--ink-2);margin-top:8px;line-height:1.45}
+  .scale-note{background:var(--sunk);border-left:3px solid var(--accent);
+              padding:14px 16px;margin:18px 0;border-radius:0 6px 6px 0;font-size:.92rem}
+  h3{font-family:var(--serif);font-size:1.12rem;margin:28px 0 .4em}
+  .muted{color:var(--muted)}
   h2{font-family:var(--serif);font-size:1.4rem;margin:0 0 14px}
   h3{font-size:.95rem;margin:20px 0 8px}
   p{margin:0 0 12px;max-width:66ch}
@@ -138,11 +148,81 @@
       <tr><td>Price</td><td>${{ lora.price_usd_per_step }} per step — 1000 steps is ${{ "%.0f"|format(lora.price_usd_per_step * 1000) }}</td></tr>
       <tr><td>Licence</td><td>{{ lora.base_model_licence }}</td></tr>
       <tr><td>May run on</td><td><span class="pill bad">{{ lora.inference_must_run_on }} only</span></td></tr>
+      {% if lora_run %}
+      <tr><td>Trained</td><td><span class="pill ok">v1 — {{ lora_run.artefact.trained_on }}</span>, {{ lora_run.artefact.steps }} steps, ${{ lora_run.artefact.cost_usd }}</td></tr>
+      {% else %}
       <tr><td>Trained</td><td><span class="pill warn">not yet</span></td></tr>
+      {% endif %}
     </tbody>
   </table></div>
   <p class="note">Commercial use is fal's licence rather than ours, and it holds while the weights run on their platform. Taking them elsewhere falls back under a non-commercial licence, so the identity layer is <strong>rented, not owned</strong>.</p>
 </section>
+
+{% if lora_run %}
+<section>
+  <h2>How well the LoRA holds her face</h2>
+
+  <p>Trained on <strong>{{ lora_run.artefact.train_count }}</strong> stills with
+  <strong>{{ lora_run.artefact.holdout_count }}</strong> held back. Generated images are scored
+  against a centroid built from <em>those held-back stills only</em> — score against images the
+  model trained on and you measure memorisation, which always flatters.</p>
+
+  <div class="scale-note">
+    <strong>Read every figure against the ceiling, not the threshold.</strong>
+    Her own real stills score <span class="m">{{ "%.5f"|format(lora_run.ceiling) }}</span> on this
+    split. That is what a perfect likeness reaches. The pass mark is
+    <span class="m">{{ look.identity_threshold }}</span>, and merely clearing it is not the same as
+    being good.
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr><th>Prompts</th><th>Strength</th><th>Passed</th><th>Mean</th><th>Lowest</th></tr></thead>
+    <tbody>
+      {% for r in lora_run.runs %}
+      <tr>
+        <td>{{ r.label }}{% if r.unusable %} <span class="muted">({{ r.unusable }} no face)</span>{% endif %}</td>
+        <td class="m">{{ r.scale }}</td>
+        <td class="m">{{ r.passed }} / {{ r.generated }}</td>
+        <td class="m">{% if r.mean %}{{ "%.5f"|format(r.mean) }}{% else %}—{% endif %}</td>
+        <td class="m">{% if r.min %}{{ "%.5f"|format(r.min) }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+
+  <h3>The golf problem, and the setting that fixed most of it</h3>
+  <p>At strength 1.0 the golf prompt failed three times in four and produced a
+  <strong>visibly different woman</strong>. Her reference set is 87% portraits, so the model
+  learned a portrait of her rather than a person — identity survives inside the framing the
+  training data covers and drifts outside it.</p>
+
+  <div class="compare">
+    <figure>
+      <img src="/static/lora/golf-scale-1.0.png" alt="Golf course prompt at LoRA strength 1.0 — a different woman">
+      <figcaption><span class="pill bad">strength 1.0 — rejected</span> Scored 0.94037. Not her.</figcaption>
+    </figure>
+    <figure>
+      <img src="/static/lora/golf-scale-1.3.png" alt="Golf course prompt at LoRA strength 1.3 — Mollie">
+      <figcaption><span class="pill ok">strength 1.3 — passed</span> 2 of 3 takes, 0.97344 mean.</figcaption>
+    </figure>
+    <figure>
+      <img src="/static/lora/portrait.png" alt="Portrait prompt, the framing the reference set covers">
+      <figcaption><span class="pill ok">control</span> The framing the reference set actually covers.</figcaption>
+    </figure>
+  </div>
+
+  <p class="note">Raising LoRA strength usually buys likeness by destroying prompt control, so the
+  portraits were re-run as the check — they improved too, to 0.97948, within 0.005 of the ceiling.
+  It is not a trade-off, so <span class="m">lora_scale: {{ lora_scale }}</span> is now the configured
+  default. Not pushed higher: three takes is three takes, and over-weighting eventually burns the
+  likeness into every output whatever the prompt asks for.</p>
+
+  <p class="note"><strong>Two things this does not say.</strong> Nothing here is video — it is
+  stills, and whether the face survives animation is a separate question. And the golf image at 1.3
+  rendered an unprompted <strong>Nike swoosh</strong> on the visor, which is a trademark problem for
+  the content policy guard rather than an identity one.</p>
+</section>
+{% endif %}
 
 <section>
   <h2>Spending</h2>

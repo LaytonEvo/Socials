@@ -70,3 +70,39 @@ def test_a_missing_ledger_is_reported_not_shown_as_zero(client: TestClient) -> N
 def test_the_view_cannot_change_anything(client: TestClient, method: str) -> None:
     """Read-only by design, so it cannot get publishing or disclosure wrong."""
     assert getattr(client, method)("/").status_code in {404, 405}
+
+
+# ------------------------------------------------------- the LoRA section --
+def test_the_lora_section_survives_the_run_directory_being_absent() -> None:
+    """The deployed copy has no spike/runs/, and the section must still render.
+
+    `spike/runs/` is excluded from git and from the deployment build context because it
+    holds gigabytes of imagery, so a view that reads its numbers straight from there
+    works on a developer checkout and silently loses the whole section once deployed.
+    The numbers are bundled at `app/ui/data/lora.json` for exactly this reason.
+    """
+    from app.api.main import LORA_SUMMARY, _lora_run
+
+    assert LORA_SUMMARY.is_file(), (
+        "app/ui/data/lora.json is missing. Run scripts/bundle_lora_summary.py after a "
+        "training or evaluation run, or the deployed page loses the LoRA section."
+    )
+    run = _lora_run()
+    assert run is not None
+    assert run["artefact"]["steps"] > 0
+    assert run["ceiling"] is not None, "without the ceiling the scores cannot be read"
+    assert run["runs"], "a LoRA with no evaluation is not something to publish numbers about"
+
+
+def test_the_bundled_summary_matches_the_run_files() -> None:
+    """A stale bundle would show yesterday's numbers as though they were today's."""
+    import json
+
+    from app.api.main import LORA_ROOT, LORA_SUMMARY
+
+    if not (LORA_ROOT / "artefact.json").is_file():
+        pytest.skip("no local run directory to compare against")
+    bundled = json.loads(LORA_SUMMARY.read_text())
+    actual = json.loads((LORA_ROOT / "artefact.json").read_text())
+    assert bundled["artefact"]["dataset_hash"] == actual["dataset_hash"]
+    assert bundled["artefact"]["weights_url"] == actual["weights_url"]

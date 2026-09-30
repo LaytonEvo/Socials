@@ -1,0 +1,77 @@
+{
+  "artefact": {
+    "trained_on": "2026-09-30",
+    "steps": 1000,
+    "dataset_hash": "f724a17950ede69a144c0cbe705a676d80ce48f752aadda4ca8fbace86a14392",
+    "train_count": 102,
+    "holdout_count": 19,
+    "trigger_word": "mollie",
+    "weights_url": "https://v3b.fal.media/files/b/0aac7c65/wtET4pTi3m1EnsL_6__4c_pytorch_lora_weights.safetensors",
+    "config_url": "https://v3b.fal.media/files/b/0aac7c65/ylo6z3APi5Ixs_gP7rN2d_config.json",
+    "base_model": "FLUX.1-dev",
+    "trainer": "fal-ai/flux-lora-portrait-trainer",
+    "licence": "FLUX.1 [dev] Non-Commercial (BFL); commercial use via fal's own licence, while running on fal",
+    "inference_host": "fal",
+    "cost_usd": "24.000",
+    "holdout": [
+      "/home/user/Socials/spike/data/body/body-05-b1_06.png",
+      "/home/user/Socials/spike/data/lighting/lighting-07-m_026.png",
+      "/home/user/Socials/spike/data/master_v2/b1_04.png",
+      "/home/user/Socials/spike/data/master_v2/b1_08.png",
+      "/home/user/Socials/spike/data/master_v2/b1_10.png",
+      "/home/user/Socials/spike/data/master_v2/b2_01.png",
+      "/home/user/Socials/spike/data/master_v2/b2_03.png",
+      "/home/user/Socials/spike/data/master_v2/b3_04.png",
+      "/home/user/Socials/spike/data/master_v2/b4_01.png",
+      "/home/user/Socials/spike/data/master_v2/b6_03.png",
+      "/home/user/Socials/spike/data/master_v2/b6_07.png",
+      "/home/user/Socials/spike/data/master_v2/b7_04.png",
+      "/home/user/Socials/spike/data/master_v2/b7_07.png",
+      "/home/user/Socials/spike/data/master_v2/b7_11.png",
+      "/home/user/Socials/spike/data/master_v2/m_007.jpg",
+      "/home/user/Socials/spike/data/master_v2/m_009.jpg",
+      "/home/user/Socials/spike/data/master_v2/m_015.jpg",
+      "/home/user/Socials/spike/data/master_v2/m_016.jpg",
+      "/home/user/Socials/spike/data/outfit/outfit-04-b5_03.png"
+    ]
+  },
+  "runs": [
+    {
+      "label": "Eight prompts, mixed",
+      "scale": 1.0,
+      "generated": 8,
+      "passed": 6,
+      "mean": 0.9669631546057106,
+      "min": 0.9403720198854053,
+      "unusable": 1
+    },
+    {
+      "label": "Golf course x3",
+      "scale": 1.0,
+      "generated": 3,
+      "passed": 1,
+      "mean": 0.9590520336151095,
+      "min": 0.951509374329044,
+      "unusable": 0
+    },
+    {
+      "label": "Golf course x3",
+      "scale": 1.3,
+      "generated": 3,
+      "passed": 2,
+      "mean": 0.9734402454222479,
+      "min": 0.9618588625866771,
+      "unusable": 0
+    },
+    {
+      "label": "Portraits x4",
+      "scale": 1.3,
+      "generated": 4,
+      "passed": 4,
+      "mean": 0.9794838010507062,
+      "min": 0.9747394081112315,
+      "unusable": 0
+    }
+  ],
+  "ceiling": 0.9843076095933623
+}
