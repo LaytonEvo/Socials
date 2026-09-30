@@ -26,9 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import load_all
 from app.costs.guard import BudgetGuard
+from app.identity.embedder import DlibEmbedder
 from app.pipeline.assembler import assemble, duration_of, edit_list
 from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.lipsync import lip_sync, should_lip_sync
+from app.pipeline.takes import measure, steadiest
 from app.pipeline.voice import pad_to
 from app.providers.fal import QUEUE_ROOT, api_key
 from app.storage.keys import key_for
@@ -87,34 +89,43 @@ SHOTS: list[Shot] = [
         # produced a take that tilted and rolled throughout. That reads as a glitch
         # rather than as life, and it was wrongly blamed on the sync, which is visibly
         # steadier than its own source.
-        "motion": "she looks into the lens and talks to camera, head level and steady, "
-        "shoulders still, only her hair moving in the breeze, camera locked off",
+        "motion": "she looks into the lens and talks to camera. Her head stays "
+        "completely still and upright throughout, no tilting, no turning, no nodding. "
+        "Shoulders still. Only her lips and her hair move. Camera locked off.",
         "label": "opening — to camera on the fairway",
         "face_forward": True,
         "line": "Morning. First tee, and for once it isn't raining.",
     },
     {
         "name": "02_walk",
-        "still": "a photo of {w}, a young woman in golf clothing carrying a golf bag "
-        "over her shoulder, MEDIUM SHOT from the waist up, face clearly "
-        "visible and filling much of the frame, walking on a fairway, "
-        "trees behind, afternoon light",
-        "motion": "she walks forward carrying her bag, camera tracks alongside at the "
-        "same height, her face stays in frame",
+        # Framed AWAY from her face, and that is the fix rather than a style choice.
+        # The video model animates speech unconditionally and will not be talked out of
+        # it: a take prompted "lips closed, not speaking" came back with MORE mouth
+        # movement than the talking take (29.31 against 23.10, measured inside the
+        # detected face box). Since b-roll is silent, a visible mouth means she is
+        # mouthing to nobody. So b-roll shows what b-roll actually shows — her from
+        # behind, the bag, the course — and the problem stops existing.
+        "still": "a photo of {w}, a young woman in golf clothing seen FROM BEHIND, "
+        "walking away from the camera along a fairway with a golf bag over her "
+        "shoulder, medium shot from the waist up, her face is not visible, "
+        "trees ahead, afternoon light",
+        "motion": "she walks away from the camera along the fairway, seen from behind, "
+        "camera follows steadily at the same height",
         "label": "b-roll — walking the fairway",
         "face_forward": False,
-        "line": "Long way to the green from here.",
+        "line": "",
     },
     {
         "name": "03_swing",
         "still": "a photo of {w}, a young woman in a white golf polo and visor STANDING "
         "UPRIGHT at address over a golf ball, driver in both hands, MEDIUM "
         "SHOT from the waist up, face visible in profile, on the tee",
+        # As above: silent shot, so she must not be mouthing words through it.
         "motion": "she takes the club back and swings through, full follow through, "
-        "camera static at chest height",
+        "lips closed, not speaking, concentrating, camera static at chest height",
         "label": "the swing",
         "face_forward": False,
-        "line": "Right. Let's see where that one goes.",
+        "line": "",
     },
 ]
 
@@ -125,6 +136,12 @@ def main() -> int:
     parser.add_argument("--budget", type=Decimal, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-generate", action="store_true", help="reuse what is on disk")
+    parser.add_argument(
+        "--takes",
+        type=int,
+        default=3,
+        help="takes to generate for face-forward shots before picking on head stability",
+    )
     args = parser.parse_args()
 
     config = load_all(ROOT / "config")
@@ -173,6 +190,7 @@ def main() -> int:
         raise SystemExit(f"estimate ${estimate} exceeds run budget ${run_budget}; refusing")
 
     args.out.mkdir(parents=True, exist_ok=True)
+    embedder = DlibEmbedder(config.providers)
     headers = {"Authorization": f"Key {api_key()}"} if api_key() else {}
     client = httpx.Client(timeout=300.0, headers=headers)
     image_base = dict((image_slot.request or {}).get("base") or {})
@@ -194,10 +212,33 @@ def main() -> int:
             print(f"  -> {keyframe.name}")
 
         if not (args.skip_generate and clip.is_file()):
-            print(f"[{shot['name']}] clip")
             assert video_slot.model is not None
-            url = submit_clip(client, video_slot.model, shot["motion"], keyframe, video_shape)
-            clip.write_bytes(client.get(url, timeout=300.0).content)
+            # Several takes for the shot people actually watch her face in, then pick
+            # on measured head stability. The prompt cannot hold her head still and a
+            # seed is accepted but not honoured, so selection is the only lever — and
+            # at $0.0625 a take against $0.50 to sync one, choosing before syncing is
+            # eight times cheaper than syncing the wrong take.
+            wanted = args.takes if shot["face_forward"] else 1
+            candidates: list[Path] = []
+            for take in range(wanted):
+                candidate = args.out / f"{shot['name']}_take{take}.mp4"
+                print(f"[{shot['name']}] clip, take {take + 1} of {wanted}")
+                url = submit_clip(client, video_slot.model, shot["motion"], keyframe, video_shape)
+                candidate.write_bytes(client.get(url, timeout=300.0).content)
+                candidates.append(candidate)
+
+            if wanted == 1:
+                candidates[0].replace(clip)
+            else:
+                measured = [measure(c, embedder._detector, embedder._predictor) for c in candidates]
+                for m in measured:
+                    print(
+                        f"       {m.path.name}: head roll sd {m.head_roll_sd_deg:.2f} deg, "
+                        f"{m.frames_with_face} frames with a face"
+                    )
+                best = steadiest(measured)
+                print(f"       picked {best.path.name} on head stability")
+                best.path.replace(clip)
             print(f"  -> {clip.name} ({clip.stat().st_size / 1048576:.2f} MB)")
 
         clips.append((clip, f"piece-golf/{shot['name']}", str(shot["label"]), False))
@@ -213,6 +254,8 @@ def main() -> int:
     spoken_lines: dict[str, Path] = {}
     for shot in SHOTS:
         text = str(shot["line"])
+        if not text:
+            continue
         audio = args.out / f"{shot['name']}_voice.mp3"
         if not (args.skip_generate and audio.is_file()):
             assert voice_slot.model is not None
