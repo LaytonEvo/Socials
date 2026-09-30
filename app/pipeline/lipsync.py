@@ -20,6 +20,7 @@ was `+0.0041` — small, and positive, and not zero.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,19 @@ from app.pipeline.errors import PipelineError
 
 class LipSyncFailed(PipelineError):
     """The sync did not produce a usable clip."""
+
+
+def _is_fetch_failure(text: str) -> bool:
+    """Whether a refusal is the provider failing to fetch an input, not rejecting it.
+
+    Measured 2026-09-30: a submit that validated cleanly came back from `response_url`
+    as `422 {"loc":["body","audio_url"],"msg":"Failed to download the file"}` for an
+    audio URL that fetched correctly (200, 42022 bytes, `audio/mpeg`) from this side
+    both before and after. The input was fine and the provider's fetch of it was not,
+    so this one failure is worth a retry where a genuine rejection is not.
+    """
+    lowered = text.lower()
+    return "failed to download" in lowered or "url is accessible" in lowered
 
 
 @dataclass(frozen=True)
@@ -64,32 +78,50 @@ def lip_sync(
     base: dict[str, Any],
     dest: Path,
     poll_interval_s: float = 5.0,
+    fetch_retries: int = 1,
+    refresh_urls: Callable[[], tuple[str, str]] | None = None,
 ) -> Path:
     """Send one take for sync and download the result.
 
     `video_url` and `audio_url` are URLs rather than files because the provider fetches
     them itself. A presigned bucket URL keeps the take private; fal's own upload
     endpoint would not (ADR 0006).
+
+    A provider-side failure to fetch those URLs is retried up to `fetch_retries` times,
+    re-presigning through `refresh_urls` when one is given so a retry cannot inherit an
+    expired signature. Every other refusal raises on the first response: a rejected
+    input does not become acceptable by being sent again, and the retry is bounded
+    because each attempt is a paid job.
     """
-    arguments: dict[str, Any] = {"video_url": video_url, "audio_url": audio_url, **base}
-    response = client.post(f"{queue_root}/{model}", json=arguments)
-    if response.status_code >= 400:
-        raise LipSyncFailed(f"submit failed {response.status_code}: {response.text[:400]}")
-    submitted = response.json()
-    status_url = str(submitted.get("status_url") or "")
-    response_url = str(submitted.get("response_url") or "")
-    if not status_url or not response_url:
-        raise LipSyncFailed("provider accepted the job but returned no URLs to follow it")
+    attempts = max(1, fetch_retries + 1)
+    payload: dict[str, Any] = {}
+    for attempt in range(attempts):
+        if attempt and refresh_urls is not None:
+            video_url, audio_url = refresh_urls()
+        arguments: dict[str, Any] = {"video_url": video_url, "audio_url": audio_url, **base}
+        response = client.post(f"{queue_root}/{model}", json=arguments)
+        if response.status_code >= 400:
+            raise LipSyncFailed(f"submit failed {response.status_code}: {response.text[:400]}")
+        submitted = response.json()
+        status_url = str(submitted.get("status_url") or "")
+        response_url = str(submitted.get("response_url") or "")
+        if not status_url or not response_url:
+            raise LipSyncFailed("provider accepted the job but returned no URLs to follow it")
 
-    for _ in range(240):
-        if client.get(status_url).json().get("status") in {"COMPLETED", "FAILED", "ERROR"}:
+        for _ in range(240):
+            if client.get(status_url).json().get("status") in {"COMPLETED", "FAILED", "ERROR"}:
+                break
+            time.sleep(poll_interval_s)
+
+        result = client.get(response_url)
+        if result.status_code < 400:
+            payload = dict(result.json())
             break
+        detail = result.text[:400]
+        last = attempt == attempts - 1
+        if last or not _is_fetch_failure(detail):
+            raise LipSyncFailed(f"sync failed {result.status_code}: {detail}")
         time.sleep(poll_interval_s)
-
-    result = client.get(response_url)
-    if result.status_code >= 400:
-        raise LipSyncFailed(f"sync failed {result.status_code}: {result.text[:400]}")
-    payload = result.json()
     url = str((payload.get("video") or {}).get("url") or "")
     if not url:
         raise LipSyncFailed(f"COMPLETED with no video: {str(payload)[:400]}")

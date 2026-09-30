@@ -15,9 +15,13 @@ import pytest
 from app.pipeline.takes import TakeMeasurement, steadiest
 
 
-def _take(name: str, roll: float, frames: int = 20) -> TakeMeasurement:
+def _take(name: str, roll: float, frames: int = 20, sampled: int | None = None) -> TakeMeasurement:
     return TakeMeasurement(
-        path=Path(name), frames_with_face=frames, head_roll_sd_deg=roll, mouth_activity=10.0
+        path=Path(name),
+        frames_with_face=frames,
+        frames_sampled=sampled if sampled is not None else frames,
+        head_roll_sd_deg=roll,
+        mouth_activity=10.0,
     )
 
 
@@ -54,3 +58,38 @@ def test_an_empty_list_is_refused() -> None:
 def test_usable_requires_several_frames() -> None:
     assert _take("x", 1.0, frames=2).usable is False
     assert _take("x", 1.0, frames=3).usable is True
+
+
+def test_a_thinly_covered_take_does_not_win_on_a_flattered_score() -> None:
+    """The first live run's mistake, as a test.
+
+    take_1 measured 3.43 degrees of roll over 14 of 37 frames and beat take_3's 4.60
+    over 37 of 37. The lower number came from the detector losing the face, not from a
+    steadier head, and the take it chose was refused by the sync provider afterwards.
+    """
+    picked = steadiest(
+        [
+            _take("take_1", 3.43, frames=14, sampled=37),
+            _take("take_3", 4.60, frames=37, sampled=37),
+        ]
+    )
+    assert picked.path.name == "take_3", (
+        "a take seen in 38% of its frames won on a score that coverage does not support"
+    )
+
+
+def test_no_adequately_covered_take_is_refused_rather_than_picked() -> None:
+    """Shooting again costs $0.0625; syncing the wrong take costs $0.50."""
+    with pytest.raises(ValueError, match="shoot more takes"):
+        steadiest(
+            [
+                _take("a", 2.0, frames=10, sampled=40),
+                _take("b", 3.0, frames=12, sampled=40),
+            ]
+        )
+
+
+def test_coverage_is_a_ratio_not_a_count() -> None:
+    """14 frames is most of a short take and a third of a longer one."""
+    assert _take("short", 4.0, frames=14, sampled=16).coverage > 0.6
+    assert _take("long", 4.0, frames=14, sampled=37).coverage < 0.6

@@ -29,12 +29,25 @@ class TakeMeasurement:
 
     path: Path
     frames_with_face: int
+    frames_sampled: int
     head_roll_sd_deg: float
     mouth_activity: float
 
     @property
     def usable(self) -> bool:
         return self.frames_with_face >= 3
+
+    @property
+    def coverage(self) -> float:
+        """The share of sampled frames a face was found in.
+
+        The count alone is not comparable between takes: 14 frames is most of a short
+        take and a third of a longer one, and only the ratio says whether the numbers
+        below describe the take or just the part of it that was visible.
+        """
+        if self.frames_sampled <= 0:
+            return 0.0
+        return self.frames_with_face / self.frames_sampled
 
 
 def sample_frames(clip: Path, fps: float = 8.0) -> list[Path]:
@@ -68,7 +81,8 @@ def measure(
     """
     rolls: list[float] = []
     crops: list[np.ndarray] = []
-    for frame in sample_frames(clip, fps):
+    frames = sample_frames(clip, fps)
+    for frame in frames:
         image = np.asarray(Image.open(frame).convert("RGB"))
         faces = detector(image, 1)  # type: ignore[operator]
         if not faces:
@@ -105,18 +119,40 @@ def measure(
     return TakeMeasurement(
         path=clip,
         frames_with_face=len(crops),
+        frames_sampled=len(frames),
         head_roll_sd_deg=float(np.std(rolls)) if rolls else float("nan"),
         mouth_activity=activity,
     )
 
 
-def steadiest(takes: list[TakeMeasurement]) -> TakeMeasurement:
-    """The take whose head moves least, among those with a face to measure.
+MIN_TAKE_COVERAGE = 0.6
 
-    Refuses rather than guesses when nothing is measurable: picking arbitrarily and
-    calling it a choice is worse than saying no take could be assessed.
+
+def steadiest(
+    takes: list[TakeMeasurement], *, min_coverage: float = MIN_TAKE_COVERAGE
+) -> TakeMeasurement:
+    """The take whose head moves least, among those seen well enough to say.
+
+    Coverage is checked before the score, for the same reason the acceptance gate checks
+    it: a low roll figure measured over a third of the frames is not a steadier take, it
+    is a less observed one, and comparing it against a take measured over all of them
+    rewards whichever take the detector lost track of. The first run picked exactly that
+    way — 3.43 degrees over 14 frames beat 4.60 over 37 — and the take it chose was then
+    refused downstream, which is the same fact arriving later and dearer: a face dlib can
+    only find in 38% of frames is one the sync provider cannot track either.
+
+    Refuses rather than guesses when no take clears the floor. Another take costs $0.0625
+    against $0.50 for the sync, so shooting again is the cheap side of this decision.
     """
     usable = [t for t in takes if t.usable and not np.isnan(t.head_roll_sd_deg)]
     if not usable:
         raise ValueError("no take had enough detectable face to measure head movement")
-    return min(usable, key=lambda t: t.head_roll_sd_deg)
+    covered = [t for t in usable if t.coverage >= min_coverage]
+    if not covered:
+        best = max(usable, key=lambda t: t.coverage)
+        raise ValueError(
+            f"no take had a face in {min_coverage:.0%} of its frames — best was "
+            f"{best.path.name} at {best.coverage:.0%} "
+            f"({best.frames_with_face}/{best.frames_sampled}); shoot more takes"
+        )
+    return min(covered, key=lambda t: t.head_roll_sd_deg)
