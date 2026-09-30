@@ -326,3 +326,74 @@ def test_the_other_three_kinds_exist_but_are_unpopulated() -> None:
     provider key.
     """
     assert KINDS == ("face", "body", "outfit", "lighting")
+
+
+# --------------------------------------------------- the video threshold --
+def test_video_and_stills_thresholds_are_separate_numbers() -> None:
+    """Video frames are a different population and must not borrow the stills figure.
+
+    Motion blur, interpolated intermediate poses and compression all move a face
+    without changing whose face it is. Measured 2026-09-30: judging her video frames
+    against the stills threshold rejected 2 of 21 frames that were visibly her, on the
+    persona's core format.
+    """
+    from pathlib import Path
+
+    from app.config import load_all
+
+    look = load_all(Path("config")).persona.persona.look
+    assert look.identity_threshold is not None
+    assert look.identity_threshold_video is not None
+    assert look.identity_threshold_video < look.identity_threshold, (
+        "the video threshold should sit below the stills one — video frames of the same "
+        "person score lower than photographs of her holding still"
+    )
+
+
+def test_the_video_threshold_separates_the_populations_it_was_measured_on() -> None:
+    """A threshold that does not separate its own calibration data is not a threshold.
+
+    Guards against someone tuning the number without re-measuring. The run files live
+    under `spike/runs/`, so this skips where they are absent rather than failing.
+    """
+    import json
+    from pathlib import Path
+
+    from app.config import load_all
+
+    positives = Path("spike/runs/lora/video/video_identity.json")
+    negatives = Path("spike/runs/lora/video-controls/video_controls.json")
+    if not (positives.is_file() and negatives.is_file()):
+        pytest.skip("calibration run files not present in this checkout")
+
+    threshold = load_all(Path("config")).persona.persona.look.identity_threshold_video
+    assert threshold is not None
+
+    her = [s for c in json.loads(positives.read_text())["clips"] for s in c["scores"]]
+    other = [s for c in json.loads(negatives.read_text())["clips"] for s in c["scores"]]
+
+    false_negatives = [s for s in her if s < threshold]
+    false_positives = [s for s in other if s >= threshold]
+    assert not false_negatives, f"{len(false_negatives)} of her own frames rejected"
+    assert not false_positives, f"{len(false_positives)} control frames accepted as her"
+
+
+def test_the_separating_gap_is_recorded_as_narrow() -> None:
+    """The gap is 0.00763 on 21 positives and 28 negatives. That is thin, and the point
+    of this test is that nobody reads the clean separation as a settled result."""
+    import json
+    from pathlib import Path
+
+    positives = Path("spike/runs/lora/video/video_identity.json")
+    negatives = Path("spike/runs/lora/video-controls/video_controls.json")
+    if not (positives.is_file() and negatives.is_file()):
+        pytest.skip("calibration run files not present in this checkout")
+
+    her = [s for c in json.loads(positives.read_text())["clips"] for s in c["scores"]]
+    other = [s for c in json.loads(negatives.read_text())["clips"] for s in c["scores"]]
+    gap = min(her) - max(other)
+    assert gap > 0, "the populations overlap; the threshold is not defensible"
+    assert gap < 0.05, (
+        "the gap has widened a lot — re-read the evidence rather than trusting this "
+        "test, because the calibration it guards was measured on 49 frames in total"
+    )

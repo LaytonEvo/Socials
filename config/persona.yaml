@@ -60,6 +60,24 @@ persona:
     # the reproduced median 0.98781 against a recorded 0.98757. Worth knowing before
     # anyone treats a fourth decimal place as meaningful.
     identity_threshold: 0.9619
+    # VIDEO FRAMES are a different population and need their own threshold.
+    # Calibrated 2026-09-30 against 21 frames of her and 28 frames of three control
+    # faces, all animated on the same model and sampled at 2 fps — like against like,
+    # which is the whole point:
+    #
+    #   her video frames    min 0.95487   mean 0.96610
+    #   control video       max 0.94724   mean 0.93263
+    #   empty gap           0.00763, midpoint 0.95106
+    #
+    # At the stills threshold of 0.9619 this data gives 2 false negatives in 21 and no
+    # false positives. At 0.951, neither. Set at the midpoint of the empty gap.
+    #
+    # THIN: 21 positives, 28 negatives, three control faces, one video model. The gap
+    # is real but narrow, and this should be re-measured on more clips before anything
+    # automatic is wired to it.
+    identity_threshold_video: 0.951
+    threshold_video_calibrated_on: 2026-09-30
+    threshold_video_evidence: docs/reports/video-threshold-2026-09-30.md
     threshold_calibrated_on: 2026-09-29
     threshold_evidence: docs/reports/master-set-widening-2026-09-29.md
     scorer: dlib ResNet, 128-d, cosine vs the L2-normalised centroid

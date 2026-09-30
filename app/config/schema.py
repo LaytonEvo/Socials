@@ -382,8 +382,15 @@ class PersonaLook(BaseModel):
     status: str
     master_set: str | None = None
     #: A property of one master set scored by one model at one version, never a
-    #: constant (amendment A3).
+    #: constant (amendment A3). Calibrated on STILL photographs.
     identity_threshold: float | None = Field(default=None, gt=0.0, le=1.0)
+    #: The same measurement taken on VIDEO FRAMES, which are a different population:
+    #: motion blur, interpolated intermediate poses and compression all move a face
+    #: without changing whose face it is. Judging frames against the stills threshold
+    #: produced false negatives on her core format at 2 frames in 10
+    #: (docs/reports/video-threshold-2026-09-30.md), so the two are kept apart rather
+    #: than one being made to serve both.
+    identity_threshold_video: float | None = Field(default=None, gt=0.0, le=1.0)
 
 
 class PersonaVoice(BaseModel):

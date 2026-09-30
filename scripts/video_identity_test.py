@@ -68,6 +68,35 @@ CELLS: list[dict[str, str]] = [
 ]
 
 
+#: Control clips: a DIFFERENT synthetic face, animated the same way, so the negatives
+#: are drawn from the same population as the positives. Calibrating her video frames
+#: against control STILLS is the calibration-space error this project has already made
+#: twice — a threshold is only meaningful between two distributions measured alike.
+#:
+#: Synthetic throughout, as ADR 0002 Finding 4 requires: real faces would be Article 9
+#: biometric data.
+CONTROL_CELLS: list[dict[str, str]] = [
+    {
+        "name": "control_talking",
+        "keyframe": "control_v2/c1_00.png",
+        "prompt": "she speaks to the camera, small natural head movements, shallow depth of field",
+        "tests": "negative — a different face, same motion as talking_head",
+    },
+    {
+        "name": "control_walking",
+        "keyframe": "control_v2/c2_00.png",
+        "prompt": "she walks slowly towards the camera along a path, hair moving in the breeze",
+        "tests": "negative — a different face, same motion as walking",
+    },
+    {
+        "name": "control_portrait",
+        "keyframe": "control_v2/c3_00.png",
+        "prompt": "she turns her head slowly towards the camera and smiles",
+        "tests": "negative — a different face, gentle motion",
+    },
+]
+
+
 @dataclass
 class ClipResult:
     name: str
@@ -156,13 +185,23 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=EVAL_ROOT / "video")
     parser.add_argument("--budget", type=Decimal, default=None)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--controls",
+        action="store_true",
+        help="animate control faces instead, to measure the negative side",
+    )
     args = parser.parse_args()
 
     config = load_all(ROOT / "config")
-    configured = config.persona.persona.look.identity_threshold
+    # The VIDEO threshold, not the stills one. They are separate measurements of
+    # separate populations and using the stills figure here is the calibration-space
+    # error that produced two false negatives on the talking-head clip.
+    look = config.persona.persona.look
+    configured = look.identity_threshold_video or look.identity_threshold
     if configured is None:
-        raise SystemExit("no identity_threshold configured")
+        raise SystemExit("no identity threshold configured")
     threshold = float(configured)
+    basis = "video" if look.identity_threshold_video else "stills (no video threshold set)"
 
     dataset = split(
         collect(
@@ -173,18 +212,22 @@ def main() -> int:
     )
     embedder = DlibEmbedder(config.providers)
     reference, unusable = holdout_reference(dataset, embedder)
-    print(f"threshold     {threshold}")
+    print(f"threshold     {threshold}  ({basis})")
     print(f"reference     holdout centroid, {len(dataset.holdout) - len(unusable)} stills")
 
     guard = BudgetGuard(config.budget, config.providers)
     slot, unit_price, unit = guard.price(GROUP, SLOT)
     shape = dict(slot.request or {})
-    seconds = Decimal(str(shape.get("duration_s", 5))) * len(CELLS)
+    cells = CONTROL_CELLS if args.controls else CELLS
+    keyframe_root = REFERENCE_ROOT if args.controls else EVAL_ROOT
+    if args.controls:
+        args.out = args.out.parent / "video-controls"
+    seconds = Decimal(str(shape.get("duration_s", 5))) * len(cells)
     estimate = guard.estimate(GROUP, SLOT, seconds)
     print(f"\nmodel         {slot.model}")
     print(f"price         ${unit_price} per {unit} x {seconds}s = ${estimate}")
-    for cell in CELLS:
-        print(f"  {cell['name']:<14} {cell['tests']}")
+    for cell in cells:
+        print(f"  {cell['name']:<18} {cell['tests']}")
     if args.dry_run:
         print("\n--dry-run: nothing billed.")
         return 0
@@ -199,8 +242,8 @@ def main() -> int:
     sampler = FfmpegFrames()
     results: list[ClipResult] = []
 
-    for cell in CELLS:
-        keyframe = EVAL_ROOT / cell["keyframe"]
+    for cell in cells:
+        keyframe = keyframe_root / cell["keyframe"]
         if not keyframe.is_file():
             print(f"SKIP {cell['name']}: keyframe {keyframe} missing")
             continue
@@ -259,7 +302,9 @@ def main() -> int:
             for r in results
         ],
     }
-    (args.out / "video_identity.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (args.out / ("video_controls.json" if args.controls else "video_identity.json")).write_text(
+        json.dumps(summary, indent=2) + "\n"
+    )
     print(f"\nrecorded      {(args.out / 'video_identity.json').relative_to(ROOT)}")
     return 0
 
