@@ -256,6 +256,56 @@ providers:
       # returned 422. Validation rejections are free; this one cost nothing but the
       # time to read the schema properly.
 
+    alternative:
+      # Second opinion on sync QUALITY. heygen was chosen on 2026-09-24 for its
+      # identity delta (+0.0041, the only one that did not cost identity) on a
+      # three-way against pixverse and veed — but identity is not the same
+      # question as whether the mouth matches the words, and the owner reports
+      # it still does not.
+      #
+      # This model is the one with an explicit story about the case that keeps
+      # biting: `sync_mode` says what to do when the audio and video durations
+      # disagree, where heygen simply refuses. cut_off | loop | bounce |
+      # silence | remap.
+      backend: fal
+      model: fal-ai/sync-lipsync/v2
+      endpoint: null
+      # "$3 per minute of video", "$5/minute" for lipsync-2-pro, read from the
+      # model page 2026-09-30. Per SECOND here because that is the unit the
+      # guard bills in: 5/60 = 0.083333, rounded up, pro tier.
+      price_usd_per_second: 0.0834
+      verified_on: 2026-09-30
+      request:
+        base:
+          model: lipsync-2-pro
+          # Our lines are shorter than our shots almost every time. `silence`
+          # pads rather than looping her back to the start of the sentence or
+          # bouncing it backwards, both of which would be worse than the
+          # padding we already do by hand for heygen.
+          sync_mode: silence
+
+  # --- Sound effects and ambience ------------------------------------------
+  sfx:
+    primary:
+      # Generates audio ALIGNED TO THE PICTURE from a text prompt, which is the
+      # thing a stock library cannot do: a struck ball has to sound at the frame
+      # the club reaches it.
+      #
+      # This exists because dropping the video model's invented soundtrack left
+      # b-roll in total silence — honest, and wrong. A golf shot with no contact
+      # sound reads as broken.
+      backend: fal
+      model: fal-ai/mmaudio-v2
+      endpoint: null
+      # "$0.001 per second", read from the model page 2026-09-30. The cheapest
+      # thing in the chain by two orders of magnitude.
+      price_usd_per_second: 0.001
+      verified_on: 2026-09-30
+      request:
+        base:
+          num_steps: 25
+          cfg_strength: 4.5
+
   # --- Voice ---------------------------------------------------------------
   voice:
     primary:

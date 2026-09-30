@@ -179,3 +179,30 @@ def test_a_missing_audio_file_is_named(tmp_path: Path) -> None:
     video = _silent_video(tmp_path / "picture.mp4", 2.0)
     with pytest.raises(NarrationFailed, match="missing audio"):
         narrate(video, [VoiceLine("hi", tmp_path / "ghost.mp3", 0.0, "v1")], tmp_path / "o.mp4")
+
+
+# ------------------------------------------------------------ sound effects --
+def test_a_sound_prompt_cannot_ask_for_a_voice() -> None:
+    """The reason this module exists is a model that generated speech nobody asked for.
+
+    Asking a different model for speech on purpose would be the same defect wearing a
+    hat: an invented voice back in the render through another door, bypassing the one
+    voice that is supposed to stay constant across every video (ADR 0005).
+    """
+    from app.pipeline.sfx import SoundFailed, check_prompt
+
+    for prompt in (
+        "a woman speaking over golf course ambience",
+        "crowd noise and commentary voice",
+        "birdsong with distant talking",
+        "upbeat music with singing",
+    ):
+        with pytest.raises(SoundFailed, match="never a voice"):
+            check_prompt(prompt)
+
+
+def test_a_sound_prompt_about_the_world_is_allowed() -> None:
+    from app.pipeline.sfx import check_prompt
+
+    check_prompt("a golf club swishing then a sharp crack as it strikes the ball")
+    check_prompt("quiet course ambience, footsteps on grass, distant birdsong")

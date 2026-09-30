@@ -30,6 +30,7 @@ from app.identity.embedder import DlibEmbedder
 from app.pipeline.assembler import assemble, duration_of, edit_list
 from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.lipsync import lip_sync, should_lip_sync
+from app.pipeline.sfx import generate_sound
 from app.pipeline.takes import measure, steadiest
 from app.pipeline.voice import pad_to
 from app.providers.fal import QUEUE_ROOT, api_key
@@ -66,6 +67,8 @@ class Shot(TypedDict):
     label: str
     face_forward: bool
     line: str
+    #: What the world sounds like in this shot. Never speech — see app/pipeline/sfx.py.
+    sound: str
 
 
 SHOTS: list[Shot] = [
@@ -95,6 +98,7 @@ SHOTS: list[Shot] = [
         "label": "opening — to camera on the fairway",
         "face_forward": True,
         "line": "Morning. First tee, and for once it isn't raining.",
+        "sound": "",
     },
     {
         "name": "02_walk",
@@ -105,15 +109,22 @@ SHOTS: list[Shot] = [
         # detected face box). Since b-roll is silent, a visible mouth means she is
         # mouthing to nobody. So b-roll shows what b-roll actually shows — her from
         # behind, the bag, the course — and the problem stops existing.
+        # "full-size" and "clubs above her shoulder" because the first version said
+        # only "a golf bag" and produced something the size of a pencil case hanging at
+        # her hip. A tour bag is nearly as tall as she is and the club heads stand well
+        # above the shoulder; without saying so the model renders a token bag shape.
         "still": "a photo of {w}, a young woman in golf clothing seen FROM BEHIND, "
-        "walking away from the camera along a fairway with a golf bag over her "
-        "shoulder, medium shot from the waist up, her face is not visible, "
-        "trees ahead, afternoon light",
+        "walking away from the camera along a fairway, carrying a FULL-SIZE golf "
+        "bag on her shoulder with a full set of clubs whose heads stand well above "
+        "her shoulder, the bag is tall and reaches from her hip to above her head, "
+        "medium shot, her face is not visible, trees ahead, afternoon light",
         "motion": "she walks away from the camera along the fairway, seen from behind, "
         "camera follows steadily at the same height",
         "label": "b-roll — walking the fairway",
         "face_forward": False,
         "line": "",
+        "sound": "quiet golf course ambience, soft footsteps on grass, golf clubs "
+        "rattling gently in a bag, distant birdsong, light breeze",
     },
     {
         "name": "03_swing",
@@ -126,6 +137,9 @@ SHOTS: list[Shot] = [
         "label": "the swing",
         "face_forward": False,
         "line": "",
+        # The defect this fixes: a golf swing with no contact sound reads as broken.
+        "sound": "a golf club swishing through the air then a sharp solid crack as it "
+        "strikes the ball, followed by quiet course ambience and birdsong",
     },
 ]
 
@@ -136,6 +150,11 @@ def main() -> int:
     parser.add_argument("--budget", type=Decimal, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-generate", action="store_true", help="reuse what is on disk")
+    parser.add_argument(
+        "--sync-slot",
+        default="primary",
+        help="which lipsync provider slot to use: primary (heygen) or alternative",
+    )
     parser.add_argument(
         "--takes",
         type=int,
@@ -167,13 +186,13 @@ def main() -> int:
     voice_cost = guard.estimate("voice", "primary", Decimal(chars) / Decimal(1000))
     estimate += voice_cost
     print(f"voice         {chars} characters = ${voice_cost}")
-    sync_slot, _, _ = guard.price("lipsync", "primary")
+    sync_slot, _, _ = guard.price("lipsync", args.sync_slot)
     to_sync = [
         s
         for s in SHOTS
         if should_lip_sync(face_forward=s["face_forward"], has_dialogue=bool(s["line"])).sync
     ]
-    sync_cost = guard.estimate("lipsync", "primary", seconds * len(to_sync))
+    sync_cost = guard.estimate("lipsync", args.sync_slot, seconds * len(to_sync))
     estimate += sync_cost
     print(f"lip sync      {sync_slot.model}")
     print(
@@ -287,6 +306,7 @@ def main() -> int:
     # Task 3.7's rule, applied per take rather than to the assembled piece: sync is a
     # property of a shot, not of a render.
     sync_base = dict((sync_slot.request or {}).get("base") or {})
+    print(f"  using lipsync slot '{args.sync_slot}': {sync_slot.model}")
     storage = S3Storage(bucket=bucket_from_env())
     persona_id = persona_storage_id(config.persona.persona.id)
     synced: set[str] = set()
@@ -330,6 +350,35 @@ def main() -> int:
         synced.add(name)
         print(f"       -> {dest.name}")
 
+    # ------------------------------------------------------- sound effects --
+    # For shots where nobody speaks. Silence was honest and wrong: a swing with no
+    # contact sound reads as broken.
+    sfx_slot, _, _ = guard.price("sfx", "primary")
+    sfx_base = dict((sfx_slot.request or {}).get("base") or {})
+    for index, shot in enumerate(SHOTS):
+        prompt = str(shot.get("sound") or "")
+        if not prompt:
+            continue
+        name = str(shot["name"])
+        clip_path = clips[index][0]
+        dest = args.out / f"{name}_sound.mp4"
+        if not (args.skip_generate and dest.is_file()):
+            key = key_for(persona_id, "take", f"{name}-for-sound.mp4")
+            storage.put(key, clip_path.read_bytes(), content_type="video/mp4", overwrite=True)
+            assert sfx_slot.model is not None
+            generate_sound(
+                client,
+                queue_root=QUEUE_ROOT,
+                model=sfx_slot.model,
+                video_url=storage.presign_get(key, expires_in=3600),
+                prompt=prompt,
+                duration_s=duration_of(clip_path),
+                base=sfx_base,
+                dest=dest,
+            )
+        clips[index] = (dest, clips[index][1], clips[index][2], True)
+        print(f"  sound {name}: {prompt[:58]}...")
+
     # A synced take arrives carrying the audio its mouth was generated against, so the
     # assembler keeps that track rather than a separately-laid copy — the copy drifted,
     # because the sync stretches time slightly.
@@ -340,8 +389,14 @@ def main() -> int:
     edl = edit_list(clips, aspect="9:16", audio="keep_source")
     print(f"\nedit list     {len(edl.cuts)} cuts, {edl.duration_s:.2f}s, audio={edl.audio}")
     for shot, cut in zip(SHOTS, edl.cuts, strict=True):
-        speaks = str(shot["name"]) in synced
-        print(f"  {shot['name']:<10} {'speaks' if speaks else 'silent'}  {cut.duration_s:.2f}s")
+        name = str(shot["name"])
+        if name in synced:
+            kind = "her voice"
+        elif shot.get("sound"):
+            kind = "ambience"
+        else:
+            kind = "silent"
+        print(f"  {name:<10} {kind:<10} {cut.duration_s:.2f}s")
     rough = assemble(edl, args.out / "rough.mp4")
 
     final = apply_disclosure(
