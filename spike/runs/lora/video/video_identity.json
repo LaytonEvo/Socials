@@ -1,0 +1,65 @@
+{
+  "threshold": 0.9619,
+  "sample_fps": 2.0,
+  "model": "minimax/h3-max-turbo/image-to-video",
+  "estimated_cost_usd": "0.187500",
+  "clips": [
+    {
+      "name": "talking_head",
+      "tests": "the core format \u2014 face-forward, minimal motion",
+      "frames": 10,
+      "scored": 10,
+      "no_face": 0,
+      "coverage": 1.0,
+      "mean": 0.9656884789795637,
+      "min": 0.954874780859186,
+      "scores": [
+        0.9730919399340481,
+        0.9688743361356515,
+        0.9656152173229604,
+        0.9710387604030026,
+        0.9654355598857471,
+        0.9635125562920681,
+        0.9586357947096782,
+        0.965668881644187,
+        0.954874780859186,
+        0.9701369626091076
+      ]
+    },
+    {
+      "name": "walking",
+      "tests": "walking, the worst motion axis in the spike matrix",
+      "frames": 10,
+      "scored": 10,
+      "no_face": 0,
+      "coverage": 1.0,
+      "mean": 0.9667671620275341,
+      "min": 0.9634928194636727,
+      "scores": [
+        0.9684711320537505,
+        0.9666303985082416,
+        0.9649967550679539,
+        0.9694136018609529,
+        0.9634928194636727,
+        0.9663496761713429,
+        0.9648629225617967,
+        0.9648755387559146,
+        0.9693621231789612,
+        0.9692166526527528
+      ]
+    },
+    {
+      "name": "golf_swing",
+      "tests": "the hard case \u2014 large motion, face turns away",
+      "frames": 10,
+      "scored": 1,
+      "no_face": 9,
+      "coverage": 0.1,
+      "mean": 0.9635547062772368,
+      "min": 0.9635547062772368,
+      "scores": [
+        0.9635547062772368
+      ]
+    }
+  ]
+}

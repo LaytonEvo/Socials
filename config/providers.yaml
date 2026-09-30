@@ -110,6 +110,12 @@ providers:
         duration_s: 5
         duration_style: seconds_int
         audio_field: target_audio_url
+        # The keyframe field. Verified by use rather than by documentation: the
+        # spike generated 61 clips on this model through `image_url`. It was
+        # never written down here because the spike harness carried a veo3.1
+        # default that happened to match — a model's schema belongs beside its
+        # model id, not in an adapter's fallback.
+        image_field: image_url
         base:
           resolution: 768P
           enable_safety_checker: true
