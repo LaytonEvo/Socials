@@ -30,6 +30,7 @@ from app.identity.training import (
     TrainingRequest,
 )
 from app.providers.types import ProviderJob
+from app.storage.s3 import S3Storage, bucket_from_env
 
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_ROOT = ROOT / "spike" / "data"
@@ -47,12 +48,26 @@ def build_dataset(trigger_word: str, holdout_fraction: float) -> TrainingSet:
 def archive_as_data_uri(archive: bytes) -> str:
     """The training set as a data URI rather than an upload.
 
-    fal's CDN is public (ADR 0006): anything uploaded there can be downloaded by anyone
-    with the URL. Her reference set is not going on a public host for the sake of
-    convenience, and the private alternative — a presigned URL from our own bucket —
-    needs S3 credentials that are not configured yet.
+    Only usable for a small archive. fal fetches this URL itself and rejects a long one
+    AFTER queueing and running the job, so an oversized one arrives as a billed
+    COMPLETED with no weights — see MAX_DATA_URI_BYTES. A real training set goes to the
+    bucket instead.
     """
     return "data:application/zip;base64," + base64.b64encode(archive).decode()
+
+
+def archive_to_bucket(archive: bytes, dataset_hash: str, *, expires_in: int) -> str:
+    """Upload the training set privately and hand fal a short, expiring URL.
+
+    Private rather than fal's own upload endpoint, whose CDN is public (ADR 0006):
+    anyone with the URL could download the persona's entire reference set. The key is
+    the dataset hash, so the same split uploads to the same place and a re-run does not
+    litter the bucket with copies.
+    """
+    storage = S3Storage(bucket=bucket_from_env())
+    key = f"training-sets/{dataset_hash}.zip"
+    storage.put(key, archive, content_type="application/zip", overwrite=True)
+    return storage.presign_get(key, expires_in=expires_in)
 
 
 def main() -> int:
@@ -64,6 +79,17 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="stop after the estimate")
     parser.add_argument("--fake", action="store_true", help="use the offline trainer")
     parser.add_argument("--out", type=Path, default=ROOT / "spike" / "runs" / "lora")
+    parser.add_argument(
+        "--data-uri",
+        action="store_true",
+        help="inline the archive instead of uploading it; only viable for a tiny set",
+    )
+    parser.add_argument(
+        "--presign-seconds",
+        type=int,
+        default=3600,
+        help="lifetime of the URL handed to fal; long enough to queue and fetch",
+    )
     args = parser.parse_args()
 
     config = load_all(ROOT / "config")
@@ -80,11 +106,7 @@ def main() -> int:
     print(f"  hash        {dataset_hash}")
 
     archive = build_archive(dataset.train, trigger_word=args.trigger_word)
-    uri = archive_as_data_uri(archive)
-    print(
-        f"archive       {len(archive) / 1048576:.2f} MB  ->  "
-        f"{len(uri) / 1048576:.2f} MB as data URI"
-    )
+    print(f"archive       {len(archive) / 1048576:.2f} MB")
 
     # ------------------------------------------------------------- pricing --
     # `lora` is a settings block rather than a priced provider group, so the estimate
@@ -92,13 +114,7 @@ def main() -> int:
     # still the thing that says yes: it owns the per-run budget and the ceilings.
     lora = config.providers.lora
     trainer = FakeLoraTrainer(settings=lora) if args.fake else FalLoraTrainer(settings=lora)
-    request = TrainingRequest(
-        archive_url=uri,
-        trigger_word=args.trigger_word,
-        steps=args.steps,
-        dataset_hash=dataset_hash,
-    )
-    estimate = trainer.estimate_cost(request)
+    estimate = (lora.price_usd_per_step or Decimal("0")) * args.steps
     print(f"\ntrainer       {lora.trainer}")
     print(f"base model    {lora.base_model}  ({lora.base_model_licence})")
     print(f"price         ${lora.price_usd_per_step} per step  x {args.steps} steps")
@@ -113,6 +129,21 @@ def main() -> int:
     if estimate > run_budget:
         raise SystemExit(f"estimate ${estimate} exceeds run budget ${run_budget}; refusing")
     print(f"budget        ${run_budget}  (headroom ${run_budget - estimate})")
+
+    # Uploading is a side effect, so it happens only once the run is authorised.
+    if args.data_uri:
+        archive_url = archive_as_data_uri(archive)
+        print(f"archive url   data URI, {len(archive_url) / 1048576:.2f} MB")
+    else:
+        archive_url = archive_to_bucket(archive, dataset_hash, expires_in=args.presign_seconds)
+        print(f"archive url   presigned, expires in {args.presign_seconds}s")
+
+    request = TrainingRequest(
+        archive_url=archive_url,
+        trigger_word=args.trigger_word,
+        steps=args.steps,
+        dataset_hash=dataset_hash,
+    )
 
     async def run() -> tuple[ProviderJob, LoraArtefact]:
         job = await trainer.train(request)
