@@ -99,3 +99,33 @@ out of scope (D4), and disclosure is already mandatory in code rather than optio
 their platform. The owner's own note: "the commercial-rights point rests on one line on
 fal's marketing page. It isn't spelled out in the terms, so ask fal to confirm it in
 writing before a large campaign." Not a blocker for training; a blocker for scale.
+
+
+---
+
+## Amendment, 2026-09-30 — the inference endpoint, verified
+
+The LoRA was trained and evaluated, so the endpoint it runs on is now settled rather
+than assumed. Verified against `fal.ai/models/fal-ai/flux-lora`, read 2026-09-30:
+
+| | |
+|---|---|
+| Endpoint | `fal-ai/flux-lora` |
+| Price | **$0.035 per megapixel**, "billed by rounding up to the nearest megapixel" |
+| LoRA input | a `loras` array of `{path, scale}`, where `path` is the weights URL |
+
+Recorded in `config/providers.yaml` as `image.lora_inference` with
+`price_usd_per_image: 0.07` rather than a per-megapixel figure. Two reasons, both
+deliberate: the cost guard prices one unit per slot, and a 1024x1024 image is 1.05 MP,
+which rounds **up** to 2 MP and therefore bills 0.07. Taking the higher reading is the
+house rule — a guard that understates lets a run pass the cap while reporting it is
+inside it.
+
+This endpoint is not a preference. **It is where the weights are permitted to run**, per
+this ADR's main finding, and `LoraArtefact.require_inference_host` is what makes that
+checkable rather than remembered.
+
+Note that fal's page states "All generated images are cleared for commercial use". That
+is consistent with the reading recorded above — fal's own licence covers work run on fal
+— and it is still marketing copy rather than a contract.
+`commercial_grant_confirmed_in_writing` stays `false`.

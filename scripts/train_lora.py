@@ -17,6 +17,7 @@ import base64
 import datetime as dt
 import json
 import sys
+import uuid
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from app.identity.training import (
     TrainingRequest,
 )
 from app.providers.types import ProviderJob
+from app.storage.keys import key_for
 from app.storage.s3 import S3Storage, bucket_from_env
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,16 +58,37 @@ def archive_as_data_uri(archive: bytes) -> str:
     return "data:application/zip;base64," + base64.b64encode(archive).decode()
 
 
-def archive_to_bucket(archive: bytes, dataset_hash: str, *, expires_in: int) -> str:
+#: The storage namespace for the configured persona.
+#:
+#: `persona.id` in config is `persona_001`, and storage keys are namespaced by UUID
+#: because the persona prefix is the unit of erasure — deleting it deletes that
+#: persona's media, so it must not be a name anyone could collide with. There is no
+#: persona row yet to take a UUID from, so one is derived deterministically from the
+#: configured id: stable across runs and machines, and not invented fresh each time.
+#:
+#: **Replace this with the persona row's own id** once Phase 1 creates one. Until then
+#: anything written under it is reachable but not joined to a database row.
+PERSONA_NAMESPACE = uuid.UUID("6ba7b811-9dad-11d1-80b4-00c04fd430c8")  # RFC 4122 URL ns
+
+
+def persona_storage_id(persona_config_id: str) -> uuid.UUID:
+    return uuid.uuid5(PERSONA_NAMESPACE, f"persona-studio:{persona_config_id}")
+
+
+def archive_to_bucket(
+    archive: bytes, dataset_hash: str, *, persona_id: uuid.UUID, expires_in: int
+) -> str:
     """Upload the training set privately and hand fal a short, expiring URL.
 
     Private rather than fal's own upload endpoint, whose CDN is public (ADR 0006):
-    anyone with the URL could download the persona's entire reference set. The key is
-    the dataset hash, so the same split uploads to the same place and a re-run does not
-    litter the bucket with copies.
+    anyone with the URL could download the persona's entire reference set.
+
+    Filed under `reference` because that is what it is — the reference set, packaged for
+    a trainer. Named by the dataset hash, so the same split uploads to the same key and a
+    re-run replaces rather than accumulating 17 MB copies.
     """
     storage = S3Storage(bucket=bucket_from_env())
-    key = f"training-sets/{dataset_hash}.zip"
+    key = key_for(persona_id, "reference", f"training-set-{dataset_hash}.zip")
     storage.put(key, archive, content_type="application/zip", overwrite=True)
     return storage.presign_get(key, expires_in=expires_in)
 
@@ -135,8 +158,17 @@ def main() -> int:
         archive_url = archive_as_data_uri(archive)
         print(f"archive url   data URI, {len(archive_url) / 1048576:.2f} MB")
     else:
-        archive_url = archive_to_bucket(archive, dataset_hash, expires_in=args.presign_seconds)
-        print(f"archive url   presigned, expires in {args.presign_seconds}s")
+        persona_id = persona_storage_id(config.persona.persona.id)
+        archive_url = archive_to_bucket(
+            archive,
+            dataset_hash,
+            persona_id=persona_id,
+            expires_in=args.presign_seconds,
+        )
+        print(
+            f"archive url   presigned under persona/{persona_id}, "
+            f"expires in {args.presign_seconds}s"
+        )
 
     request = TrainingRequest(
         archive_url=archive_url,
