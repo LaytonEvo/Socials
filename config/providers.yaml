@@ -237,6 +237,17 @@ providers:
           # The consequence is deliberate and worth stating: a synced take comes back
           # at the LENGTH OF ITS LINE, not the length of the source clip. The edit
           # list is therefore built AFTER the sync, never before.
+          #
+          # THE SOURCE TAKE MUST ALREADY CONTAIN SPEECH. This model replaces speech;
+          # it does not animate a still mouth. A take generated with "mouth closed"
+          # is refused outright:
+          #
+          #     No speech detected in the input video, please try a different video
+          #
+          # So the shot prompt has to make her talk, and the sync then swaps which
+          # words the mouth is forming. Tested 2026-09-30 and it cost nothing — the
+          # refusal is a 422 before any GPU runs. Worth knowing before anyone
+          # "improves" a shot prompt by quietening her down.
           enable_dynamic_duration: true
       # Schema read from the endpoint's own OpenAPI on 2026-09-30. `end_time` was
       # previously set to the string "auto" here, which is not a value it accepts —

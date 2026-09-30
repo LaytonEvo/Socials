@@ -72,8 +72,23 @@ SHOTS: list[Shot] = [
         "still": "a photo of {w}, a young woman in a white golf polo and visor, "
         "head and shoulders, standing on a golf course fairway, smiling at "
         "the camera, golden hour, shallow depth of field",
-        "motion": "she looks at the camera and speaks, head still and level, "
-        "eyes on the lens, gentle breeze in her hair, camera static",
+        # She MUST be speaking in the source take, and that is a property of the
+        # lip-sync model rather than a preference. Asked to sync a take generated with
+        # "mouth closed", the provider refuses outright:
+        #
+        #     No speech detected in the input video, please try a different video
+        #
+        # It replaces speech; it does not animate a still mouth. So the video model
+        # animates her talking in its own invented language and the sync swaps which
+        # words the mouth is forming. Verified 2026-09-30, at no cost — the refusal
+        # comes back as a 422 before any GPU runs.
+        #
+        # NOT "small natural head movements", which was in the first version and
+        # produced a take that tilted and rolled throughout. That reads as a glitch
+        # rather than as life, and it was wrongly blamed on the sync, which is visibly
+        # steadier than its own source.
+        "motion": "she looks into the lens and talks to camera, head level and steady, "
+        "shoulders still, only her hair moving in the breeze, camera locked off",
         "label": "opening — to camera on the fairway",
         "face_forward": True,
         "line": "Morning. First tee, and for once it isn't raining.",
