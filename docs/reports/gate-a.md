@@ -1,20 +1,23 @@
 # Gate A — Spike 0 report
 
-> ## ⬤ VERDICT: NOT YET RECORDED
+> ## ✅ VERDICT: PROCEED
 >
-> **This is the gate's open item, and the oldest one in the project.**
-> `BUILD_ORDER.md` §4 says a human reads this report and decides between
-> **proceed**, **change approach** and **stop**. The report recommends proceed
-> (§8). That recommendation is not a verdict, and nothing below has been
-> ratified by the owner.
+> **Decided by Layton (owner), 2026-09-30.** `BUILD_ORDER.md` §4's decision is
+> taken: **proceed**. No conditions attached beyond the four decisions already
+> open below (D-A to D-D), which carry forward unchanged.
 >
-> Phase 0 was built anyway. `BUILD_ORDER.md`'s status line states Phase 0 *"has
-> not started and does not start until Gate A passes"*, and it started. That is a process breach, not a
-> technical one — the evidence supports proceeding — but it should be recorded
-> rather than tidied away, and it is the reason this block exists.
+> **What this authorises.** Phase 1 continues, and the LoRA training run is
+> cleared in principle — **not yet in budget**. See §9.
 >
-> **To close it**, fill in the block in §9 and commit. See §9 for what the
-> decision actually commits to and what it does not.
+> **What it does not authorise.** Nothing about publication. No account, no
+> posting, no audience test; those sit behind D3 and D7 and are untouched.
+>
+> **Recorded late, and the record says so.** `BUILD_ORDER.md` states Phase 0
+> *"has not started and does not start until Gate A passes"*, and Phase 0 was
+> built before this verdict was taken. The evidence supported proceeding
+> throughout, so this is a process gap rather than a technical one — but the
+> honest version is that the gate was passed in practice before it was passed
+> on paper, and it is written down rather than tidied away.
 
 **Date:** 2026-09-25 · **Recommendation: proceed, with four decisions attached**
 
@@ -558,13 +561,25 @@ Four decisions stay open and none of them is a reason to withhold the verdict:
 ### Record the decision here
 
 ```
-Gate A verdict:     [ proceed | change approach | stop ]
-Decided by:
-Date:
-Conditions, if any:
+Gate A verdict:     PROCEED
+Decided by:         Layton (owner)
+Date:               2026-09-30
+Conditions:         None beyond D-A to D-D, which remain open as recorded above.
 ```
 
+**Immediately unblocked:** nothing that spends money yet. The training run needs
+a budget raise first — see below.
+
+**Immediately blocked, and it is the next thing to settle:** the run costs
+**$24 at 1000 steps or $48 at 2000**, and the spike budget does not hold it.
+Proceeding is a decision about direction; the spend is a separate decision
+about money, and `budget.require_explicit_budget_per_run` means no paid call
+happens without one. **D-C (the dlib FaceScrub licence) is still open and still
+blocks publication, not measurement** — it does not stand in the way of
+training.
+
 **Note on sequencing.** Phase 0 was built before this verdict was recorded,
-against `BUILD_ORDER.md`'s explicit instruction. Recording the verdict now does
-not undo that; it stops the gap widening, and the honest version of the record
-is that the gate was passed in practice before it was passed on paper.
+against `BUILD_ORDER.md`'s explicit instruction. Recording the verdict on
+2026-09-30 does not undo that; it stops the gap widening, and the honest version
+of the record is that the gate was passed in practice before it was passed on
+paper. `BUILD_ORDER.md`'s status line is corrected to match.

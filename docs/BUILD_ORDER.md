@@ -4,7 +4,9 @@
 **Amends:** `BUILD_PLAN.md` Sections 4 and 6 (see [Plan amendments](#plan-amendments))
 **Leaves unchanged:** Sections 0–3, 5, 7–9. The architecture, adapter contract, compliance requirements and data model are sound. Only the sequencing and a short list of concrete gaps change.
 **Rationale:** `docs/decisions/0001-spike-first-build-order.md`
-**Status:** **Accepted 2026-09-22.** Spike 0 is the current stage; its harness is built (`scripts/spike/`). Phase 0 has not started and does not start until Gate A passes.
+**Status:** **Accepted 2026-09-22.** Spike 0 is complete and **Gate A passed on 2026-09-30** (verdict: proceed, `docs/reports/gate-a.md`). Phase 0 is built and Phase 1 is in progress.
+
+> The original wording here read *"Phase 0 has not started and does not start until Gate A passes"*. Phase 0 was in fact built before the verdict was recorded. The evidence supported proceeding throughout and the verdict when taken was proceed, so nothing was built on a false premise — but the gate was passed in practice before it was passed on paper, and that is recorded here and in the gate report rather than quietly corrected.
 
 ---
 
