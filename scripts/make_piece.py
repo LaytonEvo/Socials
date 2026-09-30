@@ -29,6 +29,8 @@ from app.costs.guard import BudgetGuard
 from app.identity.embedder import DlibEmbedder
 from app.pipeline.assembler import assemble, duration_of, edit_list
 from app.pipeline.disclosure import apply_disclosure
+from app.pipeline.golf import apply_house_style
+from app.pipeline.golf import check as check_golf
 from app.pipeline.lipsync import lip_sync, should_lip_sync
 from app.pipeline.sfx import generate_sound
 from app.pipeline.takes import measure, steadiest
@@ -97,7 +99,17 @@ SHOTS: list[Shot] = [
         "Shoulders still. Only her lips and her hair move. Camera locked off.",
         "label": "opening — to camera on the fairway",
         "face_forward": True,
-        "line": "Morning. First tee, and for once it isn't raining.",
+        # ADR 0009 does NOT forbid her knowing golf — §1 says the model writing her
+        # words already has the rules, the etiquette and the equipment, and the
+        # decision was against building a RETRIEVAL CORPUS. I read it as "keep golf out
+        # of her mouth" and wrote three lines of nothing. That was my misreading.
+        #
+        # What the ADR does constrain is REGISTER: spec §1 has her a 14 handicap,
+        # "not a coach, not a pro", and §4 is pointed about men explaining her own
+        # swing to her. So she talks about golf the way a decent amateur does — from
+        # her own round, occasionally wrong — and never instructs.
+        "line": "Right, first tee, and there's water left the whole way down. "
+        "Which is exactly where I'm going to hit it.",
         "sound": "",
     },
     {
@@ -125,6 +137,8 @@ SHOTS: list[Shot] = [
         "line": "",
         "sound": "quiet golf course ambience, soft footsteps on grass, golf clubs "
         "rattling gently in a bag, distant birdsong, light breeze",
+        # Not the putting surface — a bag never goes on a green, which is what the
+        # first version of this shot rendered.
     },
     {
         "name": "03_swing",
@@ -221,7 +235,12 @@ def main() -> int:
         clip = args.out / f"{shot['name']}.mp4"
 
         if not (args.skip_generate and keyframe.is_file()):
-            prompt = shot["still"].format(w=artefact["trigger_word"])
+            prompt = apply_house_style(shot["still"].format(w=artefact["trigger_word"]))
+            for problem in check_golf(prompt):
+                raise SystemExit(
+                    f"{shot['name']}: shot prompt contains {problem.rule} — "
+                    f"{problem.why}. Fix the prompt rather than the picture."
+                )
             print(f"\n[{shot['name']}] keyframe")
             assert image_slot.model is not None
             url = generate_image(

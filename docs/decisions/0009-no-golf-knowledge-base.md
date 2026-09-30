@@ -145,3 +145,63 @@ one, and that is a content-strategy limit rather than a bug.
 **Nothing.** The only item needing an owner decision — current events — was
 answered on 2026-09-28 and is recorded in §4. The ADR is ready to move from
 Proposed to Accepted on the owner's word.
+
+---
+
+## Amendment, 2026-09-30 — the stage this ADR did not examine
+
+**The decision stands. Its scope was too narrow, and the gap showed up in rendered
+frames rather than in dialogue.**
+
+### What happened
+
+The first assembled golf piece put her **carrying a golf bag across a putting green**.
+The bag also carried invented brand lettering, and an earlier take rendered a real Nike
+swoosh on her visor unprompted. The owner's reaction was that the model needed "filling
+with golf knowledge".
+
+### Why this ADR did not catch it
+
+§ "Context" dismisses the image stage in one line:
+
+> **The video model needs none.** `h3-max` renders pictures and never knows what a
+> handicap is.
+
+That is true and beside the point. The image model does not need to know what a handicap
+is. It needs to know that **a bag does not go on the putting surface** — and it does not,
+because nothing ever told it.
+
+This ADR asked "does the persona need golf facts to SAY?" and answered correctly. It
+never asked "does the generator need golf facts to DRAW?", which is a different question
+with a different answer.
+
+### The distinction worth keeping
+
+| | Knowledge of | Where it lives | This ADR |
+|---|---|---|---|
+| **Dialogue** | rules, etiquette, equipment, terminology | already in the model writing her words | correct: no corpus |
+| **Picture** | what a golf photograph may contain | nowhere | **missed** |
+
+The second is not a corpus either. It is a short, fixed list of things a golfer would
+notice, and it belongs in the prompt — now `app/pipeline/golf.py`, applied to every
+image and motion prompt, with a check that refuses a prompt describing an implausible
+frame rather than paying to render one.
+
+### A correction to how this ADR was applied
+
+Separately from the gap above: I read this ADR as *"keep golf out of her mouth"* and
+wrote her three lines of nothing — "Long way to the green from here" — which the owner
+correctly called a video with no point.
+
+That is not what it says. §1 states the model writing her dialogue **already has** the
+rules, the etiquette and the equipment. What this ADR constrains is **register, not
+subject**: spec §1 has her a 14 handicap, *"not a coach, not a pro"*, and §4 is pointed
+about men explaining her own swing to her. She should talk about golf constantly — from
+her own round, occasionally wrong, never instructing.
+
+An empty line is not a safe reading of this ADR. It is a failure to read it.
+
+### Unchanged
+
+No corpus, no retrieval layer, no current events. The continuity gap in §3 — nothing
+reads `shot.dialogue` back into the generator — is still real and still unbuilt.
