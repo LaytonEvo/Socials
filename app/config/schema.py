@@ -399,6 +399,12 @@ class PersonaVoice(BaseModel):
     status: str
     provider: str | None = None
     voice_id: str | None = None
+    #: Delivery settings — speed, stability, style. Persona identity rather than
+    #: provider configuration, which is why they live here and not in providers.yaml.
+    options: dict[str, Any] = Field(default_factory=dict)
+    #: Task 3.6 requires a DESIGNED synthetic voice, never one cloned from a real
+    #: person without a contract. False means nobody has confirmed which this is, and
+    #: `require_publishable_voice` refuses at the publishing boundary while it is.
     provenance_checked: bool = False
 
 

@@ -259,6 +259,12 @@ providers:
       # person, it does not satisfy that and must be replaced. Verify before a
       # published render.
       provenance_verified_on: null
+      request:
+        # Field names are the MODEL's schema, so they live beside the model id.
+        # Confirmed against the spike's own TTS adapter, which ran 16 calls
+        # through this shape on 2026-09-24.
+        text_field: text
+        voice_field: voice
 
   # --- LLM (shot lists, captions) ------------------------------------------
   llm:

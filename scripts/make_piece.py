@@ -15,8 +15,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -26,16 +28,20 @@ from app.config import load_all
 from app.costs.guard import BudgetGuard
 from app.pipeline.assembler import assemble, edit_list
 from app.pipeline.disclosure import apply_disclosure
-from app.providers.fal import api_key
+from app.pipeline.voice import VoiceLine, narrate
+from app.providers.fal import QUEUE_ROOT, api_key
 from scripts.evaluate_lora import generate as generate_image
 from scripts.video_identity_test import submit_clip
 
 ROOT = Path(__file__).resolve().parent.parent
 
 #: The shot list. Golf content, in her clothes, on a course — which is what the persona
-#: is for. Each shot is a still prompt and the motion applied to it.
-#: The shot list. Golf content, in her clothes, on a course — which is what the persona
-#: is for.
+#: is for. Each entry is a still prompt, the motion applied to it, and what she says.
+#:
+#: **The lines are observational, not instructional, and that is deliberate.** ADR 0009
+#: settled that this persona has no golf knowledge base behind her, so putting swing
+#: advice in her mouth would be inventing expertise she does not have and cannot cite.
+#: Personality is in scope; coaching is not.
 #:
 #: **Every still prompt states its framing, and that is not decoration.** The first
 #: version of this list did not, and the model answered "walking along a fairway" with a
@@ -43,8 +49,7 @@ ROOT = Path(__file__).resolve().parent.parent
 #: fell to 0.45 and five frames scored below threshold. The identity layer was fine —
 #: there was simply not enough face to measure. Apparent face size is the variable the
 #: spike's condition matrix kept finding underneath its other results, and a shot list
-#: that leaves it to the model is a shot list that will sometimes produce unmeasurable
-#: footage.
+#: that leaves it to the model is one that will sometimes produce unmeasurable footage.
 SHOTS = [
     {
         "name": "01_intro",
@@ -54,6 +59,7 @@ SHOTS = [
         "motion": "she looks at the camera and speaks, small natural head movements, "
         "gentle breeze in her hair, camera static",
         "label": "opening — to camera on the fairway",
+        "line": "Morning. First tee, and for once it isn't raining.",
     },
     {
         "name": "02_walk",
@@ -64,6 +70,7 @@ SHOTS = [
         "motion": "she walks forward carrying her bag, camera tracks alongside at the "
         "same height, her face stays in frame",
         "label": "b-roll — walking the fairway",
+        "line": "Long way to the green from here.",
     },
     {
         "name": "03_swing",
@@ -73,6 +80,7 @@ SHOTS = [
         "motion": "she takes the club back and swings through, full follow through, "
         "camera static at chest height",
         "label": "the swing",
+        "line": "Right. Let's see where that one goes.",
     },
 ]
 
@@ -104,7 +112,11 @@ def main() -> int:
     print(f"\nkeyframes     {image_slot.model} at scale {scale} = ${still_cost}")
     print(f"clips         {video_slot.model} = ${clip_cost}")
     print(f"ESTIMATE      ${estimate}")
-    print("audio         dropped — the model's soundtrack is not a recording of anything")
+    chars = sum(len(str(s["line"])) for s in SHOTS)
+    voice_cost = guard.estimate("voice", "primary", Decimal(chars) / Decimal(1000))
+    estimate += voice_cost
+    print(f"voice         {chars} characters = ${voice_cost}")
+    print("audio         the model's own soundtrack is dropped; her voice replaces it")
     if args.dry_run:
         print("\n--dry-run: nothing billed.")
         return 0
@@ -146,8 +158,52 @@ def main() -> int:
     edl = edit_list(clips, aspect="9:16")
     print(f"\nedit list     {len(edl.cuts)} cuts, {edl.duration_s:.2f}s, audio={edl.audio}")
     rough = assemble(edl, args.out / "rough.mp4")
+
+    # Her voice, laid over the silent cut. Not the video model's invented soundtrack.
+    voice = config.persona.persona.voice
+    if not voice.voice_id:
+        raise SystemExit("persona.voice.voice_id is not set; there is no voice to speak in")
+    voice_id = str(voice.voice_id)
+    voice_slot, _, _ = guard.price("voice", "primary")
+    shape = dict(voice_slot.request or {})
+    lines: list[VoiceLine] = []
+    offset = 0.0
+    for shot, cut in zip(SHOTS, edl.cuts, strict=True):
+        text = str(shot["line"])
+        audio = args.out / f"{shot['name']}_voice.mp3"
+        if not (args.skip_generate and audio.is_file()):
+            assert voice_slot.model is not None
+            arguments: dict[str, Any] = {
+                str(shape.get("text_field", "text")): text,
+                str(shape.get("voice_field", "voice")): voice_id,
+                **dict(voice.options or {}),
+            }
+            r = client.post(f"{QUEUE_ROOT}/{voice_slot.model}", json=arguments)
+            r.raise_for_status()
+            sub = r.json()
+            for _ in range(120):
+                if client.get(sub["status_url"]).json().get("status") in {
+                    "COMPLETED",
+                    "FAILED",
+                    "ERROR",
+                }:
+                    break
+                time.sleep(3)
+            payload = client.get(sub["response_url"]).json()
+            url = str((payload.get("audio") or {}).get("url") or "")
+            if not url:
+                raise SystemExit(f"TTS returned no audio: {str(payload)[:300]}")
+            audio.write_bytes(client.get(url, timeout=120.0).content)
+        # Half a second in, so she is not already talking as the cut lands.
+        lines.append(VoiceLine(text=text, audio=audio, at_s=offset + 0.5, voice_id=voice_id))
+        print(f"  voice {shot['name']}: {text!r}")
+        offset += cut.duration_s
+
+    spoken = narrate(rough.path, lines, args.out / "spoken.mp4")
+    print(f"narration     {spoken.name}  {len(lines)} lines in voice {voice_id}")
+
     final = apply_disclosure(
-        rough.path, args.out / "final.mp4", overlay=config.persona.persona.disclosure.overlay
+        spoken, args.out / "final.mp4", overlay=config.persona.persona.disclosure.overlay
     )
     print(f"rough         {rough.path.name}")
     print(f"FINAL         {final.path.name}  '{final.disclosure_text}' at {final.position}")
