@@ -1,0 +1,25 @@
+{
+  "threshold": 0.9619,
+  "holdout_size": 19,
+  "sanity": {
+    "mean": 0.9843076095933623,
+    "pass_rate": 0.9901960784313726,
+    "scored": 102
+  },
+  "lora": {
+    "generated": 3,
+    "passed": 1,
+    "pass_rate": 0.3333333333333333,
+    "mean": 0.9590520336151095,
+    "min": 0.951509374329044,
+    "scores": [
+      0.9650208279576862,
+      0.951509374329044,
+      0.960625898558598
+    ],
+    "unusable": []
+  },
+  "weights_url": "https://v3b.fal.media/files/b/0aac7c65/wtET4pTi3m1EnsL_6__4c_pytorch_lora_weights.safetensors",
+  "lora_scale": 1.0,
+  "estimated_cost_usd": "0.210000"
+}

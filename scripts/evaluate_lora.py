@@ -89,9 +89,27 @@ def main() -> int:
         "--artefact", type=Path, default=ROOT / "spike" / "runs" / "lora" / "artefact.json"
     )
     parser.add_argument("--out", type=Path, default=ROOT / "spike" / "runs" / "lora" / "eval")
-    parser.add_argument("--scale", type=float, default=1.0)
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=None,
+        help="LoRA strength; defaults to the measured value in config",
+    )
     parser.add_argument("--count", type=int, default=len(PROMPTS))
     parser.add_argument("--budget", type=Decimal, default=None)
+    parser.add_argument(
+        "--prompt-index",
+        type=int,
+        action="append",
+        help="restrict to these prompts by index; repeatable. Default: all.",
+    )
+    parser.add_argument(
+        "--takes",
+        type=int,
+        default=1,
+        help="generations per prompt. One take is an anecdote, not a rate.",
+    )
+    parser.add_argument("--label", default="", help="suffix for the output directory")
     parser.add_argument("--sanity", action="store_true", help="only the free control")
     args = parser.parse_args()
 
@@ -121,28 +139,40 @@ def main() -> int:
     if artefact.get("inference_host") != "fal":
         raise SystemExit(f"artefact says it runs on {artefact.get('inference_host')}, not fal")
 
+    chosen = (
+        [(i, PROMPTS[i]) for i in args.prompt_index]
+        if args.prompt_index
+        else list(enumerate(PROMPTS[: args.count]))
+    )
+    jobs = [(i, tpl, take) for i, tpl in chosen for take in range(args.takes)]
+
     guard = BudgetGuard(config.budget, config.providers)
     slot, unit_price, unit = guard.price(GROUP, SLOT)
-    estimate = guard.estimate(GROUP, SLOT, Decimal(args.count))
-    print(f"\nmodel         {slot.model}")
-    print(f"price         ${unit_price} per {unit} x {args.count} = ${estimate}")
+    estimate = guard.estimate(GROUP, SLOT, Decimal(len(jobs)))
+    print(f"\nmodel         {slot.model}   lora scale {args.scale}")
+    print(f"price         ${unit_price} per {unit} x {len(jobs)} = ${estimate}")
     run_budget = guard.require_run_budget(args.budget)
     if estimate > run_budget:
         raise SystemExit(f"estimate ${estimate} exceeds run budget ${run_budget}; refusing")
 
+    if args.label:
+        args.out = args.out.parent / f"{args.out.name}-{args.label}"
     args.out.mkdir(parents=True, exist_ok=True)
     headers = {"Authorization": f"Key {api_key()}"} if api_key() else {}
     client = httpx.Client(timeout=180.0, headers=headers)
+    if args.scale is None:
+        args.scale = float(slot.options.get("lora_scale", 1.0))
+        print(f"lora scale    {args.scale} (from config)")
     request = getattr(slot, "request", None)
     base: dict[str, Any] = dict(getattr(request, "base", None) or {})
 
     generated: list[Path] = []
-    for i, template in enumerate(PROMPTS[: args.count]):
+    for n, (i, template, take) in enumerate(jobs, start=1):
         prompt = template.format(w=artefact["trigger_word"])
-        print(f"\n[{i + 1}/{args.count}] {prompt}")
+        print(f"\n[{n}/{len(jobs)}] p{i} take{take}  {prompt}")
         assert slot.model is not None
         url = generate(client, slot.model, prompt, weights_url, args.scale, base)
-        dest = args.out / f"gen_{i:02d}.png"
+        dest = args.out / f"gen_{i:02d}_t{take}.png"
         dest.write_bytes(client.get(url, timeout=180.0).content)
         generated.append(dest)
         print(f"  -> {dest.name}")
