@@ -257,6 +257,19 @@ providers:
       # time to read the schema properly.
 
     alternative:
+      # MEASURED AND REJECTED, 2026-09-30. Kept here with its numbers so nobody
+      # tries it again without knowing what it costs.
+      #
+      # Swapped in to test sync quality on the owner's report that heygen's
+      # lips still did not match. It may or may not sync better — but it took
+      # the talking shot from 0 frames below the identity threshold to NINE OF
+      # TEN, mean 0.94464 against a 0.951 threshold. The owner's verdict on the
+      # result, unprompted: it does not look like her.
+      #
+      # Gate A had already measured exactly this and chose heygen for it. The
+      # mistake was not trying an alternative; it was not re-scoring identity
+      # afterwards, which amendment A5 exists to require.
+      #
       # Second opinion on sync QUALITY. heygen was chosen on 2026-09-24 for its
       # identity delta (+0.0041, the only one that did not cost identity) on a
       # three-way against pixverse and veed — but identity is not the same
@@ -269,6 +282,7 @@ providers:
       # silence | remap.
       backend: fal
       model: fal-ai/sync-lipsync/v2
+      # Do not make this the default without re-measuring identity per shot.
       endpoint: null
       # "$3 per minute of video", "$5/minute" for lipsync-2-pro, read from the
       # model page 2026-09-30. Per SECOND here because that is the unit the
@@ -294,6 +308,16 @@ providers:
       # This exists because dropping the video model's invented soundtrack left
       # b-roll in total silence — honest, and wrong. A golf shot with no contact
       # sound reads as broken.
+      #
+      # WARNING, measured 2026-09-30: this model is conditioned on the VIDEO as
+      # well as the prompt. Given a shot containing a person it generates SPEECH
+      # — an invented voice again, in no identifiable language — even when the
+      # prompt asks only for a club strike and birdsong. The owner heard it in
+      # the first piece that used it.
+      #
+      # Checking the prompt for speech words does not catch this, because the
+      # prompt was innocent. The OUTPUT has to be checked, or this model must
+      # not be used on shots containing a person.
       backend: fal
       model: fal-ai/mmaudio-v2
       endpoint: null
