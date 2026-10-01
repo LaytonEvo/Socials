@@ -142,6 +142,7 @@ def assess(
     embedder: DlibEmbedder,
     threshold: float,
     disclosed: bool,
+    captioned: bool = False,
     sample_fps: float = 2.0,
 ) -> Verdict:
     """Judge a finished piece shot by shot."""
@@ -291,6 +292,16 @@ def assess(
                 "lip sync",
                 "whether the mouth matches the words is not measurable here. A human must "
                 "watch and listen.",
+            )
+        )
+    if captioned:
+        verdict.findings.append(
+            Finding(
+                Severity.REVIEW,
+                "caption timing",
+                "cue timings are apportioned by character count, which is a proxy for how "
+                "long a phrase takes to say and not a measurement of it. A human must "
+                "check the words appear when they are spoken.",
             )
         )
     return verdict

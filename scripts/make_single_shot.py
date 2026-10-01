@@ -34,6 +34,7 @@ from app.identity.embedder import DlibEmbedder
 from app.identity.evaluation import holdout_reference
 from app.pipeline.acceptance import ShotUnderTest, StillScreen, assess, best_still, screen_still
 from app.pipeline.assembler import duration_of
+from app.pipeline.captions import burn_in, split_into_cues, write_srt
 from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.fidelity import detail_pass, require_identity_preserved
 from app.pipeline.golf import apply_house_style
@@ -340,13 +341,29 @@ def main() -> int:
     )
     print(f"disclosed   {final.path.name}")
 
+    # --------------------------------------------------------------- captions --
+    # Shorts are watched muted, so an uncaptioned piece is one most viewers never hear.
+    # Burned in AFTER the disclosure, and `burn_in` refuses if the caption band would sit
+    # over the overlay: a caption painted across the disclosure leaves it in the file and
+    # takes it away from the viewer.
+    cues = split_into_cues(SHOT["line"], float(duration_of(final.path)))
+    srt = write_srt(cues, args.out / "captions.srt")
+    captioned = burn_in(
+        final.path,
+        cues,
+        args.out / "final_captioned.mp4",
+        overlay=config.persona.persona.disclosure.overlay,
+    )
+    print(f"captions    {captioned.name} ({len(cues)} cues) + {srt.name}")
+
     # ------------------------------------------------------------- the gate --
     verdict = assess(
-        [ShotUnderTest(name="single", path=final.path, speaks=True, audio_source="voice")],
+        [ShotUnderTest(name="single", path=captioned, speaks=True, audio_source="voice")],
         reference=reference,
         embedder=embedder,
         threshold=threshold,
         disclosed=True,
+        captioned=True,
     )
     print("\n" + "=" * 70)
     print(verdict.report())
