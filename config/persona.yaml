@@ -90,15 +90,33 @@ persona:
     # keyframe that had passed the stills screen: 0.96239, 0.96576, 0.96662, 0.96707,
     # 0.96731 all passed as stills and every one produced a take the gate refused.
     #
-    # Set to the lowest keyframe that has ever produced a passing take, which is an
-    # empirical floor rather than a derived constant pretending to precision. n=1 at
-    # this value, so it is a starting bar to be revised as runs accumulate — upward if
-    # takes keep failing at it, downward if they comfortably pass.
+    # REVISED DOWN 2026-10-01, from 0.978, on the criterion written in beside it: "to be
+    # revised as runs accumulate — upward if takes keep failing at it, downward if they
+    # comfortably pass." They comfortably pass.
+    #
+    # 0.978 was derived from drops measured at lora_scale 1.3. The scale went to 1.7, and
+    # THE DROP ITSELF CHANGED — a stronger likeness in the keyframe leaves the video model
+    # less room to drift away from it:
+    #
+    #   drops at scale 1.3   0.0165 0.0166 0.0226 0.0237 0.0245 0.0266 0.0310 0.0328 0.0477
+    #   drops at scale 1.7   0.0113 0.0174 0.0177 0.0181
+    #
+    # So the bar was carrying a penalty the pipeline no longer pays. 0.978 was also above
+    # the best of 80 draws across both scales (max 0.97739) — a gate that has never passed
+    # is a stop, not a gate — while a 0.97739 keyframe then produced FOUR takes out of four
+    # with zero frames below threshold (mins 0.95925, 0.96606, 0.95969, 0.96001).
+    #
+    # Set to 0.951 + 0.0181, the worst drop observed at 1.7, plus a little: the floor below
+    # which no observed drop saves a keyframe. At scale 1.7 that is roughly one draw in two
+    # rather than one in 215, so a usable keyframe costs about $0.08 instead of $7.54.
+    #
+    # Only four drops at 1.7 so far, so this is thin and may need to go back up. The
+    # criterion is unchanged: upward if takes start failing at it.
     #
     # Cheap in the right direction: a keyframe is $0.035 and the takes plus sync beneath
     # it are about $1.46, so screening harder here is roughly forty times cheaper than
     # discovering the same answer downstream.
-    identity_threshold_keyframe: 0.978
+    identity_threshold_keyframe: 0.970
     threshold_keyframe_derived_on: 2026-10-01
     threshold_keyframe_evidence: docs/decisions/0014-keyframes-need-animation-margin.md
     threshold_video_evidence: docs/reports/video-threshold-2026-09-30.md

@@ -1,6 +1,6 @@
 # ADR 0014 — Keyframes need animation margin, and the gate may be measuring the wrong thing
 
-- **Status**: Part 1 accepted. **Part 3's proposal WITHDRAWN 2026-10-01** on the owner's verdict.
+- **Status**: Part 1 **revised** 2026-10-01 (bar 0.978 → 0.970). Part 3's proposal withdrawn.
 - **Date**: 2026-10-01
 - **Extends**: ADR 0011 (screen the keyframe), ADR 0012 (unverifiable is not acceptable)
 
@@ -169,3 +169,41 @@ was trained on. The levers left all cost something real:
 - retraining the LoRA, which re-opens the D-C licence question before anything can publish
 - accepting a softer look as the house style, which is a content decision rather than a
   technical one
+
+
+## Part 1 revised: the drop is not a constant, it is a function of the scale
+
+The bar of 0.978 came from drops of 0.0165 to 0.0477. **Every one of those was measured on a
+`lora_scale: 1.3` keyframe.** When the scale went to 1.7 the drop changed with it:
+
+| | drops observed |
+|---|---|
+| scale 1.3 | 0.0165, 0.0166, 0.0226, 0.0237, 0.0245, 0.0266, 0.0310, 0.0328, 0.0477 |
+| **scale 1.7** | **0.0113, 0.0174, 0.0177, 0.0181** |
+
+A stronger likeness in the keyframe leaves the video model less room to drift away from it,
+so the bar was carrying a penalty the pipeline no longer pays. Two independent signs that
+0.978 had become wrong:
+
+1. **It was above the best of 80 draws** across both scales (max 0.97739). A gate that has
+   never passed is a stop, not a gate.
+2. **A 0.97739 keyframe produced four passing takes out of four** — zero frames below
+   threshold, 100% coverage, mins 0.95925 / 0.96606 / 0.95969 / 0.96001.
+
+Revised to **0.970**, which is 0.951 plus the worst drop seen at 1.7 and a little over. At
+scale 1.7 that is roughly one draw in two instead of one in 215, so a usable keyframe costs
+about **$0.08** instead of **$7.54**.
+
+**This is the revision the original text asked for**, not a relaxation to make work pass:
+the bar was written with the criterion *"upward if takes keep failing at it, downward if
+they comfortably pass"*, and four of four passing is comfortable. The criterion is unchanged
+and the evidence is thin — four drops at 1.7 — so it may have to go back up.
+
+### Why this is a different case from Part 3
+
+Part 3 proposed relaxing the **gate's own acceptance rule** and was withdrawn because the
+owner's judgement did not endorse the work it would have passed. This changes a **screening
+heuristic that sits upstream of the gate**, and the gate's rule is untouched: those four
+takes were accepted by the unchanged rule, measured on the unchanged threshold. The
+difference matters — one would have changed what counts as good, this changes only what is
+worth attempting.
