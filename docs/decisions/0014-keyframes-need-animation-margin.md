@@ -1,6 +1,6 @@
 # ADR 0014 — Keyframes need animation margin, and the gate may be measuring the wrong thing
 
-- **Status**: proposed — the second half needs the owner (D-A)
+- **Status**: Part 1 accepted. **Part 3's proposal WITHDRAWN 2026-10-01** on the owner's verdict.
 - **Date**: 2026-10-01
 - **Extends**: ADR 0011 (screen the keyframe), ADR 0012 (unverifiable is not acceptable)
 
@@ -94,3 +94,78 @@ The frames are in `spike/runs/judge/worst-frames.png` and the clips in
 
 Spent reaching this finding today: about $2.50 on keyframes and takes, against the $100
 monthly ceiling set the same day.
+
+
+## The owner's verdict, and why Part 3 is withdrawn
+
+Asked to judge the frames the gate refuses on, the owner said:
+
+> "It's her but almost a more AI version of her."
+
+and then:
+
+> "Could also not be fully her."
+
+That is not "the scorer is rejecting acceptable work". The scorer and his eye **agree** that
+something is wrong with these takes, so the case for relaxing the rule to a clip mean
+collapses: it would have been a change that made failing work pass, justified by a
+judgement that did not actually endorse the work.
+
+**`identity_threshold_video` stays at 0.951 and the gate keeps refusing on the worst
+frame.** The clip-mean analysis stays on record as a genuine property of the data — her
+clip means do separate cleanly from the controls where her per-frame minima do not — but a
+measure that separates is not automatically the measure that should decide, and nothing in
+the owner's judgement says these clips should ship.
+
+## What "a more AI version of her" measures as
+
+His phrasing points at rendition rather than identity, so fine detail in the face was
+measured directly — Laplacian variance inside the detected face box, each crop resized to
+a constant 256x256.
+
+**The first attempt was confounded and is retracted.** It reported a 35% texture loss at
+the keyframe, measured across faces of 155 to 322 pixels, and texture correlated with face
+size at **+0.872**. It was ranking how big the face was.
+
+Re-measured on the band the training stills occupy, 215-275px, mean face size within 7% across
+the three populations:
+
+| population | n | texture | vs her stills |
+|---|---|---|---|
+| her training stills | 16 | 339.9 (sd 102.4) | — |
+| keyframes (flux + LoRA) | 20 | 187.8 (sd 51.1) | **-45%** |
+| video frames (turbo) | 19 | 150.2 (sd 28.2) | **-56%** |
+
+Welch t ≈ 5.4 for stills against keyframes. The generated face carries roughly **half the
+fine detail** of her real stills at the same size, and **most of the loss arrives at the
+keyframe, before any video exists**.
+
+## Two hypotheses tested and refuted
+
+**`lora_scale` was not overbaking the texture.** The scale had been tuned to maximise the
+identity score, and the identity score cannot see "AI-ness", so overbaking looked like the
+obvious culprit. It is not — higher scale is better on *both* axes:
+
+| lora_scale | identity (mean of 3) | texture |
+|---|---|---|
+| 0.9 | 0.94203 | 166.8 |
+| 1.1 | 0.94797 | 171.4 |
+| **1.3** | **0.96876** | **192.6** |
+
+**More inference steps were inconclusive.** Steps are free here, since billing is per
+megapixel, so 50 steps cost the same as 28. At n=2 per cell the texture metric swung from
+60 to 220 within one setting, which is the metric's noise and not an effect. Needs more
+draws before it means anything.
+
+## Where this leaves the brief
+
+The binding constraint is the **fidelity of the generation stack**, not the measurement and
+not the prompt. Coverage is solved by 9:16, identity margin is understood and configured,
+and the remaining gap is that flux+LoRA renders her about half as finely as the stills she
+was trained on. The levers left all cost something real:
+
+- a higher-fidelity image model, or a detail/upscale pass on the keyframe (new paid step,
+  needs asking first)
+- retraining the LoRA, which re-opens the D-C licence question before anything can publish
+- accepting a softer look as the house style, which is a content decision rather than a
+  technical one
