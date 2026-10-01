@@ -193,6 +193,50 @@ providers:
           resolution: 1K
           enable_web_search: false
 
+    detail_pass:
+      # A fidelity pass on a generated keyframe, added 2026-10-01 at the owner's
+      # request ("try a higher fidelity model") after measuring that the generated
+      # face carries about half the fine detail of her training stills at matched
+      # face size (ADR 0014).
+      #
+      # WHY NOT SIMPLY A BETTER IMAGE MODEL. The LoRA is a FLUX.1 [dev] LoRA, so
+      # inference must stay on that architecture: `fal-ai/flux-2-pro` accepts no
+      # LoRAs at all, and a FLUX.2 model could not load a FLUX.1 one regardless.
+      # `fal-ai/flux-general` takes LoRAs but is the same FLUX.1 [dev] base at
+      # $0.075/MP against $0.035 — control extensions, not fidelity. Swapping the
+      # image model means retraining, which re-opens D-C before anything publishes.
+      #
+      # LICENCE: NOT CLEARED. clarity-upscaler is built on Stable Diffusion 1.5
+      # plus a ControlNet tile and an ESRGAN upscaler, whose licences differ from
+      # each other and from FLUX's. Nothing is pulled locally — this is a hosted
+      # call — but output licensing for commercial use is unresolved, so this slot
+      # is for MEASUREMENT only until that is answered. Treat it like D-C: it does
+      # not block measuring, it blocks publishing.
+      backend: fal
+      model: fal-ai/clarity-upscaler
+      endpoint: null
+      # "Your request will cost $0.03 per megapixel" (fal.ai/models/fal-ai/
+      # clarity-upscaler, read 2026-10-01). Priced on the OUTPUT megapixels, which
+      # is the higher reading and so the safe one: at upscale_factor 2 a 720x1280
+      # input becomes 1440x2560 = 3.69 MP, which is $0.111. Recorded as 0.12 per
+      # image because the guard prices one unit per slot and understating a price
+      # lets a run pass a cap while reporting it is inside one.
+      price_usd_per_image: 0.12
+      verified_on: 2026-10-01
+      price_basis:
+        upscale_factor: 2
+      request:
+        base:
+          upscale_factor: 2
+          # LOW creativity and HIGH resemblance. The defaults (0.35 / 0.6) let the
+          # model invent detail, and invented detail on a face is a different face
+          # — which is the one thing this must not do. Identity is re-scored after
+          # every pass and the gate still decides.
+          creativity: 0.1
+          resemblance: 0.9
+          num_inference_steps: 18
+          guidance_scale: 4
+
     lora_inference:
       # Text-to-image with a trained LoRA applied — how a LoRA is evaluated and,
       # later, how keyframes it anchors are generated. Distinct from `keyframe`
