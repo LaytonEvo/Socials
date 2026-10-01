@@ -138,6 +138,14 @@ providers:
         # default that happened to match — a model's schema belongs beside its
         # model id, not in an adapter's fallback.
         image_field: image_url
+        # The LAST frame, which ADR 0007 decided on 2026-09-24 and which was then only
+        # wired for veo3.1's dedicated first-last endpoint. turbo takes it on the same
+        # call: "Optional URL of the image to use as the last frame" (OpenAPI, read
+        # 2026-10-01). Supplying it pins the end of the motion so the model interpolates
+        # between two known states instead of inventing the end — which is exactly the
+        # failure the owner has now described twice, once as "her head is tilting the
+        # other way on the return" and once as "weird head tilt at the end again".
+        end_image_field: end_image_url
         base:
           resolution: 768P
           enable_safety_checker: true

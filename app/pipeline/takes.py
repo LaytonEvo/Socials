@@ -90,6 +90,22 @@ class TakeMeasurement:
         third = max(1, len(series) // 3)
         return float(np.mean(series[-third:]) - np.mean(series[:third]))
 
+    @property
+    def roll_return_deg(self) -> float:
+        """Whether the head ends at the angle it began at. Signed, small is good.
+
+        What `roll_drift_deg` was meant to capture and does not. Drift averages the last
+        third against the first, so a take that makes an excursion and comes back right at
+        the end still reports a large drift: measured 2026-10-01, a take running
+        `-4 +15 ... -13 -5` returned to within 1.1 degrees of its start and drift read
+        -16.2. Both numbers are worth having — drift describes the shape of the middle,
+        this describes the ending — but only this one answers "does she end up straight".
+        """
+        series = self.roll_series_deg
+        if len(series) < 4:
+            return float("nan")
+        return float(np.mean(series[-2:]) - np.mean(series[:2]))
+
     def frames_below(self, threshold: float) -> int:
         """How many scored frames the gate would refuse."""
         return sum(1 for s in self.identity_scores if s < threshold)

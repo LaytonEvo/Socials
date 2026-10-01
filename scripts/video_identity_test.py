@@ -148,8 +148,15 @@ def submit_clip(
     prompt: str,
     keyframe: Path,
     shape: dict[str, Any],
+    last_keyframe: Path | None = None,
 ) -> str:
-    """Submit one image-to-video job and return the finished clip URL."""
+    """Submit one image-to-video job and return the finished clip URL.
+
+    `last_keyframe` pins the end of the motion (ADR 0007). Passing the SAME still as both
+    ends makes the head return to the angle it started at, which is the lever against a
+    tilt that develops and stays — the model interpolates between two known states rather
+    than inventing the end.
+    """
     arguments: dict[str, Any] = {"prompt": prompt, **dict(shape.get("base") or {})}
     image_field = shape.get("image_field")
     if not image_field:
@@ -158,6 +165,14 @@ def submit_clip(
         )
     # A data URI, not an upload: fal's CDN is public and these frames are her face.
     arguments[str(image_field)] = data_uri(keyframe)
+    if last_keyframe is not None:
+        end_field = shape.get("end_image_field")
+        if not end_field:
+            raise SystemExit(
+                "a last keyframe was given but the video slot declares no "
+                "request.end_image_field; sending the wrong name is a 422"
+            )
+        arguments[str(end_field)] = data_uri(last_keyframe)
     duration_field = shape.get("duration_field", "duration")
     arguments[duration_field] = int(shape.get("duration_s", 5))
 

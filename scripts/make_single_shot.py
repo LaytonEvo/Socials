@@ -270,7 +270,20 @@ def main() -> int:
         for take in range(args.takes):
             candidate = args.out / f"take_{take}.mp4"
             assert video_slot.model is not None
-            url = submit_clip(client, video_slot.model, motion, keyframe, video_request)
+            # ADR 0007, applied to turbo for the first time: the SAME still as both ends,
+            # so the model interpolates between two known states instead of inventing the
+            # end. Measured 2026-10-01 on one keyframe — 2 of 2 takes passed identity with
+            # it against 0 of 6 without, 100% coverage both times. It does NOT fix the head
+            # tilt (swing went from 12-30 degrees to about 31), but it makes the head end
+            # where it started, and identity is a hard gate where swing is a review item.
+            url = submit_clip(
+                client,
+                video_slot.model,
+                motion,
+                keyframe,
+                video_request,
+                last_keyframe=None if args.free_end else keyframe,
+            )
             candidate.write_bytes(client.get(url, timeout=300.0).content)
             candidates.append(candidate)
             print(f"  take {take + 1}/{args.takes}")
@@ -288,8 +301,8 @@ def main() -> int:
         ]
         for m in measured:
             print(
-                f"    {m.path.name}: swing {m.roll_swing_deg:5.1f} deg, drift "
-                f"{m.roll_drift_deg:+5.1f}, sd {m.head_roll_sd_deg:4.1f} | "
+                f"    {m.path.name}: swing {m.roll_swing_deg:5.1f} deg, ends "
+                f"{m.roll_return_deg:+5.1f} from start, sd {m.head_roll_sd_deg:4.1f} | "
                 f"{m.frames_with_face}/{m.frames_sampled} scorable ({m.coverage:.0%}), "
                 f"{m.frames_below(threshold)} below (mean {m.identity_mean:.5f})"
             )
@@ -301,7 +314,7 @@ def main() -> int:
             raise SystemExit(f"no usable take — {refusal}") from refusal
         print(
             f"  picked {best.path.name} — swing {best.roll_swing_deg:.1f} deg, "
-            f"drift {best.roll_drift_deg:+.1f}"
+            f"drift {best.roll_drift_deg:+.1f}, ends {best.roll_return_deg:+.1f} from start"
         )
         if (
             len([m for m in measured if m.would_pass_gate(threshold=threshold, min_coverage=0.6)])
