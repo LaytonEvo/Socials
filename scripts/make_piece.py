@@ -268,6 +268,12 @@ def main() -> int:
             if wanted == 1:
                 candidates[0].replace(clip)
             else:
+                # NOTE: this still selects on head roll alone, which ADR 0012 supersedes
+                # for the single-shot path. It is left as-is deliberately rather than
+                # half-migrated: this script also generates b-roll shots with no face to
+                # score, so `best_take`'s identity constraint would refuse them correctly
+                # and uselessly. Migrating it needs a per-shot rule (face-forward shots
+                # gated on identity, b-roll on coverage alone), which is task 3.4's job.
                 measured = [measure(c, embedder._detector, embedder._predictor) for c in candidates]
                 for m in measured:
                     print(

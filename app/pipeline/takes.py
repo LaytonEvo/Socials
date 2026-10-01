@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from app.identity.embedder import DlibEmbedder, Embedding, cosine
+
 
 @dataclass(frozen=True)
 class TakeMeasurement:
@@ -32,6 +34,7 @@ class TakeMeasurement:
     frames_sampled: int
     head_roll_sd_deg: float
     mouth_activity: float
+    identity_scores: tuple[float, ...] = ()
 
     @property
     def usable(self) -> bool:
@@ -39,15 +42,53 @@ class TakeMeasurement:
 
     @property
     def coverage(self) -> float:
-        """The share of sampled frames a face was found in.
+        """The share of sampled frames the gate could score.
 
-        The count alone is not comparable between takes: 14 frames is most of a short
-        take and a third of a longer one, and only the ratio says whether the numbers
-        below describe the take or just the part of it that was visible.
+        Counted with `embedder.read`, not with a bare face detection, because those two
+        disagree and the disagreement mattered. Measured 2026-10-01: `measure` reported
+        63-98% coverage on takes where only 26-39% of frames could be embedded — the
+        detector finds a face at 63px that `read` refuses as TOO_SMALL under its 80px
+        floor, and it takes `faces[0]` where `read` refuses a multi-face frame outright.
+        A take could clear this floor and still be unscorable by the gate, which made the
+        floor measure something other than the thing it protects.
+
+        The ratio and not the count: 14 frames is most of a short take and a third of a
+        longer one, and only the ratio says whether the numbers describe the take or just
+        the part of it that was visible.
         """
         if self.frames_sampled <= 0:
             return 0.0
         return self.frames_with_face / self.frames_sampled
+
+    def frames_below(self, threshold: float) -> int:
+        """How many scored frames the gate would refuse."""
+        return sum(1 for s in self.identity_scores if s < threshold)
+
+    @property
+    def identity_mean(self) -> float:
+        if not self.identity_scores:
+            return float("nan")
+        return float(np.mean(self.identity_scores))
+
+    @property
+    def identity_min(self) -> float:
+        if not self.identity_scores:
+            return float("nan")
+        return float(min(self.identity_scores))
+
+    def would_pass_gate(self, *, threshold: float, min_coverage: float) -> bool:
+        """Whether the gate would accept this take's identity as it stands.
+
+        The sync that follows shifts the mean by a few thousandths in either direction
+        (+0.0041 measured once, -0.003 another time), so this is the gate's own rule
+        applied early rather than a prediction with a margin. A margin would be a number
+        invented rather than calibrated.
+        """
+        return (
+            bool(self.identity_scores)
+            and self.coverage >= min_coverage
+            and self.frames_below(threshold) == 0
+        )
 
 
 def sample_frames(clip: Path, fps: float = 8.0) -> list[Path]:
@@ -70,15 +111,60 @@ def sample_frames(clip: Path, fps: float = 8.0) -> list[Path]:
     return sorted(directory.glob("*.png"))
 
 
+GATE_SAMPLE_FPS = 2.0
+
+
 def measure(
-    clip: Path, detector: object, predictor: object, *, fps: float = 8.0
+    clip: Path,
+    detector: object,
+    predictor: object,
+    *,
+    fps: float = 8.0,
+    embedder: DlibEmbedder | None = None,
+    reference: Embedding | None = None,
+    identity_fps: float = GATE_SAMPLE_FPS,
 ) -> TakeMeasurement:
     """Head roll and mouth activity, both measured INSIDE the detected face box.
 
-    Inside the box, not at fixed frame coordinates: a walking or swinging shot moves the
-    whole picture, and a fixed region reads that as a moving mouth. The first attempt at
-    this measured b-roll as more talkative than the talking take.
+        Inside the box, not at fixed frame coordinates: a walking or swinging shot moves the
+        whole picture, and a fixed region reads that as a moving mouth. The first attempt at
+        this measured b-roll as more talkative than the talking take.
+
+        Given an `embedder` and a `reference`, each frame is also scored for identity, so a
+        take can be compared against the threshold the gate will apply to it *before* the
+        sync is paid for. Coverage is then counted as frames the embedder could actually
+        read, which is the number the gate uses.
+
+    **Two sampling rates, deliberately, because the two measurements want opposite things.**
+
+        Head roll is a standard deviation and wants samples: estimated over 10 frames instead
+        of 41 it is simply noisier, and nothing about the geometry cares how densely it was
+        measured. So roll and mouth activity use the dense `fps`.
+
+        Identity cannot be sampled denser than the threshold it is compared against. The video
+        threshold of 0.951 was calibrated as the *minimum of a 21-frame sample at 2 fps*, so it
+        is an order statistic of that sample size — sample three times as densely and you reach
+        further into the tail and find frames the calibration never saw. Measured: at 6 fps
+        every one of twenty takes failed a rule the gate passed four of five times at 2 fps.
+        That is the calibration-space error this project has now made three times, so
+        `identity_fps` defaults to `GATE_SAMPLE_FPS` and raising it to "look harder" makes the
+        answer wrong rather than stricter.
     """
+    # Identity and coverage, at the gate's rate, over its own extraction.
+    scores: list[float] = []
+    scorable = 0
+    identity_frames: list[Path] = []
+    if embedder is not None:
+        identity_frames = sample_frames(clip, identity_fps)
+        for frame in identity_frames:
+            reading = embedder.read(np.asarray(Image.open(frame).convert("RGB")))
+            if reading.embedding is None:
+                continue
+            scorable += 1
+            if reference is not None:
+                scores.append(cosine(reading.embedding, reference))
+
+    # Geometry, densely, since a standard deviation over 10 frames is just a noisier one.
     rolls: list[float] = []
     crops: list[np.ndarray] = []
     frames = sample_frames(clip, fps)
@@ -118,10 +204,13 @@ def measure(
     )
     return TakeMeasurement(
         path=clip,
-        frames_with_face=len(crops),
-        frames_sampled=len(frames),
+        # When an embedder is given, coverage is what *it* could read, because that is
+        # what the gate will be able to score. Without one this falls back to detections.
+        frames_with_face=scorable if embedder is not None else len(crops),
+        frames_sampled=len(identity_frames) if embedder is not None else len(frames),
         head_roll_sd_deg=float(np.std(rolls)) if rolls else float("nan"),
         mouth_activity=activity,
+        identity_scores=tuple(scores),
     )
 
 
@@ -156,3 +245,63 @@ def steadiest(
             f"({best.frames_with_face}/{best.frames_sampled}); shoot more takes"
         )
     return min(covered, key=lambda t: t.head_roll_sd_deg)
+
+
+def best_take(
+    takes: list[TakeMeasurement],
+    *,
+    threshold: float,
+    min_coverage: float = MIN_TAKE_COVERAGE,
+) -> TakeMeasurement:
+    """The take the gate would accept, steadiest first. Refuses if there is none.
+
+    Identity is a constraint and head roll is a preference, in that order, because they
+    fail differently. A take the gate will refuse on identity cannot become acceptable by
+    having a still head — the sync only moves the mean by thousandths — so spending $0.50
+    syncing it buys a refusal. A take with an unsteady head is merely a worse shot.
+
+    Measured 2026-10-01, and this is why the function exists: run 5 of the pass-rate
+    battery had its take chosen on head roll alone (2.78 degrees, the steadiest of four)
+    while that take was already failing identity before the sync. The gate refused the
+    finished render for exactly the reason a free local measurement would have given
+    beforehand.
+
+    Refusing is a real outcome here, not a defensive branch. Over those five runs no take
+    of twenty would have qualified, which is the honest state of the pipeline rather than
+    a bug in this rule: four of the five finished renders were accepted only because the
+    gate could not measure them at all.
+    """
+    if not takes:
+        raise ValueError("no takes to choose between")
+    eligible = [
+        t for t in takes if t.would_pass_gate(threshold=threshold, min_coverage=min_coverage)
+    ]
+    if eligible:
+        return min(eligible, key=lambda t: t.head_roll_sd_deg)
+
+    # The refusal names the nearest miss, because which constraint failed decides what to
+    # do next: thin coverage means she moved out of frame and the motion prompt is the
+    # lever, where frames below threshold means the generator drifted off her face.
+    scored = [t for t in takes if t.identity_scores]
+    if not scored:
+        raise ValueError(
+            f"no take could be scored for identity at all — best coverage "
+            f"{max(t.coverage for t in takes):.0%} against a {min_coverage:.0%} floor. "
+            "She is not visible enough in any take to verify, so none can be used."
+        )
+    covered = [t for t in scored if t.coverage >= min_coverage]
+    if not covered:
+        best = max(scored, key=lambda t: t.coverage)
+        raise ValueError(
+            f"no take cleared the {min_coverage:.0%} coverage floor — best was "
+            f"{best.path.name} at {best.coverage:.0%} "
+            f"({best.frames_with_face}/{best.frames_sampled} frames scorable). "
+            "A take the gate cannot measure is not a take it can accept."
+        )
+    best = min(covered, key=lambda t: t.frames_below(threshold))
+    raise ValueError(
+        f"no take passes identity at {threshold} — best was {best.path.name} with "
+        f"{best.frames_below(threshold)} of {len(best.identity_scores)} frames below "
+        f"(min {best.identity_min:.5f}, mean {best.identity_mean:.5f}). "
+        "Syncing it would buy a refusal; shoot more takes."
+    )

@@ -38,7 +38,7 @@ from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.golf import apply_house_style
 from app.pipeline.golf import check as check_golf
 from app.pipeline.lipsync import lip_sync, should_lip_sync
-from app.pipeline.takes import measure, steadiest
+from app.pipeline.takes import best_take, measure
 from app.pipeline.voice import pad_to
 from app.providers.fal import QUEUE_ROOT, api_key
 from app.storage.keys import key_for
@@ -203,14 +203,31 @@ def main() -> int:
             candidate.write_bytes(client.get(url, timeout=300.0).content)
             candidates.append(candidate)
             print(f"  take {take + 1}/{args.takes}")
-        measured = [measure(c, embedder._detector, embedder._predictor) for c in candidates]
+        # Scored against the same reference and the same threshold the gate will use, at
+        # the gate's own sampling rate, so take selection and the gate cannot disagree.
+        measured = [
+            measure(
+                c,
+                embedder._detector,
+                embedder._predictor,
+                embedder=embedder,
+                reference=reference,
+            )
+            for c in candidates
+        ]
         for m in measured:
             print(
-                f"    {m.path.name}: head roll sd {m.head_roll_sd_deg:.2f} deg over "
-                f"{m.frames_with_face}/{m.frames_sampled} frames "
-                f"({m.coverage:.0%} coverage)"
+                f"    {m.path.name}: head roll sd {m.head_roll_sd_deg:.2f} deg, "
+                f"{m.frames_with_face}/{m.frames_sampled} frames scorable "
+                f"({m.coverage:.0%}), {m.frames_below(threshold)} below {threshold} "
+                f"(mean {m.identity_mean:.5f})"
             )
-        best = steadiest(measured)
+        try:
+            best = best_take(measured, threshold=threshold)
+        except ValueError as refusal:
+            # Refusing here is the point: the sync below is $0.50 and cannot rescue a take
+            # the gate will refuse on identity.
+            raise SystemExit(f"no usable take — {refusal}") from refusal
         print(f"  picked {best.path.name}")
         best.path.replace(clip)
 

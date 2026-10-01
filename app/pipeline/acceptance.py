@@ -13,9 +13,20 @@ fine. A gate that only reports what it happens to check teaches people that a pa
 
 Two severities, and the difference is real:
 
-- `BLOCKING` — measured, wrong, and the piece does not go out.
-- `REVIEW` — this gate cannot judge it, and a human must. Not a warning to skim past:
-  an unreviewed REVIEW is an unfinished check.
+- `BLOCKING` — the piece does not go out. This covers two cases, not one: measured and
+  wrong, **and** not measurable at all where the measurement is the point. Unverifiable
+  identity blocks. A gate cannot vouch for a face it could not see.
+- `REVIEW` — a human must judge this, and no measurement could have. Lip sync is the
+  honest example: whether a mouth matches words is not recoverable from frames at any
+  sampling rate. Not a warning to skim past; an unreviewed REVIEW is an unfinished check.
+
+**The distinction was learned the hard way.** Identity coverage was first implemented as
+REVIEW, on the reasoning that "cannot say" is not "wrong". Over five pass-rate runs on
+2026-10-01 that reasoning produced four ACCEPTED verdicts in which identity had never
+been measured — one with no detectable face in a single frame — against one REFUSED, the
+only run where identity *could* be measured. The gate was reporting an 80% pass rate for
+a pipeline whose verified pass rate was zero of one. "Cannot say" belongs with the
+refusals whenever the thing unsaid is the thing the gate exists to check.
 """
 
 from __future__ import annotations
@@ -147,22 +158,31 @@ def assess(
         coverage = len(scores) / len(frames) if frames else 0.0
 
         if not scores:
+            # BLOCKING, not REVIEW. Measured 2026-10-01: across five pass-rate runs, four
+            # were ACCEPTED on exactly this branch and its thin-coverage sibling below —
+            # one of them with no detectable face in a single frame. The only run where
+            # identity could actually be measured is the one that failed. A gate that
+            # passes the shots it cannot vouch for reports a pass rate for "cannot say",
+            # which is the opposite of its purpose.
             verdict.findings.append(
                 Finding(
-                    Severity.REVIEW,
+                    Severity.BLOCKING,
                     f"{shot.name}: identity",
                     "no detectable face in any frame, so identity cannot be judged here. "
-                    "A human must confirm this shot is her.",
+                    "Unverifiable is not acceptable: this gate cannot vouch for a shot it "
+                    "could not measure.",
                 )
             )
         elif coverage < MIN_COVERAGE:
             verdict.findings.append(
                 Finding(
-                    Severity.REVIEW,
+                    Severity.BLOCKING,
                     f"{shot.name}: identity",
                     f"a face was found in only {len(scores)} of {len(frames)} frames "
-                    f"({coverage:.0%}). The score describes too little of the shot to "
-                    f"stand for it — min {min(scores):.5f}. A human must watch this one.",
+                    f"({coverage:.0%}), under the {MIN_COVERAGE:.0%} floor. The score "
+                    f"describes too little of the shot to stand for it — min "
+                    f"{min(scores):.5f} over {len(scores)} frames is not a pass, it is "
+                    f"'cannot say', and this gate refuses rather than guesses.",
                 )
             )
         elif min(scores) < threshold:

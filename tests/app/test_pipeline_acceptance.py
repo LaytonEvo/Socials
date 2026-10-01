@@ -138,9 +138,22 @@ def test_frames_below_threshold_are_blocking(monkeypatch: pytest.MonkeyPatch) ->
     assert any("identity" in f.rule for f in verdict.blocking)
 
 
-def test_thin_face_coverage_is_review_not_a_pass(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A golf swing scored 1 frame in 10 and read as "passes every frame". It does not
-    pass; it cannot be judged."""
+def test_thin_face_coverage_is_refused_not_merely_flagged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A golf swing scored 1 frame in 10 and read as "passes every frame".
+
+    This assertion was inverted on 2026-10-01, deliberately. It originally required thin
+    coverage to be REVIEW and the piece to be ACCEPTED, reasoning that "cannot say" is
+    not "wrong". Five pass-rate runs showed where that leads: four ACCEPTED verdicts in
+    which identity had never been measured — one with no detectable face in any frame —
+    against one REFUSED, the only run that could be measured. The gate reported 80% for
+    a pipeline whose verified rate was zero of one.
+
+    So an unmeasurable identity now blocks. REVIEW is kept for what no measurement could
+    settle, like lip sync; it is not a place to put the measurement that failed to
+    happen.
+    """
     import app.pipeline.acceptance as module
 
     calls = {"n": 0}
@@ -162,8 +175,38 @@ def test_thin_face_coverage_is_review_not_a_pass(monkeypatch: pytest.MonkeyPatch
         threshold=0.951,
         disclosed=True,
     )
-    assert verdict.accepted, "thin coverage is not a measured failure"
-    assert any("identity" in f.rule for f in verdict.review), verdict.report()
+    assert not verdict.accepted, (
+        "a shot whose identity could not be measured was accepted — this is the exact "
+        "verdict that reported an 80% pass rate for an unverified pipeline"
+    )
+    identity = [f for f in verdict.blocking if "identity" in f.rule]
+    assert identity, verdict.report()
+    assert "cannot say" in identity[0].detail
+
+
+def test_no_face_at_all_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run 3 of the pass-rate battery was ACCEPTED with no detectable face in any frame.
+
+    Zero coverage is the strongest case for refusing, not a special case for passing: the
+    gate has seen nothing of the person it exists to verify.
+    """
+    import app.pipeline.acceptance as module
+
+    monkeypatch.setattr(module, "_has_audio", lambda _p: True)
+    monkeypatch.setattr(FfmpegFrames, "extract", lambda self, clip, dest, fps: [Path("f.png")] * 10)
+    monkeypatch.setattr(
+        module, "read_still", lambda path, embedder: type("R", (), {"embedding": None})()
+    )
+
+    verdict = assess(
+        [ShotUnderTest("blind", Path("b.mp4"), speaks=False, audio_source="none")],
+        reference=cast(Any, np.ones(128)),
+        embedder=cast(Any, object()),
+        threshold=0.951,
+        disclosed=True,
+    )
+    assert not verdict.accepted, verdict.report()
+    assert any("cannot vouch" in f.detail for f in verdict.blocking), verdict.report()
 
 
 # ------------------------------------------------------------- disclosure --
