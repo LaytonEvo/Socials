@@ -32,7 +32,10 @@ def test_health_reports_what_distinguishes_a_working_deployment(client: TestClie
     assert body["status"] == "ok"
     assert body["persona"] == "Mollie"
     assert body["identity_threshold"] == 0.9619
-    assert body["budget_mode"] == "observe"
+    # D8 answered 2026-10-01: $100/month, enforced. The health endpoint reports the mode
+    # because "is this deployment refusing on budget or only reporting?" cannot be
+    # answered from outside otherwise.
+    assert body["budget_mode"] == "enforce"
 
 
 def test_a_reference_still_is_served(client: TestClient) -> None:

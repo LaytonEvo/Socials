@@ -9,6 +9,7 @@ schema with it.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
@@ -149,3 +150,40 @@ def test_a_connection_is_never_defaulted(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(DatabaseNotConfigured, match="no default on purpose"):
         database_url()
+
+
+def test_a_percent_encoded_database_url_does_not_break_alembic(tmp_path: Path) -> None:
+    """`set_main_option` writes through configparser, where `%` means interpolation.
+
+    A managed-Postgres URL routinely carries percent-encoding — `%40` for `@` in a
+    password, `%2F` for `/` — and without doubling it alembic dies with "invalid
+    interpolation syntax at position N", which says nothing about the password and sends
+    whoever is deploying to look in the wrong place.
+
+    Checked against configparser directly rather than by running a migration, so it holds
+    without a database and names the actual mechanism.
+    """
+    from configparser import ConfigParser
+
+    url = "postgresql+psycopg://user:p%40ss%2Fword@host:5432/db?host=%2Fvar%2Ftmp"
+
+    raw = ConfigParser()
+    raw.add_section("alembic")
+    # Raised by `set`, not deferred to `get` — which is why the traceback points at
+    # alembic's own config machinery and never mentions the URL's password.
+    with pytest.raises(ValueError, match="invalid interpolation syntax"):
+        raw.set("alembic", "sqlalchemy.url", url)
+
+    escaped = ConfigParser()
+    escaped.add_section("alembic")
+    escaped.set("alembic", "sqlalchemy.url", url.replace("%", "%%"))
+    assert escaped.get("alembic", "sqlalchemy.url") == url
+
+
+def test_env_py_escapes_the_url_it_hands_alembic() -> None:
+    """The fix has to be in env.py, since that is what every migration runs through."""
+    source = (Path(__file__).resolve().parents[2] / "migrations" / "env.py").read_text()
+    assert 'database_url().replace("%", "%%")' in source, (
+        "migrations/env.py must double percent signs before set_main_option, or a "
+        "percent-encoded DATABASE_URL breaks every migration"
+    )

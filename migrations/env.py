@@ -24,11 +24,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", database_url())
+# `%` doubled because `set_main_option` writes through configparser, where a bare `%` is
+# interpolation syntax. A managed-Postgres URL routinely contains percent-encoding — `%40`
+# for `@` in a password, `%2F` for `/` — and alembic then fails with "invalid interpolation
+# syntax at position N" rather than anything about the password. Found 2026-10-01 when a
+# unix-socket URL (`?host=%2Fvar%2Ftmp`) broke all four migration tests.
+config.set_main_option("sqlalchemy.url", database_url().replace("%", "%%"))
 target_metadata = Base.metadata
 
 
-def _include_object(obj: object, name: str | None, type_: str, reflected: bool, compare_to: object) -> bool:
+def _include_object(
+    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
     """Leave pgvector's own tables alone if the extension ever adds any."""
     return not (type_ == "table" and name is not None and name.startswith("vector_"))
 

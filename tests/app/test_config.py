@@ -72,18 +72,24 @@ def test_settled_decisions_are_readable() -> None:
 
 
 def test_the_decisions_the_owner_has_made_are_recorded() -> None:
-    """Updated 2026-09-29, when two of them landed.
+    """Updated 2026-10-01, when D8 was answered with a number.
 
-    This previously asserted persona.name and the budget ceilings were still pending,
-    and failed the moment they were answered — which is the test working. It now pins
-    the answers, so a later change is deliberate rather than drift.
+    This pins the owner's answers so a later change is deliberate rather than drift,
+    and it has now caught that twice. D8 was first answered "no ceiling yet, observe
+    first" on the understanding that generation was cheap. ADR 0013 showed the video
+    slot was priced at the 480p discount rate while sending 768P, which makes a take
+    20 cents rather than 6 and a finished piece about $20, and the owner set $100 a
+    month against those numbers.
     """
     cfg = load_all(REAL_CONFIG)
     assert cfg.persona.persona.name == "Mollie"
-    # D8 was answered as "no ceiling yet, observe first", which is null rather than
-    # pending: a decision was made, and it was to leave these unset.
-    assert cfg.budget.budget.mode == "observe"
-    assert cfg.budget.budget.monthly_usd is None
+    # D8, answered 2026-10-01: $100/month, enforced rather than observed, because a
+    # ceiling that only reports is not a budget.
+    assert cfg.budget.budget.mode == "enforce"
+    assert cfg.budget.budget.monthly_usd == Decimal("100")
+    # Deliberately still null: no piece has a measured cost yet, so a per-piece
+    # ceiling would be inventing the number it is meant to bound.
+    assert cfg.budget.budget.per_piece_usd is None
 
 
 def test_outstanding_decisions_load_but_are_not_values() -> None:

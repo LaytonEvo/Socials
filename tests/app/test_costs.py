@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select, text
@@ -84,11 +85,23 @@ def test_the_guard_prices_from_config_not_from_code() -> None:
     slot, unit_price, unit = guard.price("video", "golf")
     assert slot.model == "minimax/h3-max-turbo/image-to-video"
     assert unit == "second"
-    assert unit_price == Decimal("0.0125")
+    # 768P, post-discount, verified 2026-10-01. See ADR 0013: this was 0.0125 — the 480p
+    # LAUNCH-DISCOUNT rate — on a slot sending resolution 768P.
+    assert unit_price == Decimal("0.04")
+    assert slot.price_basis == {"resolution": "768P"}, (
+        "the price must say which resolution it is for, or it is not a price"
+    )
 
 
-def test_a_five_second_take_costs_what_the_spike_measured() -> None:
-    assert _guard(mode="observe").estimate("video", "golf", Decimal("5")) == Decimal("0.0625")
+def test_a_five_second_take_costs_what_the_provider_charges() -> None:
+    """Was `..._costs_what_the_spike_measured`, asserting $0.0625.
+
+    The spike measured a real number against the wrong resolution tier, and this test
+    pinned it, so the error had a passing test guarding it. A take is $0.20: five seconds
+    at the 768P rate of $0.04. Renamed because what the spike measured is not the
+    authority — what the provider charges is.
+    """
+    assert _guard(mode="observe").estimate("video", "golf", Decimal("5")) == Decimal("0.200000")
 
 
 def test_an_unpriced_slot_cannot_be_billed_against() -> None:
@@ -324,9 +337,13 @@ def test_observe_mode_reports_a_breach_rather_than_refusing(
 def test_observe_mode_with_no_ceiling_at_all_permits_and_reports(
     session: Session, persona_id: str
 ) -> None:
-    """Today's real configuration: nothing set, so nothing to breach."""
-    guard = BudgetGuard(REAL.budget, REAL.providers)
-    assert REAL.budget.budget.observing
+    """Observe mode with no ceiling at all: nothing set, so nothing to breach.
+
+    Constructed rather than read from the real config, which enforced $100 on 2026-10-01.
+    The behaviour is still worth a test — it is what any project runs before it has a
+    month of spend to set a ceiling from — but it is no longer this repository's state.
+    """
+    guard = BudgetGuard(BudgetConfig(budget=BudgetSettings(mode="observe")), REAL.providers)
     reservation = guard.check(session, estimated_usd=Decimal("1000"))
     assert not reservation.observed_breach
     assert reservation.warning is None
@@ -383,12 +400,64 @@ def test_enforce_with_no_ceiling_is_refused_by_config() -> None:
         BudgetSettings(mode="enforce")
 
 
-def test_the_repositorys_own_budget_is_observe_mode_with_no_ceilings() -> None:
-    """Pins the owner's decision so a later change is deliberate rather than drift."""
+def test_the_repositorys_own_budget_enforces_the_owners_hundred_dollars() -> None:
+    """Pins the owner's decision so a later change is deliberate rather than drift.
+
+    Answered 2026-10-01 at $100/month, enforced. The first answer (2026-09-29) was "no
+    ceiling yet, observe first", taken on the understanding that a take cost 6 cents; it
+    costs 20, and a finished piece about $20, so $100 is roughly five pieces a month.
+    """
     budget = REAL.budget.budget
-    assert budget.mode == "observe"
-    assert budget.monthly_usd is None
-    assert budget.per_piece_usd is None
+    assert budget.mode == "enforce"
+    assert budget.monthly_usd == Decimal("100")
+    assert budget.per_piece_usd is None, (
+        "deliberately unset: no piece has a measured cost yet, so a per-piece ceiling "
+        "would be inventing the number it is meant to bound"
+    )
     assert budget.require_explicit_budget_per_run is True, (
         "A7 was not part of what was deferred: it is the only thing bounding spend"
     )
+
+
+def test_the_real_config_refuses_past_the_owners_hundred_dollars(
+    session: Session, persona_id: str
+) -> None:
+    """D8 as behaviour, not as a stored value.
+
+    The owner set $100/month on 2026-10-01. A ceiling that loads correctly and then
+    fails to refuse is worse than no ceiling, because it is believed — the same shape
+    as the gate that accepted shots it could not verify. So this exercises the real
+    `config/budget.yaml` rather than a constructed one.
+    """
+    from app.config import load_all
+    from app.costs.guard import BudgetGuard
+
+    config = load_all(Path("config"))
+    guard = BudgetGuard(config.budget, config.providers)
+
+    generation = _generation(session, persona_id)
+    record_generation_cost(
+        session, generation, units=Decimal("99"), unit_price=Decimal("1"), price_verified_on=None
+    )
+
+    # $99 spent, and a single take at the corrected 768P price is $0.20.
+    with pytest.raises(BudgetExceeded, match="Refused before the call was made") as exc:
+        guard.check(session, estimated_usd=Decimal("2"))
+    assert exc.value.ceiling == Decimal("100")
+
+
+def test_the_real_config_warns_at_eighty_dollars(session: Session, persona_id: str) -> None:
+    """A run about to exhaust the month should say so on the call before it does."""
+    from app.config import load_all
+    from app.costs.guard import BudgetGuard
+
+    config = load_all(Path("config"))
+    guard = BudgetGuard(config.budget, config.providers)
+
+    generation = _generation(session, persona_id)
+    record_generation_cost(
+        session, generation, units=Decimal("79"), unit_price=Decimal("1"), price_verified_on=None
+    )
+    reservation = guard.check(session, estimated_usd=Decimal("2"))
+    assert reservation.warning is not None
+    assert "$100" in reservation.warning

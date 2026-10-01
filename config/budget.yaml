@@ -1,48 +1,45 @@
-# D8 — spend ceilings. ANSWERED 2026-09-29: no ceiling yet.
+# D8 — spend ceilings. ANSWERED 2026-10-01: $100/month, enforced.
 #
-# The owner's decision, verbatim in intent: "I would want to run it for a bit and
-# see what the cost looks like before restricting the system."
+# The owner's decision, verbatim: "monthly budget $100".
 #
-# That is a reasonable call on this evidence. Spike 0 spent about $14 across 66
-# clips, a 5-second take on the cheapest video model is 6 cents, and the measured
-# discard rate was 1 in 4 against the plan's assumed 3 in 5. Generation is not
-# where the money goes.
+# This supersedes the answer of 2026-09-29 ("I would want to run it for a bit and
+# see what the cost looks like before restricting the system"), which was taken on
+# the understanding that generation was cheap — Spike 0 spent about $14 across 66
+# clips and a 5-second take looked like 6 cents.
 #
-# WHAT THIS DOES NOT MEAN. CLAUDE.md requires every paid call to go through the
-# cost guard and write a cost_ledger row in the same transaction, and that is not
-# a ceiling — it is the record. So the guard still runs. What is switched off is
-# only the monthly and per-piece REFUSAL.
+# That understanding was wrong, and ADR 0013 is why. The video slot was priced at
+# the 480p launch-discount rate while sending 768P, so a take is 20 cents rather
+# than 6, and the brief costs about $3.35 an attempt or $20 a finished piece at the
+# measured 1-in-6 hit rate. Against those numbers $100 is about five finished
+# pieces a month, which is a real constraint rather than a formality — so it is
+# enforced, not observed.
 
 budget:
-  # Observe rather than refuse. Every call is still priced, guarded and recorded;
-  # the guard reports instead of blocking when a ceiling is null.
-  mode: observe
+  # Refuse, not report. `enforce` requires a ceiling to enforce against, and there
+  # is now one; the schema rejects `enforce` with a null ceiling.
+  mode: enforce
 
-  # null means "no ceiling set", which is different from zero. Fill either in and
-  # the guard starts refusing against it with no other change.
-  monthly_usd: null
+  # D8, answered. A call that would carry the month past this is refused.
+  monthly_usd: 100
+  # Not set. One piece has no measured cost yet: the only finished piece to date is
+  # a single 5-second shot, and the 15-second brief has never completed. Setting a
+  # per-piece ceiling now would be inventing the number this is meant to bound.
   per_piece_usd: null
 
-  # THE GAP THIS LEAVES, stated so it is accepted rather than discovered.
+  # WHAT THE MONTHLY CEILING IS MEASURED AGAINST, stated because it matters.
   #
-  # A per-run budget bounds one run. Nothing bounds the SUM of many runs, which is
-  # exactly what a monthly ceiling is for. In observe mode the protection against a
-  # runaway month is a human looking at the spend report, so the report has to
-  # exist and has to be easy to read — which is why `app.costs` provides
-  # spend-to-date queries rather than waiting for task 3.14's full cost report.
-  #
-  # Revisit when there is a month of real numbers. That is the whole point of
-  # observing first.
+  # Spend-to-date comes from `cost_ledger` rows, and every video row written before
+  # 2026-10-01 is understated by the ADR 0013 price error — 60% low, or 3.2x low
+  # against today's rate. Those rows are left as written rather than restated: a
+  # ledger is a record of what was billed at the price then on file, and rewriting
+  # it would lose the evidence of the error. The practical effect is nil, because
+  # the ceiling is monthly and the corrected price took effect on the 1st.
   review_after: one_month_of_real_spend
 
-  # Still enforced, and not part of what was deferred.
-  #
-  # Amendment A7: no live provider call outside an explicitly budgeted run. Scripts
-  # and pipelines that call a paid provider require an explicit budget argument and
-  # refuse to start without one. This is what actually bounds spend today, and it
-  # is how the spike already worked — every battery ran against a `--budget` the
-  # owner set deliberately.
+  # Still enforced, and independent of the ceiling. Amendment A7: no live provider
+  # call outside an explicitly budgeted run. A monthly ceiling bounds the month; it
+  # does not stop one run spending the lot, which is what this is for.
   require_explicit_budget_per_run: true
 
-  # Warn at this fraction of a ceiling, once there is one. Inert in observe mode.
+  # Warn at $80 of the $100.
   warn_at_fraction: 0.8
