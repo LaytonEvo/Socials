@@ -95,10 +95,32 @@ providers:
       backend: fal
       model: minimax/h3-max-turbo/image-to-video
       endpoint: null          # the adapter builds it from the model id (ADR 0006)
-      price_usd_per_second: 0.0125
-      verified_on: 2026-09-25
+      # PRICED PER RESOLUTION, and the resolution is sent in request.base below.
+      # fal.ai/models/minimax/h3-max-turbo/image-to-video, read 2026-10-01:
+      #
+      #            launch discount    from 2026-10-01
+      #   480p     $0.0125/s          $0.025/s
+      #   768p     $0.02/s            $0.04/s     <- what this slot sends
+      #   1080p    $0.04/s            $0.08/s
+      #
+      # "The discount ends September 30", so the right-hand column is live today.
+      # This slot carried 0.0125 with verified_on 2026-09-25 — the 480p DISCOUNT
+      # rate — while sending resolution 768P. The guard understated video by 60%
+      # at the time and by 3.2x once the discount lapsed. `price_basis` now binds
+      # the price to the resolution and the config refuses to load if they part.
+      price_usd_per_second: 0.04
+      verified_on: 2026-10-01
+      price_basis:
+        resolution: 768P
       capabilities:
-        durations_s: [5]       # integer, minimum 5; a 4 s request is rejected
+        # 5 to 15 inclusive, integer (OpenAPI: minimum 5, maximum 15). Previously
+        # recorded as [5], which read as "only 5" and is why the first brief was
+        # costed as three 5-second clips.
+        durations_s: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        resolutions: ["480P", "768P", "1080P"]
+        # The output canvas follows image_url, so the keyframe decides the aspect
+        # (OpenAPI, read 2026-10-01). Text-to-video defaults to 16:9.
+        canvas: follows_keyframe
         aspects: ["9:16"]
         image_to_video: true
         native_audio: forced   # generates a soundtrack unconditionally, no flag

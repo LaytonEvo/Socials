@@ -63,9 +63,35 @@ class ProviderSlot(BaseModel):
     request: dict[str, Any] = Field(default_factory=dict)
     options: dict[str, Any] = Field(default_factory=dict)
 
+    #: The request fields the price above is quoted FOR, checked against `request.base`.
+    #:
+    #: A price is only a price for a particular request. This model bills $0.02/second at
+    #: 768p and $0.04 at 1080p (and after a discount expiry, $0.04 and $0.08), so a single
+    #: `price_usd_per_second` is meaningless without saying which. Found 2026-10-01 with
+    #: the slot priced at the 480p rate while sending `resolution: 768P` — the guard was
+    #: understating video by 60%, and by 3.2x once the discount lapsed.
+    #:
+    #: Validated rather than commented, because the comment that should have caught this
+    #: was already there and said the price was verified.
+    price_basis: dict[str, Any] = Field(default_factory=dict)
+
     #: Task 3.6 requires a designed synthetic voice, never one cloned from a real
     #: person without a contract. Null means nobody has checked.
     provenance_verified_on: dt.date | None = None
+
+    @model_validator(mode="after")
+    def _price_basis_matches_the_request(self) -> ProviderSlot:
+        """A price quoted for one request must not sit on a slot that sends another."""
+        base = self.request.get("base") or {}
+        for field, expected in self.price_basis.items():
+            actual = base.get(field)
+            if actual != expected:
+                raise ValueError(
+                    f"price_basis says this price is for {field}={expected!r}, but "
+                    f"request.base sends {field}={actual!r}. Either the price is for the "
+                    f"wrong request or the request has outgrown its price; both bill wrong."
+                )
+        return self
 
     @property
     def is_fake(self) -> bool:

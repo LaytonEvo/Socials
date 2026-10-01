@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from app.config import (
     Config,
@@ -342,3 +343,55 @@ def test_credentials_are_names_not_values() -> None:
     for service, variable in cfg.providers.credentials.items():
         assert variable.isupper(), f"credentials.{service} should name an env var, got {variable!r}"
         assert len(variable) < 64, f"credentials.{service} looks like a value, not a name"
+
+
+# ------------------------------------------------- a price is a price FOR something --
+def test_a_price_quoted_for_another_request_is_refused() -> None:
+    """Found 2026-10-01: the video slot was priced at the 480p rate while sending 768P.
+
+    turbo bills $0.02/second at 768p and $0.04 at 1080p, doubling again when the launch
+    discount lapsed, so a bare `price_usd_per_second` says nothing without naming the
+    resolution it is for. The guard was understating video by 60%, and by 3.2x once the
+    discount expired — on a slot whose comment already claimed the price was verified.
+    Hence a validator and not another comment.
+    """
+    with pytest.raises(ValidationError, match="price_basis says this price is for"):
+        ProviderSlot(
+            backend="fal",
+            model="minimax/h3-max-turbo/image-to-video",
+            price_usd_per_second=Decimal("0.04"),
+            verified_on=dt.date(2026, 10, 1),
+            price_basis={"resolution": "768P"},
+            request={"base": {"resolution": "1080P"}},
+        )
+
+
+def test_a_price_matching_its_basis_is_accepted() -> None:
+    slot = ProviderSlot(
+        backend="fal",
+        model="minimax/h3-max-turbo/image-to-video",
+        price_usd_per_second=Decimal("0.04"),
+        verified_on=dt.date(2026, 10, 1),
+        price_basis={"resolution": "768P"},
+        request={"base": {"resolution": "768P"}},
+    )
+    assert slot.price_usd_per_second == Decimal("0.04")
+
+
+def test_a_slot_with_no_basis_is_left_alone() -> None:
+    """Most slots bill one way regardless of the request; they need no basis."""
+    slot = ProviderSlot(
+        backend="fal",
+        model="x",
+        price_usd_per_image=Decimal("0.07"),
+        verified_on=dt.date(2026, 9, 30),
+        request={"base": {"image_size": "square_hd"}},
+    )
+    assert not slot.price_basis
+
+
+def test_the_real_video_slot_prices_the_resolution_it_sends() -> None:
+    """The regression itself, against the live config rather than a constructed slot."""
+    providers = load_all(Path("config")).providers
+    slot = providers.slot("video", "golf")
+    assert slot.price_basis.get("resolution") == (slot.request.get("base") or {}).get("resolution")
