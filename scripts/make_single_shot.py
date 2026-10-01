@@ -35,6 +35,7 @@ from app.identity.evaluation import holdout_reference
 from app.pipeline.acceptance import ShotUnderTest, StillScreen, assess, best_still, screen_still
 from app.pipeline.assembler import duration_of
 from app.pipeline.disclosure import apply_disclosure
+from app.pipeline.fidelity import detail_pass, require_identity_preserved
 from app.pipeline.golf import apply_house_style
 from app.pipeline.golf import check as check_golf
 from app.pipeline.lipsync import lip_sync, should_lip_sync
@@ -78,6 +79,7 @@ def main() -> int:
     parser.add_argument("--budget", type=Decimal, default=None)
     parser.add_argument("--takes", type=int, default=4)
     parser.add_argument("--keyframes", type=int, default=4)
+    parser.add_argument("--seconds", type=int, default=None, help="5-15; the brief's shot 1 is 6")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-generate", action="store_true")
     args = parser.parse_args()
@@ -89,13 +91,21 @@ def main() -> int:
     guard = BudgetGuard(config.budget, config.providers)
 
     image_slot, _, _ = guard.price("image", "lora_inference")
+    detail_slot, _, _ = guard.price("image", "detail_pass")
     video_slot, _, _ = guard.price("video", "golf")
     voice_slot, _, _ = guard.price("voice", "primary")
     sync_slot, _, _ = guard.price("lipsync", "primary")
-    seconds = Decimal(str((video_slot.request or {}).get("duration_s", 5)))
+    # The brief's shot 1 is six seconds. The model takes 5 to 15 inclusive (ADR 0013
+    # corrected a config note that read as "only 5"), so this is a real choice rather than
+    # the one value available — and a longer shot is HARDER, because the gate's verdict
+    # rests on the worst frame and a longer clip offers more frames to be worst.
+    seconds = Decimal(str(args.seconds or (video_slot.request or {}).get("duration_s", 5)))
+    video_request = dict(video_slot.request or {})
+    video_request["duration_s"] = int(seconds)
 
     estimate = (
         guard.estimate("image", "lora_inference", Decimal(args.keyframes))
+        + guard.estimate("image", "detail_pass", Decimal(1))
         + guard.estimate("video", "golf", seconds * args.takes)
         + guard.estimate("voice", "primary", Decimal(len(SHOT["line"])) / Decimal(1000))
         + guard.estimate("lipsync", "primary", seconds)
@@ -154,12 +164,12 @@ def main() -> int:
         for problem in check_golf(prompt):
             raise SystemExit(f"shot prompt contains {problem.rule} — {problem.why}")
         assert image_slot.model is not None
-        # Several candidates, screened, because identity is lost here or not at all.
-        # Measured 2026-09-30: the first single-shot keyframe scored 0.94753 against a
-        # 0.9619 still threshold, and every stage below it then behaved exactly as
-        # calibrated (animation -0.005, sync -0.004). The finished shot was refused for
-        # an identity failure that was already present in its first frame. Screening
-        # here costs $0.07 a candidate against $0.83 for the chain underneath.
+        # Candidates screened and the hunt STOPS at the first one that clears, because
+        # identity is lost here or not at all. Measured 2026-10-01: animating costs 0.0165
+        # to 0.0477 off the worst frame, so a keyframe at the stills threshold of 0.9619
+        # lands under the video threshold of 0.951 and its take is refused. The bar here is
+        # `identity_threshold_keyframe`, which carries that margin. Roughly 1 draw in 40
+        # clears it, at $0.035 a draw against $1.46 for the takes and sync underneath.
         screens: list[StillScreen] = []
         for candidate_index in range(args.keyframes):
             candidate = args.out / f"keyframe_{candidate_index}.png"
@@ -173,28 +183,56 @@ def main() -> int:
             )
             candidate.write_bytes(client.get(url, timeout=180.0).content)
             screen = screen_still(
-                candidate,
-                reference=reference,
-                embedder=embedder,
-                threshold=still_threshold,
+                candidate, reference=reference, embedder=embedder, threshold=still_threshold
             )
             screens.append(screen)
             print(
                 f"  keyframe {candidate_index + 1}/{args.keyframes}: {screen.score:.5f} "
-                f"{'pass' if screen.passes else 'below ' + format(still_threshold, '.4f')}"
+                f"{'CLEARS' if screen.passes else 'below ' + format(still_threshold, '.4f')}"
             )
+            if screen.passes:
+                # Stop paying for draws once one clears. Later draws cannot improve the
+                # outcome — the gate is a threshold, not a beauty contest.
+                break
         chosen = best_still(screens)
         if not chosen.passes:
             spread = ", ".join(f"{s.score:.5f}" for s in screens)
             raise SystemExit(
-                f"no keyframe reached the still threshold {still_threshold:.4f} "
-                f"(best {chosen.score:.5f}; all candidates: {spread}). "
-                "Refusing before paying for video and sync — the face the rest of the "
-                "chain would animate is not reliably hers, and no later stage recovers "
-                "identity that the first frame never had."
+                f"no keyframe in {len(screens)} draws reached {still_threshold:.4f} "
+                f"(best {chosen.score:.5f}; all: {spread}). Refusing before paying for "
+                "video and sync — animating costs 0.0165 to 0.0477 off the worst frame, so "
+                "a keyframe below this bar produces a take the gate will refuse, and no "
+                "later stage recovers identity the first frame never had."
             )
         chosen.path.replace(keyframe)
     print(f"keyframe    {keyframe.name}")
+
+    # ------------------------------------------------------- fidelity pass --
+    # The owner's verdict on an otherwise-passing shot was "it's her but almost a more AI
+    # version of her", and that measured out: a flux+LoRA keyframe carries 100.2 of fine
+    # detail against 222.7 for her own training stills. The pass takes it to 204.2 — 92% of
+    # her stills — and moves identity by -0.00165. Applied to the WINNER only, after the
+    # hunt, so a 40-draw hunt costs one pass rather than forty.
+    if not (args.skip_generate and (args.out / "keyframe_detailed.png").is_file()):
+        before = screen_still(
+            keyframe, reference=reference, embedder=embedder, threshold=still_threshold
+        )
+        assert detail_slot.model is not None
+        detailed = detail_pass(
+            client,
+            queue_root=QUEUE_ROOT,
+            model=detail_slot.model,
+            source=keyframe,
+            dest=args.out / "keyframe_detailed.png",
+            base=dict((detail_slot.request or {}).get("base") or {}),
+        )
+        after = screen_still(
+            detailed, reference=reference, embedder=embedder, threshold=still_threshold
+        )
+        # This provider invents detail, and invented detail on a face is a different face.
+        require_identity_preserved(before.score, after.score)
+        print(f"detail pass {detailed.name}  identity {before.score:.5f} -> {after.score:.5f}")
+        detailed.replace(keyframe)
 
     # --------------------------------------------------------------- takes --
     clip = args.out / "take.mp4"
@@ -204,9 +242,7 @@ def main() -> int:
         for take in range(args.takes):
             candidate = args.out / f"take_{take}.mp4"
             assert video_slot.model is not None
-            url = submit_clip(
-                client, video_slot.model, motion, keyframe, dict(video_slot.request or {})
-            )
+            url = submit_clip(client, video_slot.model, motion, keyframe, video_request)
             candidate.write_bytes(client.get(url, timeout=300.0).content)
             candidates.append(candidate)
             print(f"  take {take + 1}/{args.takes}")
