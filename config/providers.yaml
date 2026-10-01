@@ -206,6 +206,13 @@ providers:
       # $0.075/MP against $0.035 — control extensions, not fidelity. Swapping the
       # image model means retraining, which re-opens D-C before anything publishes.
       #
+      # NOT IN THE DEFAULT PATH since 2026-10-01, when lora_scale went to 1.7. At that
+      # scale the raw keyframe already carries more fine detail than her own training
+      # stills (256.0 against 222.7), so this stage has nothing to add — and it costs
+      # more identity there than it did at 1.3 (-0.00553 against -0.00165), enough to
+      # trip `require_identity_preserved`. Behind `--detail-pass`, kept because at a
+      # lower scale it doubled texture for almost no identity.
+      #
       # LICENCE: NOT CLEARED. clarity-upscaler is built on Stable Diffusion 1.5
       # plus a ControlNet tile and an ESRGAN upscaler, whose licences differ from
       # each other and from FLUX's. Nothing is pulled locally — this is a hosted

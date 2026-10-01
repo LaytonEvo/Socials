@@ -83,6 +83,11 @@ def main() -> int:
     # exactly one, so the swing ranking had nothing to choose between.
     parser.add_argument("--takes", type=int, default=6)
     parser.add_argument("--keyframes", type=int, default=4)
+    parser.add_argument(
+        "--detail-pass",
+        action="store_true",
+        help="run the clarity-upscaler fidelity pass; unnecessary at lora_scale 1.7",
+    )
     parser.add_argument("--seconds", type=int, default=None, help="5-15; the brief's shot 1 is 6")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-generate", action="store_true")
@@ -217,7 +222,24 @@ def main() -> int:
     # detail against 222.7 for her own training stills. The pass takes it to 204.2 — 92% of
     # her stills — and moves identity by -0.00165. Applied to the WINNER only, after the
     # hunt, so a 40-draw hunt costs one pass rather than forty.
-    if not (args.skip_generate and (args.out / "keyframe_detailed.png").is_file()):
+    # OFF BY DEFAULT since lora_scale went to 1.7, which already renders more fine detail
+    # than her own training stills (256.0 against 222.7) — so there is nothing left for this
+    # stage to add, and three reasons not to run it:
+    #
+    #   * it costs identity, and more at 1.7 than at 1.3. Measured -0.00165 at 1.3 and
+    #     -0.00553 at 1.7, which trips `require_identity_preserved` outright: on an already
+    #     detailed face the upscaler's inventions conflict with what is there.
+    #   * it invents detail, and invented detail is a candidate cause of the uneven
+    #     complexion the owner flagged.
+    #   * its licence is unresolved (SD 1.5 plus ControlNet and ESRGAN components), so
+    #     leaving it out of the default path takes a publishing blocker off the critical
+    #     path rather than carrying it.
+    #
+    # Kept behind a flag rather than deleted, because at a lower lora_scale it doubled
+    # texture for -0.00165 of identity and that may matter again.
+    if args.detail_pass and not (
+        args.skip_generate and (args.out / "keyframe_detailed.png").is_file()
+    ):
         before = screen_still(
             keyframe, reference=reference, embedder=embedder, threshold=still_threshold
         )
