@@ -26,6 +26,20 @@ The one open item is honest and not closable by measurement:
 
 That is for the owner to judge. I am not calling the sync good from a contact sheet again.
 
+**Closed 2026-10-01 by Layton Brooks (owner):** *"Lip sync looks good."* The REVIEW item
+is discharged for this shot by a named human, which is the only way a REVIEW item can be
+discharged.
+
+This is also the first recorded agreement between the scorer and a human eye on a *passing*
+clip, which `BUILD_ORDER` §3.3 asked for explicitly:
+
+> If the scorer passes clips a human rejects, the scorer is the finding, and Phase 3's
+> auto-reject design needs rethinking before it is built.
+
+The scorer passed this clip and the human agrees. One data point, not a validation — but it
+points the right way for **D-A** (auto-reject design), where disagreement would have been a
+reason to stop and redesign.
+
 ## What was actually wrong
 
 Not the video model, not the lip-sync model, not the prompt's golf content — all of which
