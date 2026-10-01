@@ -67,6 +67,18 @@ class ShotUnderTest:
     speaks: bool
     #: "voice" | "sfx" | "none"
     audio_source: str
+    #: Whether SHE is in this shot at all, face or not.
+    #:
+    #: Separate from `face_expected` because the two together are what makes a shot
+    #: verifiable, and the pair that is neither is the one that bit. A down-the-line swing
+    #: shot shows her prominently — hair, build, posture, clothes — while showing no face,
+    #: so `face_expected=False` switched identity checking off on a shot that was entirely
+    #: about her. The owner's verdict on the result: "not her."
+    #:
+    #: The scorer is face-only. Nothing here measures hair, build or posture, so a shot
+    #: containing her without a verifiable face cannot be vouched for by any means this
+    #: pipeline has. It blocks.
+    persona_present: bool = True
     #: Whether her face should be verifiable in this shot at all.
     #:
     #: Declared by the shot list, not inferred from the render, because the two failure
@@ -171,7 +183,21 @@ def assess(
                 scores.append(cosine(reading.embedding, reference))
         coverage = len(scores) / len(frames) if frames else 0.0
 
-        if not shot.face_expected:
+        if shot.persona_present and not shot.face_expected:
+            # She is in it and her face is not. Nothing can check that it is her: the
+            # scorer reads faces, and hair, build and posture are not measured anywhere.
+            verdict.findings.append(
+                Finding(
+                    Severity.BLOCKING,
+                    f"{shot.name}: identity",
+                    "this shot contains her but shows no verifiable face, so nothing here "
+                    "can confirm it is her. A down-the-line or over-the-shoulder shot of "
+                    "her is as identity-critical as a close-up and this pipeline has no "
+                    "way to judge it. Either frame the shot so her face is visible, or "
+                    "keep her out of it.",
+                )
+            )
+        elif not shot.face_expected:
             # A shot that is not supposed to show her face is judged on the opposite
             # question: not "is this her" but "is there someone here who should not be".
             # A face that appears in a down-the-line or cutaway shot and scores below

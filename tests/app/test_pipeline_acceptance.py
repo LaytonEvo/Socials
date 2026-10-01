@@ -313,25 +313,28 @@ def _assess(shots: list[ShotUnderTest]) -> Verdict:
 
 
 def test_a_shot_with_no_face_by_design_is_not_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The brief's down-the-line and cutaway shots have no face on purpose.
+    """A cutaway she is not in has no identity to verify, and refusing it refuses b-roll.
 
-    Shot 2-3 is filmed from behind her and shot 4 is tight on the ball. Blocking those for
-    being unverifiable would refuse the brief rather than the render.
+    Narrowed 2026-10-01. This originally used a down-the-line shot OF HER as the example of
+    a legitimate no-face shot, and that turned out to be the dangerous case rather than the
+    safe one: the render came back as a different woman and nothing could tell. A shot she
+    is not in is the safe case, and `persona_present=False` is what says so.
     """
     _patch(monkeypatch, score=None)
     verdict = _assess(
         [
             ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice"),
             ShotUnderTest(
-                "down_the_line",
-                Path("2.mp4"),
+                "ball_on_the_green",
+                Path("4.mp4"),
                 speaks=False,
                 audio_source="none",
                 face_expected=False,
+                persona_present=False,
             ),
         ]
     )
-    assert not any("down_the_line" in f.rule for f in verdict.blocking), verdict.report()
+    assert not any("ball_on_the_green" in f.rule for f in verdict.blocking), verdict.report()
 
 
 def test_a_stranger_in_a_no_face_shot_still_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -344,7 +347,12 @@ def test_a_stranger_in_a_no_face_shot_still_blocks(monkeypatch: pytest.MonkeyPat
     verdict = _assess(
         [
             ShotUnderTest(
-                "cutaway", Path("4.mp4"), speaks=False, audio_source="none", face_expected=False
+                "cutaway",
+                Path("4.mp4"),
+                speaks=False,
+                audio_source="none",
+                face_expected=False,
+                persona_present=False,
             ),
             ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice"),
         ]
@@ -382,3 +390,49 @@ def test_a_piece_where_no_shot_verifies_identity_is_refused(
         ]
     )
     assert any("never checked anywhere" in f.detail for f in verdict.blocking), verdict.report()
+
+
+def test_a_shot_containing_her_without_a_face_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The hole that shipped a different woman.
+
+    A down-the-line swing shows her prominently — hair, build, posture, clothes — and no
+    face. `face_expected=False` switched identity checking off on a shot entirely about
+    her, and the render came back as someone else. The owner's verdict: "not her."
+
+    The scorer reads faces. Nothing measures hair or build, so this combination cannot be
+    vouched for by any means the pipeline has, and the honest answer is to refuse it.
+    """
+    _patch(monkeypatch, score=None)
+    verdict = _assess(
+        [
+            ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice"),
+            ShotUnderTest(
+                "down_the_line",
+                Path("2.mp4"),
+                speaks=False,
+                audio_source="none",
+                face_expected=False,
+                persona_present=True,
+            ),
+        ]
+    )
+    assert any("no verifiable face" in f.detail for f in verdict.blocking), verdict.report()
+
+
+def test_a_shot_she_is_not_in_is_still_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ball on a green has no identity to verify, and refusing it would refuse b-roll."""
+    _patch(monkeypatch, score=None)
+    verdict = _assess(
+        [
+            ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice"),
+            ShotUnderTest(
+                "ball",
+                Path("4.mp4"),
+                speaks=False,
+                audio_source="none",
+                face_expected=False,
+                persona_present=False,
+            ),
+        ]
+    )
+    assert not any("ball" in f.rule for f in verdict.blocking), verdict.report()

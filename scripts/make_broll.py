@@ -53,7 +53,11 @@ ROOT = Path(__file__).resolve().parents[1]
 #: so and is right: a cut between address and strike is a cut across the hardest moment to
 #: render, and the model holds a continuous move better than two that must match.
 SHOTS: dict[str, dict[str, Any]] = {
-    "address_strike": {
+    # WITHDRAWN 2026-10-01. She is in this shot and her face is not, which the gate now
+    # refuses outright — nothing in this pipeline can confirm a down-the-line shot is her,
+    # and the render of it came back as a different woman. Kept here, unused, because the
+    # shot is in the brief and someone will ask why it is missing.
+    "_withdrawn_address_strike": {
         "seconds": 5,
         "edit": (
             "Keep the same woman, the same clothes, the same glove on her lead hand and "
@@ -147,11 +151,12 @@ def main() -> int:
     edit_slot, _, _ = guard.price("image", "keyframe")
     video_slot, _, _ = guard.price("video", "golf")
 
-    seconds = sum(int(s["seconds"]) for s in SHOTS.values())
-    estimate = guard.estimate("image", "keyframe", Decimal(len(SHOTS))) + guard.estimate(
+    live = {n: s for n, s in SHOTS.items() if not n.startswith("_")}
+    seconds = sum(int(s["seconds"]) for s in live.values())
+    estimate = guard.estimate("image", "keyframe", Decimal(len(live))) + guard.estimate(
         "video", "golf", Decimal(seconds * args.takes)
     )
-    print(f"{len(SHOTS)} shots with no face in them, {args.takes} takes each")
+    print(f"{len(live)} shots SHE IS NOT IN, {args.takes} takes each")
     print(f"  keyframe  {edit_slot.model} (editing shot 1's keyframe, so wardrobe carries)")
     print(f"  video     {video_slot.model}")
     print(f"ESTIMATE    ${estimate}")
@@ -181,7 +186,7 @@ def main() -> int:
     threshold = float(config.persona.persona.look.identity_threshold_video or 0.0)
 
     finished: list[ShotUnderTest] = []
-    for name, shot in SHOTS.items():
+    for name, shot in ((n, s) for n, s in SHOTS.items() if not n.startswith("_")):
         print(f"\n{name}")
         keyframe = args.out / f"{name}_keyframe.png"
         if not (args.skip_generate and keyframe.is_file()):
@@ -219,6 +224,9 @@ def main() -> int:
                 speaks=False,
                 audio_source="none",
                 face_expected=False,
+                # She is not in these. A shot containing her without a verifiable face is
+                # refused by the gate, because nothing here can confirm it is her.
+                persona_present=False,
             )
         )
 
