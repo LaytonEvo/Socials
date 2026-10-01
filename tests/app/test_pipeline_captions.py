@@ -15,18 +15,25 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from PIL import ImageFont
 
 from app.config.schema import DisclosureOverlay
 from app.pipeline.captions import (
+    CAPTION_HEIGHT_FRACTION,
     MAX_CUE_CHARS,
+    MAX_CUE_LINES,
+    MIN_CUE_SECONDS,
+    USABLE_WIDTH_FRACTION,
     Band,
     CaptionsFailed,
     burn_in,
     caption_band,
     disclosure_band,
     split_into_cues,
+    wrap_to_frame,
     write_srt,
 )
+from app.pipeline.disclosure import FONT
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -54,7 +61,7 @@ def test_the_line_breaks_on_sentences_first() -> None:
     cues = split_into_cues(LINE, 6.0)
     assert len(cues) >= 3
     assert cues[0].text.startswith("Thirty yards")
-    assert cues[-1].text == "Watch."
+    assert cues[-1].text.endswith("Watch.")
 
 
 def test_no_cue_is_too_long_to_read_at_a_glance() -> None:
@@ -73,8 +80,10 @@ def test_the_cues_cover_the_whole_line_without_a_gap_or_an_overrun() -> None:
 
 def test_longer_phrases_get_more_time() -> None:
     """Apportioned by characters — a proxy for speaking time, not a measurement of it."""
-    cues = split_into_cues("Short. A considerably longer sentence than the first one.", 6.0)
-    assert cues[1].duration_s > cues[0].duration_s
+    cues = split_into_cues("Hi. A considerably longer sentence than that first one was.", 6.0)
+    first = next(c for c in cues if c.text.startswith("Hi"))
+    rest = sum(c.duration_s for c in cues if c is not first)
+    assert rest > first.duration_s
 
 
 def test_an_empty_line_is_refused() -> None:
@@ -221,3 +230,55 @@ def test_an_apostrophe_does_not_break_the_filter(tmp_path: Path) -> None:
         overlay=_overlay(),
     )
     assert out.is_file() and out.stat().st_size > 0
+
+
+# --------------------------------------------- what a character budget cannot know --
+def test_no_cue_is_wider_than_the_frame_it_is_drawn_on() -> None:
+    """The defect that a character limit alone cannot catch.
+
+    MAX_CUE_CHARS was 42 and the caption height 0.045, which renders 1471px wide on a 768px
+    frame — nearly double it. Nothing counted characters wrongly; characters were simply the
+    wrong unit. This measures against the same TrueType file ffmpeg draws with.
+    """
+    for width, height in ((768, 1344), (720, 1280), (1080, 1920)):
+        font_px = int(height * CAPTION_HEIGHT_FRACTION)
+        for cue in split_into_cues(LINE, 6.0):
+            lines = wrap_to_frame(cue.text, frame_width=width, font_px=font_px)
+            assert len(lines) <= MAX_CUE_LINES, (cue.text, lines)
+            font = ImageFont.truetype(str(FONT), font_px)
+            for line in lines:
+                drawn = font.getbbox(line)[2]
+                assert drawn <= width * USABLE_WIDTH_FRACTION, (
+                    f"{line!r} draws {drawn}px on a {width}px frame"
+                )
+
+
+def test_a_word_too_wide_to_wrap_is_refused_not_truncated() -> None:
+    """Silent truncation would draw it off both edges with nothing to show it happened."""
+    with pytest.raises(CaptionsFailed, match="Reduce the caption height or the word"):
+        wrap_to_frame("Unsplittablylongsinglewordthatcannotfit", frame_width=200, font_px=60)
+
+
+# ------------------------------------------------------------- no unreadable flashes --
+def test_no_cue_is_too_brief_to_read() -> None:
+    """Splitting on commas produced "Right" for 0.336s and "first tee" for 0.604s."""
+    for line, duration in (
+        (LINE, 6.0),
+        ("Right, first tee, and there is water left the whole way down. Watch.", 6.58),
+        ("Thirty out, pin is middle of the green. Little pitch, let it release.", 6.0),
+    ):
+        cues = split_into_cues(line, duration)
+        assert all(c.duration_s >= MIN_CUE_SECONDS for c in cues), [
+            (c.text, round(c.duration_s, 2)) for c in cues
+        ]
+
+
+def test_a_long_sentence_splits_evenly_rather_than_leaving_an_orphan() -> None:
+    """Greedy packing to the limit leaves a stub, and a stub becomes a flash.
+
+    Packing "and there is water left the whole way down." greedily gave a full-length piece
+    plus "down." alone. Choosing the piece count first and aiming for an even share does not.
+    """
+    cues = split_into_cues("And there is water left the whole way down the hole.", 4.0)
+    lengths = [len(c.text) for c in cues]
+    assert min(lengths) > max(lengths) / 3, lengths

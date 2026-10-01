@@ -21,13 +21,14 @@ reports caption sync as something a human must check, in the same breath as lip 
 
 from __future__ import annotations
 
+import math
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.config.schema import DisclosureOverlay
-from app.pipeline.disclosure import FONT
+from app.pipeline.disclosure import FONT, probe_size
 from app.pipeline.errors import PipelineError
 
 #: Where captions sit, as a fraction of frame height — the baseline of the block.
@@ -37,10 +38,31 @@ CAPTION_CENTRE_FRACTION: float = 0.74
 
 #: Caption text height as a fraction of frame height. Larger than the disclosure's 0.030,
 #: because a caption is meant to be read and the disclosure only to be legible.
-CAPTION_HEIGHT_FRACTION: float = 0.045
+#:
+#: Chosen by measurement, not taste. At 0.045 a 42-character cue needs THREE lines, which
+#: starts covering the picture; at 0.040 it needs two, with about 20 characters a line. The
+#: ratio holds across frame sizes because both the type and the limit scale with the frame.
+CAPTION_HEIGHT_FRACTION: float = 0.040
 
-#: Longest a single cue may be. Beyond this a line wraps or runs off a phone screen.
-MAX_CUE_CHARS: int = 42
+#: Longest a single cue may be, as TEXT. Not a width: the real limit is measured against the
+#: font and the frame in `wrap_to_frame`, because a character budget cannot know either.
+#:
+#: This was wrong before it was measured. At 42 characters a cue renders 1471px wide on a
+#: 768px frame — nearly double it — and about 18 characters fit on one line. 36 is two such
+#: lines, which is what a Shorts caption looks like. Measured at the 0.040 height below: 44
+#: characters still fits two lines on 768x1344, 720x1280 and 1080x1920, so 40 has margin.
+MAX_CUE_CHARS: int = 40
+
+#: How much of the frame width a caption line may use, leaving a margin either side.
+USABLE_WIDTH_FRACTION: float = 0.92
+
+#: Lines per cue. Two is a Shorts caption; three starts covering the picture.
+MAX_CUE_LINES: int = 2
+
+#: Shortest a cue may last. Measured the hard way: splitting "Right, first tee, and there's
+#: water left the whole way down." on its commas produced "Right" for 0.336s and "first tee"
+#: for 0.604s — two flashes nobody can read. A cue below this is merged into its neighbour.
+MIN_CUE_SECONDS: float = 0.7
 
 
 class CaptionsFailed(PipelineError):
@@ -58,6 +80,41 @@ class Cue:
     @property
     def duration_s(self) -> float:
         return self.end_s - self.start_s
+
+
+def _balanced(chunk: str) -> list[str]:
+    """Split a long chunk into evenly sized pieces, not greedily to the limit.
+
+    Greedy packing leaves orphans: packing "and there\u2019s water left the whole way down."
+    to 36 characters yields a 36-character piece and "down." on its own, which then becomes
+    a third-of-a-second flash. Choosing the piece COUNT first and aiming for an even share
+    gives "and there\u2019s water left" and "the whole way down." — two readable cues.
+    """
+    words = chunk.split()
+    if len(chunk) <= MAX_CUE_CHARS or len(words) == 1:
+        return [chunk]
+    count = math.ceil(len(chunk) / MAX_CUE_CHARS)
+    target = len(chunk) / count
+    pieces: list[str] = []
+    current = ""
+    for index, word in enumerate(words):
+        candidate = f"{current} {word}".strip()
+        remaining_pieces = count - len(pieces)
+        # Start a new piece once this one is at its share, unless doing so would leave
+        # fewer words than pieces still to fill.
+        if (
+            current
+            and len(candidate) > target
+            and remaining_pieces > 1
+            and len(words) - index >= remaining_pieces - 1
+        ):
+            pieces.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        pieces.append(current)
+    return pieces
 
 
 def split_into_cues(line: str, duration_s: float) -> list[Cue]:
@@ -86,16 +143,22 @@ def split_into_cues(line: str, duration_s: float) -> list[Cue]:
             if len(chunk) <= MAX_CUE_CHARS:
                 pieces.append(chunk)
                 continue
-            current = ""
-            for word in chunk.split():
-                candidate = f"{current} {word}".strip()
-                if len(candidate) > MAX_CUE_CHARS and current:
-                    pieces.append(current)
-                    current = word
-                else:
-                    current = candidate
-            if current:
-                pieces.append(current)
+            pieces.extend(_balanced(chunk))
+
+    # Merge back up to the limit. Splitting alone over-fragments: a sentence longer than the
+    # limit breaks on every comma, and short clauses become unreadable flashes. Packing
+    # adjacent pieces together keeps the breaks at the natural pauses that survive.
+    packed: list[str] = []
+    for piece in pieces:
+        # Rejoin with the punctuation the split removed: a comma where a comma was taken
+        # out, and nothing where the piece already ends a sentence. Joining unconditionally
+        # with ", " produced "flag right in the middle., Ball back".
+        joiner = " " if packed and packed[-1][-1:] in ".!?" else ", "
+        if packed and len(f"{packed[-1]}{joiner}{piece}") <= MAX_CUE_CHARS:
+            packed[-1] = f"{packed[-1]}{joiner}{piece}"
+        else:
+            packed.append(piece)
+    pieces = packed
 
     total = sum(len(p) for p in pieces)
     cues: list[Cue] = []
@@ -106,7 +169,74 @@ def split_into_cues(line: str, duration_s: float) -> list[Cue]:
         end = duration_s if index == len(pieces) - 1 else at + share
         cues.append(Cue(piece, at, end))
         at = end
-    return cues
+
+    # A cue too brief to read is worse than a longer one: merge it forward, or back if it is
+    # last. Done on the timed cues rather than the text, because whether a piece is too
+    # short depends on how long the line takes to say and not on how many characters it has.
+    merged: list[Cue] = []
+    for cue in cues:
+        if (
+            merged
+            and cue.duration_s < MIN_CUE_SECONDS
+            # Bounded, because an unrenderable cue is worse than a brief one: merging past
+            # the budget produces text `wrap_to_frame` will refuse outright.
+            and len(f"{merged[-1].text} {cue.text}") <= MAX_CUE_CHARS
+        ):
+            previous = merged.pop()
+            merged.append(Cue(f"{previous.text} {cue.text}", previous.start_s, cue.end_s))
+        else:
+            merged.append(cue)
+    # The first cue can still be short if nothing preceded it to merge into.
+    if (
+        len(merged) > 1
+        and merged[0].duration_s < MIN_CUE_SECONDS
+        and len(f"{merged[0].text} {merged[1].text}") <= MAX_CUE_CHARS
+    ):
+        head, nxt = merged[0], merged[1]
+        merged[:2] = [Cue(f"{head.text} {nxt.text}", head.start_s, nxt.end_s)]
+    return merged
+
+
+def wrap_to_frame(text: str, *, frame_width: int, font_px: int) -> list[str]:
+    """Break a cue into lines that actually fit, measured with the real font.
+
+    Measured rather than counted. A character budget cannot know the font or the frame, and
+    the guess that preceded this was out by a factor of two: 42 characters at this size
+    renders 1471px on a 768px frame. PIL reads the same TrueType file ffmpeg will use, so
+    what is measured here is the width that will be drawn.
+    """
+    from PIL import ImageFont
+
+    font = ImageFont.truetype(str(FONT), font_px)
+    limit = frame_width * USABLE_WIDTH_FRACTION
+
+    def width(value: str) -> float:
+        return float(font.getbbox(value)[2])
+
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        if width(word) > limit:
+            # A single word wider than the frame cannot be wrapped, only shrunk. Refusing
+            # beats drawing it off both edges, which is what silent truncation would do.
+            raise CaptionsFailed(
+                f"the word {word!r} renders {width(word):.0f}px against a usable "
+                f"{limit:.0f}px at {font_px}px type. Reduce the caption height or the word."
+            )
+        candidate = f"{current} {word}".strip()
+        if width(candidate) > limit and current:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    if len(lines) > MAX_CUE_LINES:
+        raise CaptionsFailed(
+            f"{text!r} needs {len(lines)} lines at {font_px}px and only {MAX_CUE_LINES} fit "
+            f"without covering the picture. Split the cue further."
+        )
+    return lines
 
 
 def _timestamp(seconds: float) -> str:
@@ -197,19 +327,30 @@ def burn_in(
             f"defeated rather than kept. Move the captions or the overlay."
         )
 
+    frame_width, frame_height = probe_size(video)
+    font_px = max(1, int(frame_height * height_fraction))
+
     filters = []
     for cue in cues:
-        # drawtext reads a colon as a field separator and a single quote as the end of the
-        # text, so both have to go. The apostrophe is written by codepoint rather than as a
-        # literal, which keeps ambiguous characters out of the source.
-        text = cue.text.replace("\\", "\\\\").replace(":", r"\:").replace("'", "\u2019")
-        filters.append(
-            f"drawtext=fontfile={FONT}:text='{text}'"
-            f":fontsize=h*{height_fraction}"
-            f":fontcolor=white:borderw=3:bordercolor=black@0.85"
-            f":x=(w-text_w)/2:y=h*{centre_fraction}-text_h/2"
-            f":enable='between(t,{cue.start_s:.3f},{cue.end_s:.3f})'"
-        )
+        for row, line in enumerate(
+            wrap_to_frame(cue.text, frame_width=frame_width, font_px=font_px)
+        ):
+            # drawtext reads a colon as a field separator and a single quote as the end of
+            # the text, so both have to go. The apostrophe is written by codepoint rather
+            # than as a literal, which keeps ambiguous characters out of the source.
+            safe = line.replace("\\", "\\\\").replace(":", r"\:").replace("'", "\u2019")
+            # Each line is placed by hand rather than relying on drawtext's own breaking,
+            # which cannot be measured from here. The block is centred on `centre_fraction`
+            # so two lines straddle it rather than hanging below it.
+            rows = wrap_to_frame(cue.text, frame_width=frame_width, font_px=font_px)
+            offset = (row - (len(rows) - 1) / 2) * font_px * 1.2
+            filters.append(
+                f"drawtext=fontfile={FONT}:text='{safe}'"
+                f":fontsize={font_px}"
+                f":fontcolor=white:borderw=3:bordercolor=black@0.85"
+                f":x=(w-text_w)/2:y=h*{centre_fraction}-text_h/2+{offset:.1f}"
+                f":enable='between(t,{cue.start_s:.3f},{cue.end_s:.3f})'"
+            )
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(
