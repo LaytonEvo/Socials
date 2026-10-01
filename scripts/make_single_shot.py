@@ -30,8 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import load_all
 from app.costs.guard import BudgetGuard
 from app.identity.dataset import NO_FACE_STILLS, collect, split
-from app.identity.embedder import DlibEmbedder
+from app.identity.embedder import DlibEmbedder, cosine
 from app.identity.evaluation import holdout_reference
+from app.identity.master_set import read_still
 from app.pipeline.acceptance import ShotUnderTest, StillScreen, assess, best_still, screen_still
 from app.pipeline.assembler import duration_of
 from app.pipeline.captions import burn_in, split_into_cues, write_srt
@@ -42,7 +43,7 @@ from app.pipeline.golf import check as check_golf
 from app.pipeline.lipsync import lip_sync, should_lip_sync
 from app.pipeline.takes import best_take, measure
 from app.pipeline.voice import pad_to
-from app.providers.fal import QUEUE_ROOT, api_key
+from app.providers.fal import QUEUE_ROOT, api_key, data_uri
 from app.storage.keys import key_for
 from app.storage.s3 import S3Storage, bucket_from_env
 from scripts.evaluate_lora import generate as generate_image
@@ -74,6 +75,93 @@ SHOT = {
 }
 
 
+EDIT_PROMPT = (
+    "Keep her face, hair and build exactly as they are. Put a sand wedge in her lead hand "
+    "resting head-down on the turf, a golf ball sitting up on the fairway grass beside her, "
+    "and a green with a flag in the middle of it on the horizon behind her shoulder. "
+    "Late afternoon side light. She is looking at the camera."
+)
+
+
+def keyframe_from_a_real_still(
+    client: httpx.Client,
+    slot: Any,
+    dataset: Any,
+    embedder: Any,
+    reference: Any,
+    dest: Path,
+    source_name: str | None,
+) -> tuple[Path, float, float]:
+    """Edit one of her master stills into the shot, rather than rendering her.
+
+    This is what `config/providers.yaml` decided on 2026-09-28 and what nothing used
+    until now: *"Editing a master still rather than generating a new one, so the face the
+    threshold was calibrated against survives by construction instead of by luck."*
+
+    Measured 2026-10-01 against the generated path: a LoRA keyframe scores 0.97444 and
+    produced 0 of 6 passing takes; a real still scores 0.99413, and the same still edited
+    to carry the shot scores 0.98373 and produced 2 of 2. The edit costs about 0.010 of
+    identity where generating her from scratch costs 0.019 before any content is added.
+
+    The source must come from the TRAIN split. Scoring a holdout still against a centroid
+    built from the holdout is circular, and the number it produces means nothing.
+    """
+    holdout = {still.name for still in dataset.holdout}
+    candidates = [
+        still
+        for still in dataset.train
+        if still.path.parent.name == "master_v2" and still.name not in holdout
+    ]
+    if source_name:
+        chosen = next((s for s in candidates if s.path.stem == source_name), None)
+        if chosen is None:
+            raise SystemExit(f"no train-split master still named {source_name!r}")
+        source = chosen.path
+    else:
+        scored = [
+            (cosine(reading.embedding, reference), still.path)
+            for still in candidates
+            if (reading := read_still(still.path, embedder)).embedding is not None
+        ]
+        if not scored:
+            raise SystemExit("no scorable still in the train split")
+        source = max(scored)[1]
+
+    source_score = screen_still(source, reference=reference, embedder=embedder, threshold=0.0).score
+    shape = dict(slot.request or {})
+    field = str(shape.get("image_field") or "")
+    if not field:
+        raise SystemExit("image.keyframe declares no request.image_field; a wrong name is a 422")
+    payload = data_uri(source)
+    arguments: dict[str, Any] = {
+        "prompt": apply_house_style(EDIT_PROMPT),
+        field: [payload] if shape.get("image_field_is_list") else payload,
+        **dict(shape.get("base") or {}),
+    }
+    for problem in check_golf(str(arguments["prompt"])):
+        raise SystemExit(f"edit prompt contains {problem.rule} — {problem.why}")
+    response = client.post(f"{QUEUE_ROOT}/{slot.model}", json=arguments)
+    if response.status_code >= 400:
+        raise SystemExit(f"keyframe edit failed {response.status_code}: {response.text[:300]}")
+    submitted = response.json()
+    for _ in range(150):
+        if client.get(submitted["status_url"]).json().get("status") in {
+            "COMPLETED",
+            "FAILED",
+            "ERROR",
+        }:
+            break
+        time.sleep(3)
+    result = client.get(submitted["response_url"]).json()
+    images = result.get("images") or []
+    url = (images[0].get("url") if images else None) or (result.get("image") or {}).get("url")
+    if not url:
+        raise SystemExit(f"edit COMPLETED with no image: {str(result)[:300]}")
+    dest.write_bytes(client.get(url, timeout=300.0).content)
+    edited_score = screen_still(dest, reference=reference, embedder=embedder, threshold=0.0).score
+    return source, source_score, edited_score
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "spike" / "runs" / "single")
@@ -83,6 +171,16 @@ def main() -> int:
     # exactly one, so the swing ranking had nothing to choose between.
     parser.add_argument("--takes", type=int, default=6)
     parser.add_argument("--keyframes", type=int, default=4)
+    parser.add_argument(
+        "--generate-keyframe",
+        action="store_true",
+        help="render her with the LoRA instead of editing one of her real stills",
+    )
+    parser.add_argument(
+        "--source-still",
+        default=None,
+        help="name a train-split master still to edit, e.g. b1_00; default picks on identity",
+    )
     parser.add_argument(
         "--detail-pass",
         action="store_true",
@@ -100,6 +198,7 @@ def main() -> int:
     guard = BudgetGuard(config.budget, config.providers)
 
     image_slot, _, _ = guard.price("image", "lora_inference")
+    edit_slot, _, _ = guard.price("image", "keyframe")
     detail_slot, _, _ = guard.price("image", "detail_pass")
     video_slot, _, _ = guard.price("video", "golf")
     voice_slot, _, _ = guard.price("voice", "primary")
@@ -113,17 +212,22 @@ def main() -> int:
     video_request["duration_s"] = int(seconds)
 
     estimate = (
-        guard.estimate("image", "lora_inference", Decimal(args.keyframes))
+        (
+            guard.estimate("image", "lora_inference", Decimal(args.keyframes))
+            if args.generate_keyframe
+            else guard.estimate("image", "keyframe", Decimal(1))
+        )
         + guard.estimate("image", "detail_pass", Decimal(1))
         + guard.estimate("video", "golf", seconds * args.takes)
         + guard.estimate("voice", "primary", Decimal(len(SHOT["line"])) / Decimal(1000))
         + guard.estimate("lipsync", "primary", seconds)
     )
     print(
-        f"one shot, {args.keyframes} keyframes screened on identity, {args.takes} takes, "
-        "pick on head stability, then sync the winner"
+        f"one shot, {args.takes} takes, pick on swing, then sync the winner"
+        if not args.generate_keyframe
+        else f"one shot, {args.keyframes} keyframes screened, {args.takes} takes, then sync"
     )
-    print(f"  keyframe  {image_slot.model}")
+    print(f"  keyframe  {image_slot.model if args.generate_keyframe else edit_slot.model}")
     print(f"  video     {video_slot.model}")
     print(f"  voice     {voice_slot.model}")
     print(f"  lip sync  {sync_slot.model}")
@@ -154,67 +258,79 @@ def main() -> int:
     reference, _ = holdout_reference(dataset, embedder)
 
     # ------------------------------------------------------------ keyframe --
+    # Two sources, and the default is the one the config chose on 2026-09-28: edit one of
+    # her real stills rather than render her. Generation stays behind --generate-keyframe
+    # for shots no still can carry — an action mid-swing, a view from behind her.
     keyframe = args.out / "keyframe.png"
-    # The KEYFRAME bar, not the stills bar. A keyframe is the input to an animation that
-    # costs 0.0165-0.0328 off the worst frame, so one at the stills threshold of 0.9619
-    # lands below the video threshold of 0.951 and its take is refused. Five of six runs
-    # failed precisely that way on keyframes the stills screen had passed.
-    still_threshold = (
-        config.persona.persona.look.identity_threshold_keyframe
-        or config.persona.persona.look.identity_threshold
-    )
+    look = config.persona.persona.look
+    still_threshold = look.identity_threshold_keyframe or look.identity_threshold
     if still_threshold is None:
         raise SystemExit(
             "neither persona.look.identity_threshold_keyframe nor identity_threshold is "
             "set; a keyframe cannot be screened against a threshold that does not exist"
         )
-    if not (args.skip_generate and keyframe.is_file()):
-        prompt = apply_house_style(SHOT["still"].format(w=artefact["trigger_word"]))
-        for problem in check_golf(prompt):
-            raise SystemExit(f"shot prompt contains {problem.rule} — {problem.why}")
-        assert image_slot.model is not None
-        # Candidates screened and the hunt STOPS at the first one that clears, because
-        # identity is lost here or not at all. Measured 2026-10-01: animating costs 0.0165
-        # to 0.0477 off the worst frame, so a keyframe at the stills threshold of 0.9619
-        # lands under the video threshold of 0.951 and its take is refused. The bar here is
-        # `identity_threshold_keyframe`, which carries that margin. Roughly 1 draw in 40
-        # clears it, at $0.035 a draw against $1.46 for the takes and sync underneath.
-        screens: list[StillScreen] = []
-        for candidate_index in range(args.keyframes):
-            candidate = args.out / f"keyframe_{candidate_index}.png"
-            url = generate_image(
-                client,
-                image_slot.model,
-                prompt,
-                artefact["weights_url"],
-                float(image_slot.options.get("lora_scale", 1.0)),
-                dict((image_slot.request or {}).get("base") or {}),
+    if not args.generate_keyframe:
+        if not (args.skip_generate and keyframe.is_file()):
+            source, source_score, edited_score = keyframe_from_a_real_still(
+                client, edit_slot, dataset, embedder, reference, keyframe, args.source_still
             )
-            candidate.write_bytes(client.get(url, timeout=180.0).content)
-            screen = screen_still(
-                candidate, reference=reference, embedder=embedder, threshold=still_threshold
-            )
-            screens.append(screen)
             print(
-                f"  keyframe {candidate_index + 1}/{args.keyframes}: {screen.score:.5f} "
-                f"{'CLEARS' if screen.passes else 'below ' + format(still_threshold, '.4f')}"
+                f"keyframe    edited from {source.name}: {source_score:.5f} -> {edited_score:.5f}"
             )
-            if screen.passes:
-                # Stop paying for draws once one clears. Later draws cannot improve the
-                # outcome — the gate is a threshold, not a beauty contest.
-                break
-        chosen = best_still(screens)
-        if not chosen.passes:
-            spread = ", ".join(f"{s.score:.5f}" for s in screens)
-            raise SystemExit(
-                f"no keyframe in {len(screens)} draws reached {still_threshold:.4f} "
-                f"(best {chosen.score:.5f}; all: {spread}). Refusing before paying for "
-                "video and sync — animating costs 0.0165 to 0.0477 off the worst frame, so "
-                "a keyframe below this bar produces a take the gate will refuse, and no "
-                "later stage recovers identity the first frame never had."
-            )
-        chosen.path.replace(keyframe)
-    print(f"keyframe    {keyframe.name}")
+        else:
+            print(f"keyframe    {keyframe.name} (reused)")
+    else:
+        # The KEYFRAME bar, not the stills bar. A keyframe is the input to an animation that
+        # costs 0.0165-0.0328 off the worst frame, so one at the stills threshold of 0.9619
+        # lands below the video threshold of 0.951 and its take is refused. Five of six runs
+        # failed precisely that way on keyframes the stills screen had passed.
+        if not (args.skip_generate and keyframe.is_file()):
+            prompt = apply_house_style(SHOT["still"].format(w=artefact["trigger_word"]))
+            for problem in check_golf(prompt):
+                raise SystemExit(f"shot prompt contains {problem.rule} — {problem.why}")
+            assert image_slot.model is not None
+            # Candidates screened and the hunt STOPS at the first one that clears, because
+            # identity is lost here or not at all. Measured 2026-10-01: animating costs 0.0165
+            # to 0.0477 off the worst frame, so a keyframe at the stills threshold of 0.9619
+            # lands under the video threshold of 0.951 and its take is refused. The bar here is
+            # `identity_threshold_keyframe`, which carries that margin. Roughly 1 draw in 40
+            # clears it, at $0.035 a draw against $1.46 for the takes and sync underneath.
+            screens: list[StillScreen] = []
+            for candidate_index in range(args.keyframes):
+                candidate = args.out / f"keyframe_{candidate_index}.png"
+                url = generate_image(
+                    client,
+                    image_slot.model,
+                    prompt,
+                    artefact["weights_url"],
+                    float(image_slot.options.get("lora_scale", 1.0)),
+                    dict((image_slot.request or {}).get("base") or {}),
+                )
+                candidate.write_bytes(client.get(url, timeout=180.0).content)
+                screen = screen_still(
+                    candidate, reference=reference, embedder=embedder, threshold=still_threshold
+                )
+                screens.append(screen)
+                print(
+                    f"  keyframe {candidate_index + 1}/{args.keyframes}: {screen.score:.5f} "
+                    f"{'CLEARS' if screen.passes else 'below ' + format(still_threshold, '.4f')}"
+                )
+                if screen.passes:
+                    # Stop paying for draws once one clears. Later draws cannot improve the
+                    # outcome — the gate is a threshold, not a beauty contest.
+                    break
+            chosen = best_still(screens)
+            if not chosen.passes:
+                spread = ", ".join(f"{s.score:.5f}" for s in screens)
+                raise SystemExit(
+                    f"no keyframe in {len(screens)} draws reached {still_threshold:.4f} "
+                    f"(best {chosen.score:.5f}; all: {spread}). Refusing before paying for "
+                    "video and sync — animating costs 0.0165 to 0.0477 off the worst frame, so "
+                    "a keyframe below this bar produces a take the gate will refuse, and no "
+                    "later stage recovers identity the first frame never had."
+                )
+            chosen.path.replace(keyframe)
+        print(f"keyframe    {keyframe.name}")
 
     # ------------------------------------------------------- fidelity pass --
     # The owner's verdict on an otherwise-passing shot was "it's her but almost a more AI
