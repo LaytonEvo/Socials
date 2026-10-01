@@ -205,17 +205,34 @@ providers:
       backend: fal
       model: fal-ai/flux-lora
       endpoint: null
-      # $0.035 per megapixel, "billed by rounding up to the nearest megapixel"
-      # (fal.ai/models/fal-ai/flux-lora, read 2026-09-30). A 1024x1024 image is
-      # 1.05 MP, so it rounds to 2 MP and bills 0.07. Priced per IMAGE at that
-      # figure rather than per megapixel because the guard prices one unit per
-      # slot, and the higher reading is the safe one: a guard that understates
-      # lets a run pass the cap while reporting it is inside it.
-      price_usd_per_image: 0.07
-      verified_on: 2026-09-30
+      # "$0.035 per megapixel. Images are billed by rounding up to the nearest
+      # megapixel." (fal.ai/models/fal-ai/flux-lora, re-read 2026-10-01.)
+      #
+      # Priced per IMAGE rather than per megapixel because the guard prices one
+      # unit per slot — so the price depends on the size requested, and
+      # `price_basis` binds the two. A 1024x1024 square is 1.05 MP, rounds to 2,
+      # and bills $0.07. The 720x1280 vertical below is 0.92 MP, rounds to 1, and
+      # bills $0.035: the shape the brief asks for is also half the price.
+      price_usd_per_image: 0.035
+      verified_on: 2026-10-01
+      price_basis:
+        image_size:
+          width: 720
+          height: 1280
       request:
         base:
-          image_size: square_hd
+          # 9:16 for YouTube Shorts, exactly (720x1280). An explicit size rather
+          # than the `portrait_16_9` enum so the megapixel count — and therefore
+          # the price above — is not at the mercy of what that name maps to.
+          #
+          # This is also the keyframe that decides the VIDEO's aspect: turbo's
+          # output canvas follows image_url (ADR 0013), so the aspect ratio of a
+          # finished piece is set here and nowhere else.
+          #
+          # Both dimensions are multiples of 16, which FLUX expects.
+          image_size:
+            width: 720
+            height: 1280
           num_images: 1
           output_format: png
           num_inference_steps: 28
