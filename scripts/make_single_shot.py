@@ -182,6 +182,11 @@ def main() -> int:
         help="name a train-split master still to edit, e.g. b1_00; default picks on identity",
     )
     parser.add_argument(
+        "--free-end",
+        action="store_true",
+        help="do not pin the last frame; steadier head, much worse identity",
+    )
+    parser.add_argument(
         "--detail-pass",
         action="store_true",
         help="run the clarity-upscaler fidelity pass; unnecessary at lora_scale 1.7",
