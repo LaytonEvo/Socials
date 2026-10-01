@@ -32,3 +32,9 @@ dist/
 # docs/reports/, which is where the finding actually lives.
 /*.mp4
 /*.png
+
+# Stills copied to the repository root for viewing, same reasoning as the renders
+# above: the desktop app cannot open files under spike/data/, so a copy lands here.
+# These are byte-identical to tracked files in spike/data/master_v2/ — committing
+# them would duplicate the master set, not preserve anything.
+/originals/
