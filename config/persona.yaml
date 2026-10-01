@@ -77,6 +77,30 @@ persona:
     # automatic is wired to it.
     identity_threshold_video: 0.951
     threshold_video_calibrated_on: 2026-09-30
+
+    # KEYFRAMES NEED A HIGHER BAR THAN STILLS, because a keyframe is not a deliverable
+    # — it is the input to an animation that costs identity. Measured 2026-10-01 over
+    # six runs, keyframe score against the WORST frame of the best take it produced:
+    #
+    #   drop   0.01652, 0.01658, 0.02371, 0.02453, 0.03280   (mean 0.02283, max 0.03280)
+    #
+    # To clear identity_threshold_video of 0.951, a keyframe therefore needs roughly
+    # 0.9738 at the mean drop and 0.9838 at the worst observed. The stills threshold of
+    # 0.9619 leaves NO margin at all, which is why five of six runs failed with a
+    # keyframe that had passed the stills screen: 0.96239, 0.96576, 0.96662, 0.96707,
+    # 0.96731 all passed as stills and every one produced a take the gate refused.
+    #
+    # Set to the lowest keyframe that has ever produced a passing take, which is an
+    # empirical floor rather than a derived constant pretending to precision. n=1 at
+    # this value, so it is a starting bar to be revised as runs accumulate — upward if
+    # takes keep failing at it, downward if they comfortably pass.
+    #
+    # Cheap in the right direction: a keyframe is $0.035 and the takes plus sync beneath
+    # it are about $1.46, so screening harder here is roughly forty times cheaper than
+    # discovering the same answer downstream.
+    identity_threshold_keyframe: 0.978
+    threshold_keyframe_derived_on: 2026-10-01
+    threshold_keyframe_evidence: docs/decisions/0014-keyframes-need-animation-margin.md
     threshold_video_evidence: docs/reports/video-threshold-2026-09-30.md
     threshold_calibrated_on: 2026-09-29
     threshold_evidence: docs/reports/master-set-widening-2026-09-29.md

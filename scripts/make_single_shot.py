@@ -136,11 +136,18 @@ def main() -> int:
 
     # ------------------------------------------------------------ keyframe --
     keyframe = args.out / "keyframe.png"
-    still_threshold = config.persona.persona.look.identity_threshold
+    # The KEYFRAME bar, not the stills bar. A keyframe is the input to an animation that
+    # costs 0.0165-0.0328 off the worst frame, so one at the stills threshold of 0.9619
+    # lands below the video threshold of 0.951 and its take is refused. Five of six runs
+    # failed precisely that way on keyframes the stills screen had passed.
+    still_threshold = (
+        config.persona.persona.look.identity_threshold_keyframe
+        or config.persona.persona.look.identity_threshold
+    )
     if still_threshold is None:
         raise SystemExit(
-            "persona.look.identity_threshold is not set; a keyframe cannot be screened "
-            "against a threshold that does not exist"
+            "neither persona.look.identity_threshold_keyframe nor identity_threshold is "
+            "set; a keyframe cannot be screened against a threshold that does not exist"
         )
     if not (args.skip_generate and keyframe.is_file()):
         prompt = apply_house_style(SHOT["still"].format(w=artefact["trigger_word"]))

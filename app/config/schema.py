@@ -417,6 +417,33 @@ class PersonaLook(BaseModel):
     #: (docs/reports/video-threshold-2026-09-30.md), so the two are kept apart rather
     #: than one being made to serve both.
     identity_threshold_video: float | None = Field(default=None, gt=0.0, le=1.0)
+    #: The bar a KEYFRAME must clear, which is higher than either of the above because a
+    #: keyframe is not a deliverable — it is the input to an animation that costs
+    #: identity. Measured 2026-10-01: animating drops the worst frame by 0.0165 to 0.0328,
+    #: so a keyframe at the stills threshold of 0.9619 lands below the video threshold of
+    #: 0.951 and the take is refused. Five of six runs failed exactly that way, on
+    #: keyframes that had passed the stills screen.
+    identity_threshold_keyframe: float | None = Field(default=None, gt=0.0, le=1.0)
+    threshold_keyframe_derived_on: dt.date | None = None
+    threshold_keyframe_evidence: str | None = None
+
+    @model_validator(mode="after")
+    def _keyframe_bar_is_not_below_the_video_bar(self) -> PersonaLook:
+        """A keyframe bar under the video bar cannot do its job.
+
+        The whole point is margin for the animation loss. A keyframe threshold at or
+        below `identity_threshold_video` admits keyframes that arithmetic already says
+        will fail, which is the state this field was added to end.
+        """
+        if self.identity_threshold_keyframe is None or self.identity_threshold_video is None:
+            return self
+        if self.identity_threshold_keyframe <= self.identity_threshold_video:
+            raise ValueError(
+                f"identity_threshold_keyframe ({self.identity_threshold_keyframe}) must be "
+                f"above identity_threshold_video ({self.identity_threshold_video}): a "
+                f"keyframe has to survive the animation, which costs 0.0165 to 0.0328."
+            )
+        return self
 
 
 class PersonaVoice(BaseModel):

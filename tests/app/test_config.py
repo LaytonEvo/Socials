@@ -33,7 +33,7 @@ from app.config import (
     load_all,
     require,
 )
-from app.config.schema import PersonaDisclosure, ProviderSlot
+from app.config.schema import PersonaDisclosure, PersonaLook, ProviderSlot
 
 REPO = Path(__file__).resolve().parents[2]
 REAL_CONFIG = REPO / "config"
@@ -401,3 +401,29 @@ def test_the_real_video_slot_prices_the_resolution_it_sends() -> None:
     providers = load_all(Path("config")).providers
     slot = providers.slot("video", "golf")
     assert slot.price_basis.get("resolution") == (slot.request.get("base") or {}).get("resolution")
+
+
+def test_the_keyframe_bar_must_sit_above_the_video_bar() -> None:
+    """A keyframe bar at or below the video bar admits keyframes arithmetic condemns.
+
+    Animating costs 0.0165 to 0.0328 off the worst frame, so a keyframe screened at the
+    video threshold produces a take below it. That is how five of six runs failed, each
+    on a keyframe the stills screen had passed.
+    """
+    with pytest.raises(ValidationError, match="must be above identity_threshold_video"):
+        PersonaLook(
+            status="locked",
+            identity_threshold_video=0.951,
+            identity_threshold_keyframe=0.951,
+        )
+
+
+def test_the_real_keyframe_bar_has_margin_for_the_animation() -> None:
+    look = load_all(Path("config")).persona.persona.look
+    assert look.identity_threshold_keyframe is not None
+    assert look.identity_threshold_video is not None
+    margin = look.identity_threshold_keyframe - look.identity_threshold_video
+    assert margin >= 0.0165, (
+        f"only {margin:.4f} of margin, under the smallest animation drop measured "
+        f"(0.0165) — a keyframe clearing this bar can still produce a refused take"
+    )

@@ -31,3 +31,4 @@ dist/
 # evidence, not source. The scores that make a render worth keeping are in
 # docs/reports/, which is where the finding actually lives.
 /*.mp4
+/*.png
