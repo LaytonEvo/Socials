@@ -67,6 +67,17 @@ class ShotUnderTest:
     speaks: bool
     #: "voice" | "sfx" | "none"
     audio_source: str
+    #: Whether her face should be verifiable in this shot at all.
+    #:
+    #: Declared by the shot list, not inferred from the render, because the two failure
+    #: modes are opposite. A face-forward shot with no detectable face is a broken shot and
+    #: blocks. A down-the-line shot filmed from behind her, or a cutaway to the ball on the
+    #: green, has no face *by design* — refusing it would refuse the brief.
+    #:
+    #: Inferring this from the footage would let the generator decide what it is allowed to
+    #: fail at: a face-forward take that drifted until no face was detectable would be
+    #: reclassified as b-roll and pass.
+    face_expected: bool = True
 
 
 @dataclass
@@ -157,7 +168,23 @@ def assess(
                 scores.append(cosine(reading.embedding, reference))
         coverage = len(scores) / len(frames) if frames else 0.0
 
-        if not scores:
+        if not shot.face_expected:
+            # A shot that is not supposed to show her face is judged on the opposite
+            # question: not "is this her" but "is there someone here who should not be".
+            # A face that appears in a down-the-line or cutaway shot and scores below
+            # threshold is a stranger in the piece, which is worse than no face at all.
+            if scores and min(scores) < threshold:
+                verdict.findings.append(
+                    Finding(
+                        Severity.BLOCKING,
+                        f"{shot.name}: identity",
+                        f"this shot declares no face, but a face was found in "
+                        f"{len(scores)} of {len(frames)} frames scoring as low as "
+                        f"{min(scores):.5f}, below {threshold}. Someone who is not her is "
+                        f"on screen.",
+                    )
+                )
+        elif not scores:
             # BLOCKING, not REVIEW. Measured 2026-10-01: across five pass-rate runs, four
             # were ACCEPTED on exactly this branch and its thin-coverage sibling below —
             # one of them with no detectable face in a single frame. The only run where
@@ -229,6 +256,22 @@ def assess(
                     "a speaking shot with no audio stream at all.",
                 )
             )
+
+    # ------------------------------------------- the piece, not the shots --
+    # Per-shot permissiveness must not let the whole piece escape verification. Three
+    # clips that each legitimately declare no face would, shot by shot, raise no identity
+    # finding at all — and a piece that never verified identity anywhere is a piece of an
+    # unverified person, whatever its shots were entitled to skip.
+    if shots and not any(s.face_expected for s in shots):
+        verdict.findings.append(
+            Finding(
+                Severity.BLOCKING,
+                "identity",
+                f"no shot in this piece ({len(shots)} shots) expects a verifiable face, so "
+                f"identity was never checked anywhere in it. At least one shot must be one "
+                f"the gate can verify her in.",
+            )
+        )
 
     # ------------------------------------------- what this cannot measure --
     if len(shots) > 1:

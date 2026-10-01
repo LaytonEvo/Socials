@@ -281,3 +281,104 @@ def test_a_keyframe_with_no_detectable_face_cannot_be_chosen() -> None:
     """An unscorable candidate is not a low-scoring one, and must not win by default."""
     with pytest.raises(ValueError, match="detectable face"):
         best_still([StillScreen(Path("x.png"), float("nan"), False)])
+
+
+# ------------------------------------------------------- per-shot expectations --
+def _patch(monkeypatch: pytest.MonkeyPatch, *, score: float | None, frames: int = 10) -> None:
+    import app.pipeline.acceptance as module
+
+    monkeypatch.setattr(module, "_has_audio", lambda _p: True)
+    monkeypatch.setattr(
+        FfmpegFrames, "extract", lambda self, clip, dest, fps: [Path("f.png")] * frames
+    )
+    monkeypatch.setattr(
+        module,
+        "read_still",
+        lambda path, embedder: type(
+            "R", (), {"embedding": None if score is None else np.ones(128)}
+        )(),
+    )
+    if score is not None:
+        monkeypatch.setattr(module, "cosine", lambda a, b: score)
+
+
+def _assess(shots: list[ShotUnderTest]) -> Verdict:
+    return assess(
+        shots,
+        reference=cast(Any, np.ones(128)),
+        embedder=cast(Any, object()),
+        threshold=0.951,
+        disclosed=True,
+    )
+
+
+def test_a_shot_with_no_face_by_design_is_not_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The brief's down-the-line and cutaway shots have no face on purpose.
+
+    Shot 2-3 is filmed from behind her and shot 4 is tight on the ball. Blocking those for
+    being unverifiable would refuse the brief rather than the render.
+    """
+    _patch(monkeypatch, score=None)
+    verdict = _assess(
+        [
+            ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice"),
+            ShotUnderTest(
+                "down_the_line",
+                Path("2.mp4"),
+                speaks=False,
+                audio_source="none",
+                face_expected=False,
+            ),
+        ]
+    )
+    assert not any("down_the_line" in f.rule for f in verdict.blocking), verdict.report()
+
+
+def test_a_stranger_in_a_no_face_shot_still_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not 'is this her' but 'is someone here who should not be'.
+
+    A face that turns up in a cutaway and scores below threshold is a stranger in the
+    piece, which is worse than no face at all.
+    """
+    _patch(monkeypatch, score=0.88)
+    verdict = _assess(
+        [
+            ShotUnderTest(
+                "cutaway", Path("4.mp4"), speaks=False, audio_source="none", face_expected=False
+            ),
+            ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice"),
+        ]
+    )
+    assert any("not her is on screen" in f.detail for f in verdict.blocking), verdict.report()
+
+
+def test_a_face_forward_shot_that_lost_her_face_still_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`face_expected` is declared by the shot list, never inferred from the footage.
+
+    Inferring it would let the generator choose what it is allowed to fail at: a
+    face-forward take that drifted until no face was detectable would be reclassified as
+    b-roll and pass.
+    """
+    _patch(monkeypatch, score=None)
+    verdict = _assess([ShotUnderTest("explain", Path("1.mp4"), speaks=True, audio_source="voice")])
+    assert any("cannot vouch" in f.detail for f in verdict.blocking), verdict.report()
+
+
+def test_a_piece_where_no_shot_verifies_identity_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-shot permissiveness must not let the whole piece escape verification."""
+    _patch(monkeypatch, score=None)
+    verdict = _assess(
+        [
+            ShotUnderTest(
+                "a", Path("a.mp4"), speaks=False, audio_source="none", face_expected=False
+            ),
+            ShotUnderTest(
+                "b", Path("b.mp4"), speaks=False, audio_source="none", face_expected=False
+            ),
+        ]
+    )
+    assert any("never checked anywhere" in f.detail for f in verdict.blocking), verdict.report()
