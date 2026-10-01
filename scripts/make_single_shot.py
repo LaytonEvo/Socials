@@ -78,7 +78,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "spike" / "runs" / "single")
     parser.add_argument("--budget", type=Decimal, default=None)
-    parser.add_argument("--takes", type=int, default=4)
+    # Six rather than four: ranking on swing only helps when there is more than one
+    # identity-passing take to rank. The run that drew the owner's "weird head tilt" had
+    # exactly one, so the swing ranking had nothing to choose between.
+    parser.add_argument("--takes", type=int, default=6)
     parser.add_argument("--keyframes", type=int, default=4)
     parser.add_argument("--seconds", type=int, default=None, help="5-15; the brief's shot 1 is 6")
     parser.add_argument("--dry-run", action="store_true")
@@ -237,6 +240,8 @@ def main() -> int:
 
     # --------------------------------------------------------------- takes --
     clip = args.out / "take.mp4"
+    chosen_swing: float | None = None
+    chosen_drift: float | None = None
     if not (args.skip_generate and clip.is_file()):
         motion = apply_house_style(SHOT["motion"])
         candidates = []
@@ -261,10 +266,10 @@ def main() -> int:
         ]
         for m in measured:
             print(
-                f"    {m.path.name}: head roll sd {m.head_roll_sd_deg:.2f} deg, "
-                f"{m.frames_with_face}/{m.frames_sampled} frames scorable "
-                f"({m.coverage:.0%}), {m.frames_below(threshold)} below {threshold} "
-                f"(mean {m.identity_mean:.5f})"
+                f"    {m.path.name}: swing {m.roll_swing_deg:5.1f} deg, drift "
+                f"{m.roll_drift_deg:+5.1f}, sd {m.head_roll_sd_deg:4.1f} | "
+                f"{m.frames_with_face}/{m.frames_sampled} scorable ({m.coverage:.0%}), "
+                f"{m.frames_below(threshold)} below (mean {m.identity_mean:.5f})"
             )
         try:
             best = best_take(measured, threshold=threshold)
@@ -272,8 +277,26 @@ def main() -> int:
             # Refusing here is the point: the sync below is $0.50 and cannot rescue a take
             # the gate will refuse on identity.
             raise SystemExit(f"no usable take — {refusal}") from refusal
-        print(f"  picked {best.path.name}")
+        print(
+            f"  picked {best.path.name} — swing {best.roll_swing_deg:.1f} deg, "
+            f"drift {best.roll_drift_deg:+.1f}"
+        )
+        if (
+            len([m for m in measured if m.would_pass_gate(threshold=threshold, min_coverage=0.6)])
+            == 1
+        ):
+            # Worth saying out loud. Identity is a hard constraint and swing only a
+            # preference, so with one eligible take there is no preference expressed at all
+            # — which is how a 30.6-degree swing shipped on 2026-10-01.
+            print("    (only one take passed identity, so swing was not actually chosen)")
         best.path.replace(clip)
+        chosen_swing, chosen_drift = best.roll_swing_deg, best.roll_drift_deg
+
+    if chosen_swing is None:
+        remeasured = measure(
+            clip, embedder._detector, embedder._predictor, embedder=embedder, reference=reference
+        )
+        chosen_swing, chosen_drift = remeasured.roll_swing_deg, remeasured.roll_drift_deg
 
     # --------------------------------------------------------------- voice --
     line_audio = args.out / "line.mp3"
@@ -364,6 +387,8 @@ def main() -> int:
         threshold=threshold,
         disclosed=True,
         captioned=True,
+        roll_swing_deg=chosen_swing,
+        roll_drift_deg=chosen_drift,
     )
     print("\n" + "=" * 70)
     print(verdict.report())

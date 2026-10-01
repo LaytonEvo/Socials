@@ -35,6 +35,8 @@ class TakeMeasurement:
     head_roll_sd_deg: float
     mouth_activity: float
     identity_scores: tuple[float, ...] = ()
+    #: Every per-frame roll reading, in order, so swing and drift can be derived.
+    roll_series_deg: tuple[float, ...] = ()
 
     @property
     def usable(self) -> bool:
@@ -59,6 +61,34 @@ class TakeMeasurement:
         if self.frames_sampled <= 0:
             return 0.0
         return self.frames_with_face / self.frames_sampled
+
+    @property
+    def roll_swing_deg(self) -> float:
+        """Widest tilt difference anywhere in the take.
+
+        What a viewer actually sees, and what a standard deviation hides. The take shipped
+        on 2026-10-01 had an sd of 10.46 degrees and swung **30.6** — from +11.0 to -19.6 —
+        and the owner's note was "weird head tilt at the end again". An sd of 10 can be a
+        head wobbling gently or a head moving through thirty degrees once; only one of
+        those is a defect, and the sd cannot tell them apart.
+        """
+        if len(self.roll_series_deg) < 2:
+            return float("nan")
+        return max(self.roll_series_deg) - min(self.roll_series_deg)
+
+    @property
+    def roll_drift_deg(self) -> float:
+        """How far the tilt has moved by the end, first third against last third.
+
+        Separate from swing because they fail differently. A take that tilts and returns is
+        a wobble; a take that tilts and stays has a *new* head angle, and on a Short the end
+        frame is also the loop point, so it is the one the viewer sees twice.
+        """
+        series = self.roll_series_deg
+        if len(series) < 3:
+            return float("nan")
+        third = max(1, len(series) // 3)
+        return float(np.mean(series[-third:]) - np.mean(series[:third]))
 
     def frames_below(self, threshold: float) -> int:
         """How many scored frames the gate would refuse."""
@@ -184,7 +214,17 @@ def measure(
         )
         if len(points) >= 3:
             dx, dy = points[0] - points[2]
-            rolls.append(float(np.degrees(np.arctan2(dy, dx))))
+            # Folded into [-90, 90]. The 5-point predictor orders the eye corners so that
+            # this vector points right-to-left, putting raw angles near +/-180 where they
+            # wrap: a head level one frame and barely tilted the next reads as a 350-degree
+            # jump. A standard deviation survived that by luck, because the readings within
+            # one take happened to share a sign; swing and drift would not have.
+            angle = float(np.degrees(np.arctan2(dy, dx)))
+            while angle > 90.0:
+                angle -= 180.0
+            while angle < -90.0:
+                angle += 180.0
+            rolls.append(angle)
 
         grey = np.asarray(Image.open(frame).convert("L"), dtype=float)
         height, width = box.bottom() - box.top(), box.right() - box.left()
@@ -211,6 +251,7 @@ def measure(
         head_roll_sd_deg=float(np.std(rolls)) if rolls else float("nan"),
         mouth_activity=activity,
         identity_scores=tuple(scores),
+        roll_series_deg=tuple(rolls),
     )
 
 
@@ -277,7 +318,15 @@ def best_take(
         t for t in takes if t.would_pass_gate(threshold=threshold, min_coverage=min_coverage)
     ]
     if eligible:
-        return min(eligible, key=lambda t: t.head_roll_sd_deg)
+        # Ranked on SWING, not on standard deviation. The take shipped on 2026-10-01 had
+        # the best sd available and swung 30.6 degrees, which is what the owner saw. Where
+        # swing is unmeasurable, sd is the fallback rather than a crash.
+        return min(
+            eligible,
+            key=lambda t: (
+                t.roll_swing_deg if t.roll_swing_deg == t.roll_swing_deg else t.head_roll_sd_deg
+            ),
+        )
 
     # The refusal names the nearest miss, because which constraint failed decides what to
     # do next: thin coverage means she moved out of frame and the motion prompt is the

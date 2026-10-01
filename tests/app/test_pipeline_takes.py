@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from app.pipeline.takes import TakeMeasurement, best_take, steadiest
@@ -189,3 +190,75 @@ def test_a_take_scoring_well_over_too_few_frames_does_not_pass() -> None:
     take = _scored("flattered", 1.0, (0.99, 0.99, 0.99), sampled=10)
     assert take.frames_below(0.951) == 0
     assert not take.would_pass_gate(threshold=0.951, min_coverage=0.6)
+
+
+# --------------------------------------------------- the tilt a standard deviation hides --
+def _rolled(name: str, series: tuple[float, ...], scores: tuple[float, ...]) -> TakeMeasurement:
+    return TakeMeasurement(
+        path=Path(name),
+        frames_with_face=len(scores),
+        frames_sampled=len(scores),
+        head_roll_sd_deg=float(np.std(series)) if series else float("nan"),
+        mouth_activity=10.0,
+        identity_scores=scores,
+        roll_series_deg=series,
+    )
+
+
+def test_swing_is_what_a_viewer_sees_and_a_standard_deviation_hides() -> None:
+    """Two takes, the same sd, utterly different to watch.
+
+    The take shipped on 2026-10-01 had an sd of 10.46 and swung 30.6 degrees, from +11.0 to
+    -19.6, and the note back was "weird head tilt at the end again". An sd of ten can be a
+    head wobbling gently or a head travelling thirty degrees once.
+    """
+    wobble = _rolled("wobble", (-10.0, 10.0, -10.0, 10.0, -10.0, 10.0), (0.96,) * 6)
+    travel = _rolled("travel", (11.0, 6.0, 0.0, -8.0, -15.0, -19.6), (0.96,) * 6)
+    assert wobble.head_roll_sd_deg == pytest.approx(travel.head_roll_sd_deg, abs=1.0)
+    assert travel.roll_swing_deg > wobble.roll_swing_deg
+    assert abs(travel.roll_drift_deg) > abs(wobble.roll_drift_deg)
+
+
+def test_drift_separates_a_tilt_that_returns_from_one_that_stays() -> None:
+    """On a Short the end frame is the loop point, so the viewer sees it twice."""
+    returns = _rolled("returns", (0.0, 15.0, 15.0, 0.0, 0.0, 0.0), (0.96,) * 6)
+    stays = _rolled("stays", (0.0, 0.0, 5.0, 10.0, 15.0, 15.0), (0.96,) * 6)
+    assert returns.roll_swing_deg == pytest.approx(stays.roll_swing_deg)
+    assert abs(stays.roll_drift_deg) > abs(returns.roll_drift_deg)
+
+
+def test_the_take_with_the_least_swing_wins_not_the_least_sd() -> None:
+    """The actual regression: ranking on sd shipped the take that travelled furthest."""
+    picked = best_take(
+        [
+            _rolled("travelled", (11.0, 5.0, -5.0, -12.0, -16.0, -19.6), (0.96,) * 6),
+            _rolled("jittery_but_contained", (-4.0, 4.0, -4.0, 4.0, -4.0, 4.0), (0.96,) * 6),
+        ],
+        threshold=0.951,
+        min_coverage=0.5,
+    )
+    assert picked.path.name == "jittery_but_contained", (
+        "the take that travels 30 degrees was chosen over one that stays within 8"
+    )
+
+
+def test_a_folded_angle_does_not_wrap_across_the_vertical() -> None:
+    """The 5-point predictor's eye ordering puts raw angles near +/-180, where they wrap.
+
+    A head level one frame and barely tilted the next would read as a 350-degree jump, which
+    swing and drift would both report as catastrophic. Folding into [-90, 90] is done in
+    `measure`, so this pins the property the folding exists to provide.
+    """
+    series = (-2.0, 2.0, -1.0, 1.0, -1.5, 1.5)
+    take = _rolled("level", series, (0.96,) * 6)
+    # Unfolded, a reading either side of vertical would sit near +179 and -179 and these
+    # would come out as roughly 358 and 358 rather than 4 and about 0.
+    assert take.roll_swing_deg == pytest.approx(4.0)
+    assert abs(take.roll_drift_deg) < 2.0
+
+
+def test_swing_needs_two_readings_to_mean_anything() -> None:
+    assert (
+        _rolled("one", (5.0,), (0.96,)).roll_swing_deg
+        != _rolled("one", (5.0,), (0.96,)).roll_swing_deg
+    )

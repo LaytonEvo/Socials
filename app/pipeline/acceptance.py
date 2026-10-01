@@ -143,6 +143,8 @@ def assess(
     threshold: float,
     disclosed: bool,
     captioned: bool = False,
+    roll_swing_deg: float | None = None,
+    roll_drift_deg: float | None = None,
     sample_fps: float = 2.0,
 ) -> Verdict:
     """Judge a finished piece shot by shot."""
@@ -292,6 +294,21 @@ def assess(
                 "lip sync",
                 "whether the mouth matches the words is not measurable here. A human must "
                 "watch and listen.",
+            )
+        )
+    if roll_swing_deg is not None:
+        # Reported, not scored. The owner has flagged a head tilt twice, and it is now
+        # measured — but what counts as too much swing has never been calibrated against
+        # anything, so a number here would be invented. Saying it out loud lets the one
+        # instrument that has caught it twice do so sooner.
+        verdict.findings.append(
+            Finding(
+                Severity.REVIEW,
+                "head tilt",
+                f"the chosen take swings {roll_swing_deg:.1f} degrees of head roll"
+                + (f" and drifts {roll_drift_deg:+.1f} by the end" if roll_drift_deg else "")
+                + ". No calibrated ceiling exists for this, so a human must say whether it "
+                "reads as a person or as a glitch.",
             )
         )
     if captioned:
