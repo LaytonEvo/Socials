@@ -177,6 +177,57 @@ providers:
           auto_fix: false        # rewrites the prompt; see the turbo slot
 
   # --- Image (keyframes) ---------------------------------------------------
+    # PROPOSED 2026-10-13, ADR 0017. Not in use; the swap waits on the owner seeing
+    # the result. Audio-driven: image plus voice in, video out, with mouth AND head
+    # motion generated together from the audio.
+    #
+    # The chain it would replace generates head motion from a still with a model that
+    # never hears the line, then pastes a mouth onto it. The motion and the speech are
+    # unrelated by construction, which is the owner's report: "weird head tilt at the
+    # end again", and a sync that reads as applied rather than spoken. The gate has
+    # always said so out loud — "whether the mouth matches the words is not measurable
+    # here" — and that REVIEW line has been standing since 2026-09-24.
+    #
+    # It also removes two things the current chain needs and this does not: six takes
+    # ranked on head roll (there is no free head motion to rank), and a source clip that
+    # must already contain speech because the HeyGen model replaces speech rather than
+    # animating a still mouth.
+    avatar:
+      backend: fal
+      model: fal-ai/kling-video/ai-avatar/v2/standard
+      endpoint: null          # the adapter builds it from the model id (ADR 0006)
+      # api.fal.ai/v1/models/pricing?endpoint_id=..., read 2026-10-13. The pro tier
+      # of the same model is $0.115/s if standard is not good enough.
+      #
+      # NO price_basis, and that is a statement rather than an omission: this endpoint
+      # takes no resolution or aspect parameter (OpenAPI, read 2026-10-13), so there is
+      # no request field for a price to be quoted against. ADR 0013's lesson applies in
+      # reverse here — if fal later tiers this model by resolution, this slot needs a
+      # price_basis and a re-read, because an unqualified price would start lying.
+      price_usd_per_second: 0.0562
+      verified_on: 2026-10-13
+      capabilities:
+        # The output length FOLLOWS THE AUDIO. There is no duration field and the
+        # response returns the duration it produced, so the line decides the clip
+        # rather than a drift budget deciding how much line fits. That is the whole
+        # argument for this endpoint on a talking shot: a 15-second line is not a
+        # 15-second gamble.
+        duration: follows_audio
+        # INFERRED, NOT VERIFIED. The schema has no aspect or resolution field, so the
+        # canvas presumably follows image_url as h3-max-turbo's does. Nothing confirms
+        # it until a clip comes back, and our shot is 1080x1920 — so the first run
+        # checks the output's dimensions before anything else.
+        canvas: follows_image_unverified
+        # Not documented on this endpoint. Kling's avatar models cap audio length
+        # upstream; the figure is unverified, so a long line may be refused.
+        max_audio_seconds: unverified
+        native_audio: carries_the_input_voice
+      request:
+        base: {}
+        # Field names are properties of the MODEL, which is why they live beside the
+        # model id rather than in the adapter (ADR 0006).
+        image_field: image_url
+        audio_field: audio_url
   image:
     keyframe:
       # Editing a master still rather than generating a new one, so the face
