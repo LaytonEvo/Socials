@@ -38,6 +38,8 @@ from pathlib import Path
 
 from app.identity.embedder import DlibEmbedder, Embedding, cosine
 from app.identity.master_set import read_still
+from app.pipeline.swing import MIN_SWING_COVERAGE, PoseSource, SwingKind
+from app.pipeline.swing import check as check_swing
 from scripts.spike.frames import FfmpegFrames
 
 
@@ -90,6 +92,17 @@ class ShotUnderTest:
     #: fail at: a face-forward take that drifted until no face was detectable would be
     #: reclassified as b-roll and pass.
     face_expected: bool = True
+    #: How long a backswing this shot is meant to have, or None when it is not a golf
+    #: swing at all — talking to camera, a walk, a cutaway to the ball.
+    #:
+    #: Declared by the shot list for the same reason `face_expected` is: inferring it from
+    #: the render would let the generator decide what it is allowed to fail at, and the
+    #: whole failure this closes is a render that ignored what the prompt asked for.
+    #:
+    #: The prompt for the withdrawn shot said "the club goes back to about waist height".
+    #: What came back was a full swing from 30 yards, and the gate called it ACCEPTED
+    #: because swing length was measured nowhere. The owner caught it by watching.
+    swing: SwingKind | None = None
 
 
 @dataclass
@@ -158,6 +171,7 @@ def assess(
     roll_swing_deg: float | None = None,
     roll_drift_deg: float | None = None,
     sample_fps: float = 2.0,
+    pose: PoseSource | None = None,
 ) -> Verdict:
     """Judge a finished piece shot by shot."""
     verdict = Verdict()
@@ -252,6 +266,80 @@ def assess(
                     f"It is not reliably her.",
                 )
             )
+
+        # ------------------------------------------------------------ golf --
+        # Swing length, for a shot that declares one. The prompt is not a control
+        # surface here: the withdrawn shot asked for "about waist height" and the model
+        # rendered a full swing twice, and the pinned-swing retest did it again. What
+        # changes that is measuring the render, not rewriting the sentence.
+        if shot.swing is not None:
+            if pose is None:
+                verdict.findings.append(
+                    Finding(
+                        Severity.BLOCKING,
+                        f"{shot.name}: swing",
+                        f"this shot declares a {shot.swing} and no pose source was given, "
+                        f"so nothing measured what came back. Unverifiable is not "
+                        f"acceptable (ADR 0012): a swing nobody measured is exactly how a "
+                        f"full swing from 30 yards was accepted.",
+                    )
+                )
+            else:
+                swing = check_swing(shot.swing, pose.frames(shot.path))
+                if not swing.verifiable:
+                    verdict.findings.append(
+                        Finding(
+                            Severity.BLOCKING,
+                            f"{shot.name}: swing",
+                            f"{swing.explain()}. Under the {MIN_SWING_COVERAGE:.0%} "
+                            f"coverage floor, a peak over this few frames is 'cannot say' "
+                            f"rather than a pass — and missing the top of the backswing "
+                            f"understates it, which is the direction that lets a full "
+                            f"swing through.",
+                        )
+                    )
+                elif swing.above_shoulder_line and shot.swing != "full":
+                    # The one anatomically anchored call in the check: the hands went
+                    # above the shoulder line of the same frame. No putt, chip, pitch or
+                    # half swing does that, at any camera distance or lens.
+                    verdict.findings.append(
+                        Finding(
+                            Severity.BLOCKING,
+                            f"{shot.name}: swing",
+                            f"{swing.explain()}. Hands above the shoulder line is a full "
+                            f"swing, and this shot is a {shot.swing}. A 30-yard pitch "
+                            f"played with a full swing reads as made by someone who has "
+                            f"never played.",
+                        )
+                    )
+                elif swing.longer_than_declared:
+                    # Longer than asked for but short of the shoulder line. The ceilings
+                    # between kinds are conventional rather than calibrated, so this is
+                    # reported for a human and never refused on.
+                    verdict.findings.append(
+                        Finding(
+                            Severity.REVIEW,
+                            f"{shot.name}: swing",
+                            f"{swing.explain()}. Longer than the shot asks for, but short "
+                            f"of the shoulder line — and only that line is anchored, so a "
+                            f"human decides whether this still reads as a "
+                            f"{shot.swing}.",
+                        )
+                    )
+                elif shot.swing == "full" and not swing.above_shoulder_line:
+                    # The mirror fault, and the same anchor read the other way: a full
+                    # swing takes the hands past the shoulders. REVIEW rather than
+                    # BLOCKING because a shot cut before the top of the backswing is a
+                    # legitimate framing, and this cannot tell the two apart.
+                    verdict.findings.append(
+                        Finding(
+                            Severity.REVIEW,
+                            f"{shot.name}: swing",
+                            f"{swing.explain()}. A full swing takes the hands past the "
+                            f"shoulder line and these did not, so either the swing is "
+                            f"short of what was asked for or the clip ends before the top.",
+                        )
+                    )
 
         # ----------------------------------------------------------- audio --
         # Provenance, not detection. The sound-effects model generates speech when it

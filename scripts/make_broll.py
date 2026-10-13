@@ -41,6 +41,7 @@ from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.golf import apply_house_style
 from app.pipeline.golf import check as check_golf
 from app.providers.fal import QUEUE_ROOT, api_key, data_uri
+from app.providers.pose import MediapipePose
 
 # REFERENCE_ROOT comes from the single-shot script because that is where the spike's data
 # layout is declared; the no-face exclusions come from the dataset module that owns them.
@@ -59,6 +60,12 @@ SHOTS: dict[str, dict[str, Any]] = {
     # shot is in the brief and someone will ask why it is missing.
     "_withdrawn_address_strike": {
         "seconds": 5,
+        # Declared so that reviving this shot gets it measured. The prompt below says
+        # "waist height" and the render came back as a full swing three times out of
+        # three (peaks 1.68, 1.65, 1.61 against a shoulder line of 1.0, measured
+        # 2026-10-13). The gate now refuses that, which is the only reason the shot
+        # could be attempted again without the owner having to catch it by watching.
+        "swing": "pitch",
         "edit": (
             "Keep the same woman, the same clothes, the same glove on her lead hand and "
             "the same late afternoon light. Move the camera behind her at hip height, "
@@ -224,6 +231,7 @@ def main() -> int:
                 speaks=False,
                 audio_source="none",
                 face_expected=False,
+                swing=shot.get("swing"),
                 # She is not in these. A shot containing her without a verifiable face is
                 # refused by the gate, because nothing here can confirm it is her.
                 persona_present=False,
@@ -238,6 +246,8 @@ def main() -> int:
         shots.insert(
             0, ShotUnderTest(name="explain", path=shot1, speaks=True, audio_source="voice")
         )
+    # A shot that declares a swing and is handed no pose source BLOCKS, so this is not
+    # optional decoration: it is what makes the golf dimension real rather than declared.
     verdict = assess(
         shots,
         reference=reference,
@@ -245,6 +255,7 @@ def main() -> int:
         threshold=threshold,
         disclosed=True,
         captioned=True,
+        pose=MediapipePose(ROOT / str(config.providers.pose.pose_model)),
     )
     print("\n" + "=" * 70)
     print(verdict.report())

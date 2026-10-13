@@ -120,6 +120,33 @@ MODELS: tuple[ModelFile, ...] = (
         ),
         sha256="8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
     ),
+    ModelFile(
+        key="pose-landmarker",
+        backend="pose",
+        # Not a face model and not part of ADR 0002. It measures golf swing length for
+        # the acceptance gate: the hands' height against the shoulder line. Fetched here
+        # because this is where weights come from, and because the licence discipline
+        # below is the reason this file exists.
+        url=(
+            "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+            "pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
+        ),
+        filename="pose_landmarker_heavy.task",
+        config_key="pose_model",
+        licence_where=(
+            "https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker "
+            "-- the model card, NOT the library licence"
+        ),
+        licence_note=(
+            "The mediapipe LIBRARY is Apache 2.0, verified from the LICENSE in the "
+            "installed wheel on 2026-10-13. The WEIGHTS are a separate question and ADR "
+            "0002 Finding 1 is the standing lesson that they do not inherit. Google "
+            "publishes the model card on ai.google.dev, which this environment's network "
+            "policy blocks, so it is NOT verified. Measurement only -- nothing from this "
+            "model enters a render -- but read it before anything publishes."
+        ),
+        sha256="64437af838a65d18e5ba7a0d39b465540069bc8aae8308de3e318aad31fcbc7b",
+    ),
 )
 
 

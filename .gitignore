@@ -16,6 +16,7 @@ ci-spike.yaml
 # exception is committed on purpose -- face_recognition_densenet_model_v1.dat
 # has no working download (ADR 0002), so the file itself is the only copy.
 spike/models/*.dat
+spike/models/*.task
 !spike/models/face_recognition_densenet_model_v1.dat
 
 # Build metadata. Globbed, not named: the distribution was renamed from

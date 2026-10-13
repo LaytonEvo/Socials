@@ -436,3 +436,116 @@ def test_a_shot_she_is_not_in_is_still_allowed(monkeypatch: pytest.MonkeyPatch) 
         ]
     )
     assert not any("ball" in f.rule for f in verdict.blocking), verdict.report()
+
+
+# ------------------------------------------------------------------- golf --
+# The owner's report: "we're generating videos where she is hitting a full swing golf
+# shot from around 30 yards away from the green." The prompt said waist height. The gate
+# said ACCEPTED, because swing length was measured nowhere.
+class _Pose:
+    """A pose source returning a fixed series, so the gate can be tested without weights."""
+
+    def __init__(self, *heights: float, empty: int = 0) -> None:
+        from tests.app.test_pipeline_swing import frame_with_hands_at
+
+        self._frames = [frame_with_hands_at(h) for h in heights]
+        if empty:
+            from app.pipeline.swing import PoseFrame
+
+            self._frames += [PoseFrame() for _ in range(empty)]
+
+    def frames(self, video: Path) -> list[Any]:
+        return list(self._frames)
+
+
+def _golf_shot(**kwargs: Any) -> ShotUnderTest:
+    return ShotUnderTest("pitch", Path("p.mp4"), speaks=False, audio_source="none", **kwargs)
+
+
+def _assess_golf(shot: ShotUnderTest, monkeypatch: pytest.MonkeyPatch, **kwargs: Any) -> Verdict:
+    import app.pipeline.acceptance as module
+
+    monkeypatch.setattr(module, "_has_audio", lambda _p: False)
+    monkeypatch.setattr(FfmpegFrames, "extract", lambda self, clip, dest, fps: [Path("f.png")] * 10)
+    monkeypatch.setattr(
+        module, "read_still", lambda path, embedder: type("R", (), {"embedding": np.ones(128)})()
+    )
+    monkeypatch.setattr(module, "cosine", lambda a, b: 0.99)
+    return assess(
+        [shot],
+        reference=cast(Any, np.ones(128)),
+        embedder=cast(Any, object()),
+        threshold=0.95,
+        disclosed=True,
+        **kwargs,
+    )
+
+
+def test_a_declared_swing_with_nothing_to_measure_it_is_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0012 in a second dimension: a swing nobody measured is not a pass."""
+    verdict = _assess_golf(_golf_shot(swing="pitch"), monkeypatch)
+    assert not verdict.accepted
+    assert any("swing" in f.rule for f in verdict.blocking), verdict.report()
+
+
+def test_a_full_swing_declared_as_a_pitch_is_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exact defect: 1.68 measured on a shot whose prompt said waist height."""
+    verdict = _assess_golf(
+        _golf_shot(swing="pitch"), monkeypatch, pose=_Pose(0.1, 0.9, 1.68, 0.6, 0.1)
+    )
+    assert not verdict.accepted
+    detail = " ".join(f.detail for f in verdict.blocking)
+    assert "shoulder line" in detail, verdict.report()
+
+
+def test_a_pitch_that_is_actually_a_pitch_passes(monkeypatch: pytest.MonkeyPatch) -> None:
+    verdict = _assess_golf(
+        _golf_shot(swing="pitch"), monkeypatch, pose=_Pose(0.0, 0.3, 0.5, 0.2, 0.0)
+    )
+    assert verdict.accepted, verdict.report()
+    assert not any("swing" in f.rule for f in verdict.findings)
+
+
+def test_a_shot_that_declares_no_swing_is_not_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Talking to camera and cutaways have no backswing to be wrong about."""
+    verdict = _assess_golf(_golf_shot(), monkeypatch)
+    assert not any("swing" in f.rule for f in verdict.findings), verdict.report()
+
+
+def test_a_swing_shot_with_no_detectable_pose_is_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verdict = _assess_golf(_golf_shot(swing="pitch"), monkeypatch, pose=_Pose(empty=20))
+    assert not verdict.accepted
+    assert any("swing" in f.rule for f in verdict.blocking), verdict.report()
+
+
+def test_thin_pose_coverage_is_blocking_rather_than_a_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two measured frames out of twenty is 'cannot say', and missing the top of the
+    backswing understates it — the direction that lets a full swing through."""
+    verdict = _assess_golf(_golf_shot(swing="pitch"), monkeypatch, pose=_Pose(0.2, 0.3, empty=18))
+    assert not verdict.accepted
+    assert any("swing" in f.rule for f in verdict.blocking), verdict.report()
+
+
+def test_a_swing_longer_than_asked_but_below_the_shoulder_line_is_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the shoulder line is anchored, so the band below it cannot refuse."""
+    verdict = _assess_golf(_golf_shot(swing="pitch"), monkeypatch, pose=_Pose(0.1, 0.5, 0.85, 0.4))
+    assert verdict.accepted, verdict.report()
+    assert any("swing" in f.rule for f in verdict.review), verdict.report()
+
+
+def test_a_full_swing_that_never_reaches_the_shoulders_is_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror fault, read off the same anchor. REVIEW because a clip cut before the
+    top of the backswing is a legitimate framing and this cannot tell them apart."""
+    verdict = _assess_golf(_golf_shot(swing="full"), monkeypatch, pose=_Pose(0.1, 0.4, 0.7, 0.3))
+    assert verdict.accepted, verdict.report()
+    assert any("swing" in f.rule for f in verdict.review), verdict.report()

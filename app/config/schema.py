@@ -171,6 +171,35 @@ class EmbedderSettings(BaseModel):
     licence_cleared_for_publication: bool = False
 
 
+class PoseSettings(BaseModel):
+    """The swing-length measurer (`app.pipeline.swing`).
+
+    Not an identity model and not part of ADR 0002, but it carries the same obligation
+    and the two licences are tracked separately on purpose: a permissive library does not
+    make its weights permissive, which is the lesson ADR 0002 Finding 1 paid for.
+
+    Measurement only — nothing from this model enters a render — so an uncleared weights
+    licence blocks publication rather than measurement, exactly as the embedder's does.
+    """
+
+    model_config = STRICT
+
+    backend: str | None = None
+    model: str | None = None
+    pose_model: str | None = None
+    pose_model_sha256: str | None = Field(default=None, max_length=64)
+    #: Below this landmark visibility a position is a guess. An invented wrist moves the
+    #: peak silently; a missing one costs coverage, which the gate already refuses on.
+    min_visibility: float = 0.5
+    #: The library's own licence, which is the easy half.
+    library_licence: str | None = None
+    library_licence_verified_on: dt.date | None = None
+    #: The weights' licence, which is the half that does not inherit.
+    licence: str | None = None
+    licence_verified_on: dt.date | None = None
+    licence_cleared_for_publication: bool = False
+
+
 class LoraSettings(BaseModel):
     """The identity layer's base model and the licence constraint on where it runs.
 
@@ -220,6 +249,7 @@ class ProvidersConfig(BaseModel):
     credentials: dict[str, str]
     providers: dict[str, dict[str, ProviderSlot]]
     embedder: EmbedderSettings
+    pose: PoseSettings = Field(default_factory=PoseSettings)
     lora: LoraSettings
 
     def slot(self, group: str, name: str) -> ProviderSlot:

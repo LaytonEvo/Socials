@@ -3,6 +3,10 @@
 - **Status:** Proposed 2026-09-28. Shapes `BUILD_PLAN.md` task 3.1; nothing built yet.
 - **Date:** 2026-09-28
 - **Deciders:** Layton (owner)
+- **Amended by:** ADR 0016, 2026-10-13. This ADR reasoned entirely about her
+  *dialogue* and was right about it. It never asked whether the *picture* is
+  golf-correct, and a 30-yard pitch rendered as a full swing was ACCEPTED twice
+  because of the gap. ADR 0016 adds a measurement, not a knowledge base.
 - **Relates to:** `BUILD_PLAN.md` tasks 3.1, 3.6; `docs/spec/persona-spec-v1.md` §1, §3, §4; `config/persona.yaml`
 
 ## Context

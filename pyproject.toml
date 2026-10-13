@@ -65,6 +65,13 @@ dinov2 = [
   "transformers>=4.40",
   "opencv-python-headless>=4.9",
 ]
+# The swing-length measurer (`app.pipeline.swing`). Optional because the measurement
+# maths is pure and tested against hand-written pose frames, so `make check` needs
+# neither the library nor the weights -- only `app/providers/pose.py` imports it.
+#
+# Needs libEGL at the system level (`apt-get install libegl1 libgles2`); without it the
+# import succeeds and creating a landmarker fails with a dlopen error.
+pose = ["mediapipe>=1.1"]
 
 [tool.setuptools]
 packages = [
@@ -101,6 +108,7 @@ module = [
   "PIL", "PIL.*", "numpy", "numpy.*", "yaml", "yaml.*", "pytest", "_pytest.*",
   "cv2", "cv2.*", "dlib", "torch", "torch.*", "transformers", "transformers.*",
   "boto3", "boto3.*", "botocore", "botocore.*", "pgvector", "pgvector.*",
+  "mediapipe", "mediapipe.*",
 ]
 ignore_missing_imports = true
 
