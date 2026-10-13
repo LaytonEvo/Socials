@@ -391,6 +391,27 @@ def assess(
         )
 
     # ------------------------------------------- what this cannot measure --
+    # Golf correctness beyond swing length. Said on every piece, because ACCEPTED has
+    # twice been read as "the golf is right" when nothing checked it. ADR 0016 closed
+    # swing length; everything else in the frame is still unmeasured, and `golf.py`
+    # reads the PROMPT rather than the render — so a prompt that says nothing about
+    # golf bags passes while the model parks one on the green.
+    #
+    # Measured faults the gate passed, 2026-10-13, in `broll/result_take_0`: a bag and
+    # a trolley sitting on the putting surface, two flagsticks, and the hole cut in the
+    # fringe rather than on the green.
+    if shots:
+        verdict.findings.append(
+            Finding(
+                Severity.REVIEW,
+                "golf content",
+                "club, lie, flags, hole position, bags and trolleys, and whether the "
+                "club strikes the ball before the ball moves, are not measured here. Only "
+                "swing "
+                "length is (ADR 0016), and only on shots that declare one. ACCEPTED does "
+                "not mean the golf is right — a human who plays must watch it.",
+            )
+        )
     if len(shots) > 1:
         verdict.findings.append(
             Finding(

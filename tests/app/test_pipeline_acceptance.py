@@ -549,3 +549,21 @@ def test_a_full_swing_that_never_reaches_the_shoulders_is_review(
     verdict = _assess_golf(_golf_shot(swing="full"), monkeypatch, pose=_Pose(0.1, 0.4, 0.7, 0.3))
     assert verdict.accepted, verdict.report()
     assert any("swing" in f.rule for f in verdict.review), verdict.report()
+
+
+def test_every_piece_with_shots_admits_the_golf_is_unmeasured() -> None:
+    """ACCEPTED has twice been read as "the golf is right" when nothing checked it.
+
+    Swing length is measured (ADR 0016); bags on the green, flag count, hole position
+    and whether the club strikes the ball before the ball moves are not. `golf.py` reads
+    the PROMPT, so the cutaway whose prompt said only "nobody is in the frame" came back
+    with a bag and a trolley parked on the putting surface and passed.
+    """
+    verdict = assess(
+        [],
+        reference=cast(Any, np.ones(128)),
+        embedder=cast(Any, object()),
+        threshold=0.95,
+        disclosed=True,
+    )
+    assert not any("golf content" in f.rule for f in verdict.review)
