@@ -177,6 +177,57 @@ providers:
           auto_fix: false        # rewrites the prompt; see the turbo slot
 
   # --- Image (keyframes) ---------------------------------------------------
+    # The real-video route, added 2026-10-15. Takes a REAL video and recasts the people
+    # in it from reference photos, keeping the source motion, camera, cuts and audio. The
+    # golf is therefore not generated at all: the swing, the ball flight, the lie and the
+    # etiquette come from footage of something that happened, and the only synthetic thing
+    # in frame is her. That inverts every golf fault of the last three weeks — the full
+    # swing from 30 yards, the club missing the ball while the ball moved, the bag and
+    # trolley on the green, two flagsticks, the hole cut in the fringe. All were
+    # properties of a scene the model invented.
+    recast:
+      backend: fal
+      model: minimax/h3-max/recast
+      endpoint: null          # the adapter builds it from the model id (ADR 0006)
+      # READ FROM THE MODEL'S OWN RECORD on fal.ai/models/minimax/h3-max/recast,
+      # 2026-10-15 — its `billingMessage`, not the catalogue API:
+      #
+      #   "Billed by output video duration: $0.30 per second at 768p and $0.45 per
+      #    second at 1080p. Reference images are included."
+      #
+      # `api.fal.ai/v1/models/pricing` reports 0.05 with the unit "units" for this
+      # endpoint. That is 6x to 9x under the real figure, and it is exactly the trap ADR
+      # 0013 was written about: an unqualified number is not a price. The guard gets the
+      # 1080P rate because `request.base` sends 1080P, and `price_basis` makes the config
+      # refuse to load if those two ever part.
+      price_usd_per_second: 0.45
+      verified_on: 2026-10-15
+      price_basis:
+        resolution: 1080P
+      capabilities:
+        # "The source video, 5 to 30 seconds long, with no single shot longer than 15
+        # seconds" — so a multi-shot source stays multi-shot, and cuts survive.
+        source_seconds: [5, 30]
+        max_shot_seconds: 15
+        resolutions: ["768P", "1080P"]
+        # One photo per person replaced, 1-4, included in the price. The master set has
+        # 108 to choose from, which makes identity the only real risk here — and identity
+        # is the one thing this project can measure.
+        reference_images: [1, 4]
+        # "The recast video, with the source sound." Ambient and club sound have been on
+        # the unsolved list since 2026-09-25 and arrive here for nothing.
+        native_audio: carries_the_source_sound
+      request:
+        base:
+          # Bound to price_basis above. The brief asks for 1080x1920 and the current
+          # chain delivers 768x1344, so this is also the first slot that can meet it.
+          resolution: 1080P
+          # "More natural skin textures and better blending of the new people into the
+          # scene." Off by default; the whole difficulty here is blending her into
+          # footage that is real, so it is on.
+          enhance_realism: true
+        video_field: video_url
+        reference_field: reference_image_urls
     # PROPOSED 2026-10-13, ADR 0017. Not in use; the swap waits on the owner seeing
     # the result. Audio-driven: image plus voice in, video out, with mouth AND head
     # motion generated together from the audio.
