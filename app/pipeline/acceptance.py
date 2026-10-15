@@ -401,17 +401,33 @@ def assess(
     #
     # Measured faults the gate passed, 2026-10-13, in `broll/result_take_0`: a bag and
     # a trolley sitting on the putting surface, two flagsticks, and the hole cut in the
-    # fringe rather than on the green.
+    # fringe rather than on the green. And 2026-10-15, in `bunker/address_keyframe`: the
+    # clubhead resting in the sand at address, which is a two-stroke penalty and the most
+    # recognisable tell in a bunker clip. The prompt for that keyframe said, in as many
+    # words, "holding the clubhead just above the sand without touching it".
+    #
+    # Why this stays a checklist rather than becoming a measurement: swing length is
+    # measurable because wrists are a standard pose landmark and the shoulder line is
+    # read off the same frame. Clubheads are not landmarks. `swing.py` says finding a
+    # club in a generated frame is fragile, and a flaky grounding detector would refuse
+    # good footage on a metric nobody has calibrated — the mistake this project has
+    # already made four times. So the gate names what to look for instead of guessing,
+    # and the list is specific because "check the golf" is not an instruction anyone
+    # can act on at 11pm.
     if shots:
         verdict.findings.append(
             Finding(
                 Severity.REVIEW,
                 "golf content",
-                "club, lie, flags, hole position, bags and trolleys, and whether the "
-                "club strikes the ball before the ball moves, are not measured here. Only "
-                "swing "
-                "length is (ADR 0016), and only on shots that declare one. ACCEPTED does "
-                "not mean the golf is right — a human who plays must watch it.",
+                "a human who plays must watch this. Nothing below is measured — only "
+                "swing length is (ADR 0016), and only on shots that declare one. In a "
+                "bunker: is the clubhead GROUNDED in the sand at address (two strokes, "
+                "and the clip's most obvious tell)? Is she aimed at the target or away "
+                "from it? Elsewhere: the lie, the club for the shot, one flagstick not "
+                "two, the hole on the green rather than the fringe, bags and trolleys "
+                "off the putting surface, one glove, one club in hand, and whether the "
+                "club strikes the ball before the ball moves. ACCEPTED does not mean "
+                "the golf is right.",
             )
         )
     if len(shots) > 1:
