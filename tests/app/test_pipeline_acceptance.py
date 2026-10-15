@@ -28,6 +28,7 @@ from app.pipeline.acceptance import (
     best_still,
     screen_still,
 )
+from app.pipeline.artefacts import SeamReading
 from scripts.spike.frames import FfmpegFrames
 
 
@@ -236,6 +237,63 @@ def test_a_multi_shot_piece_always_raises_continuity_for_review() -> None:
     assert not verdict.review, "a zero-shot piece has no continuity to review"
 
 
+def _clean_seam() -> SeamReading:
+    return SeamReading(axis="horizontal", index=0, coverage=0.0, isolation=0.0, score=0.0)
+
+
+def test_a_seamed_keyframe_is_refused_however_well_it_scores_on_identity() -> None:
+    """The keyframe that shipped: it scored 0.98756 on identity and had a pasted
+    rectangle across its lower third. Identity cannot see a seam, so only this can."""
+    import app.pipeline.acceptance as module
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        module, "read_still", lambda path, embedder: type("R", (), {"embedding": np.ones(128)})()
+    )
+    monkeypatch.setattr(module, "cosine", lambda a, b: 0.98756)
+    monkeypatch.setattr(
+        module,
+        "scan_for_seams",
+        lambda path: SeamReading(
+            axis="horizontal", index=961, coverage=0.197, isolation=201.0, score=9.83
+        ),
+    )
+    screen = screen_still(
+        Path("keyframe.png"),
+        reference=cast(Any, np.ones(128)),
+        embedder=cast(Any, object()),
+        threshold=0.9619,
+    )
+    monkeypatch.undo()
+    assert screen.score == pytest.approx(0.98756)
+    assert screen.seamed
+    assert not screen.passes, "identity passed, so only the seam can have refused it"
+
+
+def test_a_still_that_cannot_be_scanned_does_not_pass() -> None:
+    """ADR 0012 in a third place: if the seam cannot be checked, the keyframe cannot be
+    vouched for."""
+    screen = screen_still(
+        Path("does-not-exist.png"),
+        reference=cast(Any, np.ones(128)),
+        embedder=cast(Any, object()),
+        threshold=0.9619,
+    )
+    assert not screen.passes
+
+
+def test_best_still_will_not_pick_a_seamed_candidate() -> None:
+    """It scores higher on identity and is still the wrong one to build on."""
+    seamed = StillScreen(
+        path=Path("seamed.png"),
+        score=0.99,
+        passes=False,
+        seam=SeamReading(axis="horizontal", index=961, coverage=0.2, isolation=200.0, score=9.8),
+    )
+    clean = StillScreen(path=Path("clean.png"), score=0.97, passes=True, seam=_clean_seam())
+    assert best_still([seamed, clean]).path == clean.path
+
+
 def test_an_off_identity_keyframe_is_caught_before_the_chain_below_it() -> None:
     """The finding from the first single-shot run, as a test.
 
@@ -250,6 +308,9 @@ def test_an_off_identity_keyframe_is_caught_before_the_chain_below_it() -> None:
         module, "read_still", lambda path, embedder: type("R", (), {"embedding": np.ones(128)})()
     )
     monkeypatch.setattr(module, "cosine", lambda a, b: 0.94753)
+    # A stand-in path, so the seam scan is stubbed clean: this test is about identity,
+    # and the seam has its own tests below.
+    monkeypatch.setattr(module, "scan_for_seams", lambda path: _clean_seam())
     screen = screen_still(
         Path("keyframe.png"),
         reference=cast(Any, np.ones(128)),

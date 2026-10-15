@@ -38,6 +38,8 @@ from pathlib import Path
 
 from app.identity.embedder import DlibEmbedder, Embedding, cosine
 from app.identity.master_set import read_still
+from app.pipeline.artefacts import SeamReading
+from app.pipeline.artefacts import scan as scan_for_seams
 from app.pipeline.swing import MIN_SWING_COVERAGE, PoseSource, SwingKind
 from app.pipeline.swing import check as check_swing
 from scripts.spike.frames import FfmpegFrames
@@ -466,6 +468,16 @@ class StillScreen:
     path: Path
     score: float
     passes: bool
+    #: The strongest composite seam found, or None when the still could not be read.
+    #:
+    #: Screening for identity alone is what let a keyframe with a hard pasted edge
+    #: across its lower third become the still our one approved shot was built from.
+    #: A seam scores a perfectly good identity number.
+    seam: SeamReading | None = None
+
+    @property
+    def seamed(self) -> bool:
+        return self.seam is not None and self.seam.seamed
 
 
 def screen_still(
@@ -479,14 +491,22 @@ def screen_still(
     """
     try:
         embedding = read_still(path, embedder).embedding
+        seam = scan_for_seams(path)
     except Exception:
         return StillScreen(path=path, score=float("nan"), passes=False)
     if embedding is None:
         # No face found is not a low score. It is an unscorable candidate, and
         # `best_still` must not let it win by comparing as anything at all.
-        return StillScreen(path=path, score=float("nan"), passes=False)
+        return StillScreen(path=path, score=float("nan"), passes=False, seam=seam)
     score = float(cosine(embedding, reference))
-    return StillScreen(path=path, score=score, passes=score >= threshold)
+    # Identity AND no seam. Both, because they fail independently: the keyframe that
+    # shipped scored fine on identity and had a pasted rectangle in it.
+    return StillScreen(
+        path=path,
+        score=score,
+        passes=score >= threshold and not seam.seamed,
+        seam=seam,
+    )
 
 
 def best_still(screens: list[StillScreen]) -> StillScreen:
@@ -501,4 +521,8 @@ def best_still(screens: list[StillScreen]) -> StillScreen:
     scored = [s for s in screens if s.score == s.score]  # NaN fails this
     if not scored:
         raise ValueError("no keyframe candidate had a detectable face to score")
-    return max(scored, key=lambda s: s.score)
+    # A seamed candidate is never "best", however well it scores on identity — the seam
+    # survives into every frame of everything built on it, and identity does not see it.
+    # Fall back to the full set only so the caller still gets a spread to report.
+    clean = [s for s in scored if not s.seamed]
+    return max(clean or scored, key=lambda s: s.score)
