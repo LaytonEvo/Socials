@@ -18,9 +18,9 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.costs.ledger import spend_this_month, spend_total
-from app.models import CostLedger, Generation, Keyframe, Persona, Shot, VoiceLine
-from app.pipeline.recording import ShotSpec, open_run
+from app.costs.ledger import spend_for_piece, spend_this_month
+from app.models import CostLedger, Generation, Keyframe, Persona, Shot
+from app.pipeline.recording import ShotSpec, open_run, resume_run
 
 from .conftest import requires_db
 
@@ -119,10 +119,43 @@ def test_take_sets_the_cost_column_and_the_ledger_row(session: Session) -> None:
     assert (row.ref_table, row.total_usd) == ("generation", Decimal("0.400000"))
 
 
+def test_a_take_is_in_the_ledger_before_it_is_scored(session: Session) -> None:
+    """The cost is known when the provider bills; the quality is known minutes later.
+
+    Scoring a shot's takes is a dlib pass over several hundred frames. If recording
+    waited for it, a crash in there would lose takes already charged for — the hole this
+    module exists to close, one step further in.
+    """
+    recorder = _run(session)
+    take = recorder.take(
+        "setup",
+        keyframe=None,
+        provider="fal",
+        model="m",
+        prompt="p",
+        params={},
+        duration_s=5.0,
+        units=Decimal(5),
+        unit_price=Decimal("0.08"),
+        price_verified_on=VERIFIED,
+    )
+    assert take.status == "generating"
+    assert take.identity_score_mean is None
+    assert spend_for_piece(session, recorder.piece.id) == Decimal("0.400000")
+
+    recorder.rescore(
+        take, identity_min=0.961, identity_mean=0.978, status="ready", embedding_model="dlib"
+    )
+    assert (take.status, take.embedding_model) == ("ready", "dlib")
+    assert take.identity_score_mean == 0.978
+    # Scoring is not a billable event, so it must not add to the ledger.
+    assert spend_for_piece(session, recorder.piece.id) == Decimal("0.400000")
+
+
 def test_rejected_takes_are_recorded_too(session: Session) -> None:
     """A take that was generated and not used still cost what it cost."""
     recorder = _run(session)
-    for status in ("scored", "auto_rejected", "auto_rejected"):
+    for status in ("ready", "auto_rejected", "auto_rejected"):
         recorder.take(
             "setup",
             keyframe=None,
@@ -136,9 +169,14 @@ def test_rejected_takes_are_recorded_too(session: Session) -> None:
             price_verified_on=VERIFIED,
             status=status,
         )
-    takes = session.execute(select(func.count()).select_from(Generation)).scalar_one()
+    takes = session.execute(
+        select(func.count())
+        .select_from(Generation)
+        .join(Shot, Shot.id == Generation.shot_id)
+        .where(Shot.content_piece_id == recorder.piece.id)
+    ).scalar_one()
     assert takes == 3
-    assert spend_total(session) == Decimal("1.200000")
+    assert spend_for_piece(session, recorder.piece.id) == Decimal("1.200000")
 
 
 def test_voice_line_carries_its_cost(session: Session) -> None:
@@ -178,8 +216,10 @@ def test_ceiling_now_sees_a_run(session: Session) -> None:
     """The regression that matters: the guard reads the ledger, so the ledger must fill.
 
     Before this module the answer here was always Decimal(0), whatever had been spent.
+    Measured as a delta rather than against zero: the ledger is no longer empty in a
+    database this system has actually been used against, and that is the point.
     """
-    assert spend_this_month(session, dt.datetime.now(dt.UTC)) == Decimal(0)
+    before = spend_this_month(session, dt.datetime.now(dt.UTC))
     recorder = _run(session)
     recorder.keyframe(
         "setup",
@@ -204,7 +244,12 @@ def test_ceiling_now_sees_a_run(session: Session) -> None:
         unit_price=Decimal("0.08"),
         price_verified_on=VERIFIED,
     )
-    assert spend_this_month(session, dt.datetime.now(dt.UTC)) == Decimal("0.470000")
+    after = spend_this_month(session, dt.datetime.now(dt.UTC))
+    assert after - before == Decimal("0.470000")
+    # And the piece's own total includes the keyframe — `spend_for_piece` omitted
+    # keyframe rows entirely until 2026-10-15, which no test could catch while the
+    # ledger was empty.
+    assert spend_for_piece(session, recorder.piece.id) == Decimal("0.470000")
 
 
 def test_finish_closes_the_piece(session: Session) -> None:
@@ -231,6 +276,64 @@ def test_nothing_is_left_uncommitted(session: Session) -> None:
         price_verified_on=VERIFIED,
     )
     session.rollback()
-    assert session.execute(select(func.count()).select_from(Keyframe)).scalar_one() == 1
-    assert session.execute(select(func.count()).select_from(CostLedger)).scalar_one() == 1
-    assert session.execute(select(func.count()).select_from(VoiceLine)).scalar_one() == 0
+    kept = session.execute(
+        select(func.count())
+        .select_from(Keyframe)
+        .join(Shot, Shot.id == Keyframe.shot_id)
+        .where(Shot.content_piece_id == recorder.piece.id)
+    ).scalar_one()
+    assert kept == 1
+    assert spend_for_piece(session, recorder.piece.id) == Decimal("0.070000")
+
+
+def test_resume_continues_the_same_piece(session: Session) -> None:
+    """A resumed run must not open a second piece for the same work."""
+    first = _run(session)
+    again = resume_run(session, brief="bunker flop", shots=SHOTS)
+    assert again is not None
+    assert again.piece.id == first.piece.id
+    assert sorted(again.shots) == ["result", "setup"]
+    assert again.shots["setup"].id == first.shots["setup"].id
+
+
+def test_a_finished_piece_is_not_resumed(session: Session) -> None:
+    first = _run(session)
+    first.finish()
+    assert resume_run(session, brief="bunker flop", shots=SHOTS) is None
+
+
+def test_resume_refuses_a_changed_shot_list(session: Session) -> None:
+    """`shot` has no name column, so the list's order is its identity.
+
+    A shorter or longer list has no safe mapping onto the stored one, and guessing
+    would hang new takes — and their ledger rows — off the wrong shot.
+    """
+    _run(session)
+    with pytest.raises(ValueError, match="shot list changed"):
+        resume_run(session, brief="bunker flop", shots=SHOTS[:1])
+
+
+def test_resume_finds_a_take_by_its_key(session: Session) -> None:
+    """So a resume can finish scoring a row an earlier, crashed run started."""
+    recorder = _run(session)
+    take = recorder.take(
+        "setup",
+        keyframe=None,
+        provider="fal",
+        model="m",
+        prompt="p",
+        params={},
+        duration_s=5.0,
+        units=Decimal(5),
+        unit_price=Decimal("0.08"),
+        price_verified_on=VERIFIED,
+        storage_key="persona/x/take/bunker-setup_take_0.mp4",
+    )
+    assert take.status == "generating"
+    found = recorder.find_take("persona/x/take/bunker-setup_take_0.mp4")
+    assert found is not None and found.id == take.id
+    assert recorder.find_take("persona/x/take/nothing-here.mp4") is None
+
+    recorder.rescore(found, identity_min=0.96, identity_mean=0.97, status="ready")
+    # Completing the record must not bill for the take a second time.
+    assert spend_for_piece(session, recorder.piece.id) == Decimal("0.400000")

@@ -166,7 +166,7 @@ def spend_for_piece(session: Session, content_piece_id: uuid.UUID) -> Decimal:
     billing counts — otherwise per-piece cost understates exactly the spend a
     per-piece ceiling exists to catch.
     """
-    from app.models import Shot, VoiceLine
+    from app.models import Keyframe, Shot, VoiceLine
 
     generation_ids = (
         select(Generation.id)
@@ -179,12 +179,23 @@ def spend_for_piece(session: Session, content_piece_id: uuid.UUID) -> Decimal:
         .where(Shot.content_piece_id == content_piece_id)
     )
     job_ids = select(Job.id).where(Job.generation_id.in_(generation_ids))
+    #: Keyframes were omitted here until 2026-10-15, though "keyframe" has always been
+    #: in `ck_ref_table_vocabulary`. Nothing caught it because nothing wrote keyframe
+    #: ledger rows: the table was empty. On a four-shot piece that redraws a couple of
+    #: stills it is most of a dollar, and every redraw makes the gap wider — precisely
+    #: the understatement this function's docstring warns about.
+    keyframe_ids = (
+        select(Keyframe.id)
+        .join(Shot, Shot.id == Keyframe.shot_id)
+        .where(Shot.content_piece_id == content_piece_id)
+    )
 
     total = session.execute(
         select(func.coalesce(func.sum(CostLedger.total_usd), 0)).where(
             ((CostLedger.ref_table == "generation") & CostLedger.ref_id.in_(generation_ids))
             | ((CostLedger.ref_table == "voice_line") & CostLedger.ref_id.in_(voice_ids))
             | ((CostLedger.ref_table == "job") & CostLedger.ref_id.in_(job_ids))
+            | ((CostLedger.ref_table == "keyframe") & CostLedger.ref_id.in_(keyframe_ids))
         )
     ).scalar_one()
     return Decimal(total)

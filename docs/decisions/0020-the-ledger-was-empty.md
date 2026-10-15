@@ -55,6 +55,37 @@ Three choices worth stating:
   value, and adding one would put that spend outside the vocabulary the ledger is checked
   against. A lip-synced clip is a derived take: same shot, different model, its own bill.
 
+## The first run proved the ordering mattered, by crashing
+
+The first live run under this module recorded takes *after* the shot's takes were
+scored, not when they were billed. Half an hour later the container ran out of disk, and
+ffmpeg died in the middle of scoring the address shot. Three takes had been generated and
+charged for. None of them were in the ledger: $1.20 billed, $0.00 recorded.
+
+So the rule written at the top of this ADR — one transaction per paid call, because a run
+can die in the middle — turned out to be right about the principle and wrong about where
+the boundary was. `take()` now records at the moment the provider returns, with status
+`generating` and no scores, and `rescore()` attaches the scores minutes later when the
+dlib pass finishes. Scoring is not a billable event and adds nothing to the ledger.
+
+The three lost takes were recorded afterwards from the files on disk, whose model, price
+and prompt are all known. That is recording calls there is direct evidence of, not
+backfilling history that is gone — the distinction the last section of this ADR draws.
+
+Two smaller things fell out of the same run:
+
+- **`--skip-generate` must not claim a cost.** Reusing a file an earlier run paid for and
+  writing a fresh ledger row for it would bill the ledger twice for one call. That is the
+  same corruption as not recording it, pointing the other way. A reused take is instead
+  looked up by its storage key, so a resume can *complete* the half-written row the crash
+  left rather than duplicating it, and a resume continues the same `content_piece` rather
+  than opening a second one for the same work.
+- **`spend_for_piece` never counted keyframes.** "keyframe" has always been in
+  `ck_ref_table_vocabulary` and the per-piece query joined generations, voice lines and
+  jobs but not keyframes. On this piece that is $0.40 of $2.80 — and every redraw widens
+  it. Nothing caught it because nothing wrote keyframe rows: an empty table agrees with
+  every query you ask of it.
+
 ## What this does not fix
 
 **The ledger starts from a false zero.** Everything spent before today is unrecorded and
@@ -63,6 +94,15 @@ this repo holds. So the first month under a working ceiling will undercount by w
 was spent to date. Backfilling from the invoice is an owner decision, not something to
 invent: a ledger row is a record of a billed call, and writing rows for calls whose
 details are gone would make the audit trail worse, not better.
+
+**The test suite needed its own database.** Several tests in `test_costs.py` assert on
+ledger *totals*, which only hold in an empty database, and the fixtures run migrations
+against whatever `DATABASE_URL` names. That was invisible while nothing wrote to the real
+database. The first recorded run broke five tests on rows that were entirely correct —
+the suite was reading production. Tests now prefer `TEST_DATABASE_URL`, and the fixtures
+refuse to run against a database with data in it rather than producing five confusing
+failures. A related discovery: `make check` had been reporting 686 passed / 83 skipped
+because `DATABASE_URL` was unset, so the persistence suite never ran at all.
 
 **The pairing lives in the script, not the pipeline.** `make_bunker.py` calls
 `guard.check` before each provider call and the recorder after it. That belongs in the

@@ -45,13 +45,14 @@ from app.costs.ledger import spend_this_month
 from app.identity.dataset import NO_FACE_STILLS, collect, split
 from app.identity.embedder import DlibEmbedder
 from app.identity.evaluation import holdout_reference
+from app.models import Generation
 from app.models.session import make_engine
 from app.pipeline.acceptance import ShotUnderTest, assess, screen_still
 from app.pipeline.assembler import assemble, duration_of, edit_list
 from app.pipeline.captions import Cue, burn_in, split_into_cues, write_srt
 from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.lipsync import lip_sync
-from app.pipeline.recording import ShotSpec, open_run
+from app.pipeline.recording import ShotSpec, open_run, resume_run
 from app.pipeline.swing import SwingKind
 from app.pipeline.takes import measure
 from app.pipeline.voice import pad_to
@@ -278,22 +279,27 @@ def main() -> int:
     pose = MediapipePose(ROOT / str(config.providers.pose.pose_model))
     engine = make_engine()
     session = Session(bind=engine, expire_on_commit=False)
-    recorder = open_run(
+    specs = [
+        ShotSpec(
+            name=s_["name"],
+            description=s_["motion"],
+            duration_s=float(s_["seconds"]),
+            face_expected=bool(s_["face_expected"]),
+            dialogue=s_["line"],
+        )
+        for s_ in PIECE
+    ]
+    brief = "The Bunker — docs/briefs/bunker-flop-2026-10-15.md"
+    recorder = resume_run(session, brief=brief, shots=specs) if args.skip_generate else None
+    if recorder is not None:
+        print(f"resuming    piece {recorder.piece.id}")
+    recorder = recorder or open_run(
         session,
         persona_name=str(config.persona.persona.name),
-        brief="The Bunker — docs/briefs/bunker-flop-2026-10-15.md",
+        brief=brief,
         # `content_piece.format` is free text; the brief's own word for this shape.
         video_format="reaction",
-        shots=[
-            ShotSpec(
-                name=s_["name"],
-                description=s_["motion"],
-                duration_s=float(s_["seconds"]),
-                face_expected=bool(s_["face_expected"]),
-                dialogue=s_["line"],
-            )
-            for s_ in PIECE
-        ],
+        shots=specs,
     )
 
     def bill(estimated: Decimal, what: str) -> None:
@@ -319,7 +325,8 @@ def main() -> int:
         keyframe = args.out / f"{name}_keyframe.png"
         frame_row = None
         for attempt in range(1, args.keyframe_tries + 1):
-            if not (attempt == 1 and args.skip_generate and keyframe.is_file()):
+            reused = attempt == 1 and args.skip_generate and keyframe.is_file()
+            if not reused:
                 bill(edit_price, f"{name} keyframe attempt {attempt}")
                 edit_keyframe(client, edit_slot, args.from_keyframe, shot["scene"], keyframe)
             screen = (
@@ -331,27 +338,37 @@ def main() -> int:
             # a run that records only its keepers understates itself by its retries.
             frame_key = key_for(persona_id, "keyframe", f"bunker-{name}-{attempt}.png")
             storage.put(frame_key, keyframe.read_bytes(), content_type="image/png", overwrite=True)
-            frame_row = recorder.keyframe(
-                name,
-                provider=str(edit_slot.backend),
-                model=str(edit_slot.model),
-                prompt=shot["scene"],
-                storage_key=frame_key,
-                identity_score=(
-                    screen.score if screen is not None and screen.score == screen.score else None
-                ),
-                units=Decimal(1),
-                unit_price=edit_price,
-                price_verified_on=edit_slot.verified_on,
-                embedding_model=embedder.model,
+            # A reused file was paid for by an earlier run and recorded there. Recording
+            # it again would bill the ledger twice for one call, which is the same
+            # corruption as not recording it at all, pointing the other way.
+            frame_row = (
+                None
+                if reused
+                else recorder.keyframe(
+                    name,
+                    provider=str(edit_slot.backend),
+                    model=str(edit_slot.model),
+                    prompt=shot["scene"],
+                    storage_key=frame_key,
+                    identity_score=(
+                        screen.score
+                        if screen is not None and screen.score == screen.score
+                        else None
+                    ),
+                    units=Decimal(1),
+                    unit_price=edit_price,
+                    price_verified_on=edit_slot.verified_on,
+                    embedding_model=embedder.model,
+                )
             )
             if screen is None:
                 print("  keyframe  no face expected in this shot; not screened on identity")
                 break
             score = "no face" if screen.score != screen.score else f"{screen.score:.5f}"
+            seam_score = screen.seam.score if screen.seam is not None else float("nan")
             print(
                 f"  keyframe  attempt {attempt}: face {score} (bar {bar})  "
-                f"seam {screen.seam:.2f}{'  SEAMED' if screen.seamed else ''}"
+                f"seam {seam_score:.2f}{'  SEAMED' if screen.seamed else ''}"
             )
             if screen.passes:
                 break
@@ -371,13 +388,39 @@ def main() -> int:
             )
         request["duration_s"] = int(shot["seconds"])
         takes = []
+        rows: dict[Path, Generation | None] = {}
         for index in range(args.takes):
             take = args.out / f"{name}_take_{index}.mp4"
-            if not (args.skip_generate and take.is_file()):
+            reused_take = args.skip_generate and take.is_file()
+            if not reused_take:
                 bill(video_price * Decimal(shot["seconds"]), f"{name} take {index + 1}")
                 url = submit_clip(client, video_slot.model, shot["motion"], keyframe, request)
                 take.write_bytes(client.get(url, timeout=600.0).content)
             takes.append(take)
+            # Recorded here, not after the pick. Scoring every take of a shot is a dlib
+            # pass over several hundred frames and takes minutes; a crash in there would
+            # otherwise lose takes the provider has already charged for.
+            take_key = key_for(persona_id, "take", f"bunker-{take.stem}.mp4")
+            storage.put(take_key, take.read_bytes(), content_type="video/mp4", overwrite=True)
+            # On reuse: find the row an earlier run wrote, so scoring can complete it,
+            # but write no new ledger row — this run did not pay for this take.
+            rows[take] = (
+                recorder.find_take(take_key)
+                if reused_take
+                else recorder.take(
+                    name,
+                    keyframe=frame_row,
+                    provider=str(video_slot.backend),
+                    model=str(video_slot.model),
+                    prompt=shot["motion"],
+                    params=request,
+                    duration_s=float(shot["seconds"]),
+                    units=Decimal(shot["seconds"]),
+                    unit_price=video_price,
+                    price_verified_on=video_slot.verified_on,
+                    storage_key=take_key,
+                )
+            )
             print(f"  take {index + 1}/{args.takes}  {take.name}")
 
         scores: dict[Path, tuple[float | None, float | None]] = {}
@@ -413,20 +456,11 @@ def main() -> int:
             )
         for take in takes:
             identity_min, identity_mean = scores.get(take, (None, None))
-            take_key = key_for(persona_id, "take", f"bunker-{take.stem}.mp4")
-            storage.put(take_key, take.read_bytes(), content_type="video/mp4", overwrite=True)
-            recorder.take(
-                name,
-                keyframe=frame_row,
-                provider=str(video_slot.backend),
-                model=str(video_slot.model),
-                prompt=shot["motion"],
-                params=request,
-                duration_s=float(shot["seconds"]),
-                units=Decimal(shot["seconds"]),
-                unit_price=video_price,
-                price_verified_on=video_slot.verified_on,
-                storage_key=take_key,
+            row = rows[take]
+            if row is None:
+                continue
+            recorder.rescore(
+                row,
                 identity_min=identity_min,
                 identity_mean=identity_mean,
                 status="ready" if take == pick else "auto_rejected",

@@ -69,7 +69,13 @@ Getting this right is most of whether it reads as made by someone who plays.
 
 ## Shots
 
-### 1 — Setup · 4s · face to camera
+**Every shot is five seconds, because five is the model's floor.** This brief first asked
+for 4s/3s/4s/4s. `video.golf_1080` advertises `durations_s: [5 … 15]` and takes nothing
+shorter, so fifteen seconds is not renderable on this model and the piece is twenty. Any
+tightening happens in the edit, never by sending a duration the model does not accept —
+the build script refuses one rather than letting the provider round it silently.
+
+### 1 — Setup · 5s · face to camera
 
 **Camera** chest height, in front of her, slightly above. She stands in the bunker, lip and
 flag behind her shoulder.
@@ -80,18 +86,24 @@ whether those lessons did anything."*
 **Evidence** This is the shot type that works: 0.970–0.980 identity, 100% coverage, the
 only one the owner has approved.
 
-### 2 — Address · 3s · face up at the end
+### 2 — Address · 5s · face up at the end
 
 **Camera** same position, a little wider, whole body in frame.
 **Action** She settles over the ball, shuffles her feet into the sand, clubhead hovering
 above it, then flicks her eyes up to the lens for a beat.
 **Dialogue** none.
-**Declares** `face_expected=True`, `persona_present=True`, `swing=None` — *she does not
-swing on camera.*
+**Declares** `face_expected=True`, `persona_present=True`, **`swing="chip"`**.
+
+A declaration here is not a description of what she does — she does not swing — it is the
+instrument that catches it if the model makes her. The prompt says "she does not swing"
+and prompts are worth nothing on this model; a declared `chip` makes hands above the
+shoulder line a BLOCKING finding, so a full swing snuck into the address shot cannot pass
+the gate silently. This is the one shot where that trap is both safe and useful: her hands
+stay low at address by the nature of the position.
 **Evidence** The address keyframe rendered cleanly on the swing attempt and on the putt;
 "look up at the end" took the scorecard shot from 40% to 100% coverage.
 
-### 3 — The result · 4s · nobody in frame
+### 3 — The result · 5s · nobody in frame
 
 **Camera** low and tight on the sand, lip filling the top of frame.
 **Action** A spray of sand. The ball pops up the face, clips the lip, checks, and rolls
@@ -101,15 +113,18 @@ back down to the bottom of the bunker. It comes to rest. Nothing else moves.
 **Evidence** The faceless golf cutaway works — the ball-to-hole shot came back with correct
 golf on 15 October once the keyframe was clean.
 
-### 4 — Facepalm · 4s · face to camera
+### 4 — Facepalm · 5s · face to camera
 
 **Camera** back to shot 1's position.
 **Action** She watches the ball roll back. A beat of disbelief, straight down the lens.
 Palm goes to her face for about a second — **not longer** — then she drops it and looks
 back at the camera, defeated.
 **Dialogue** *"...They did not."*
-**Declares** `face_expected=True`, `persona_present=True`, `swing=None`.
-**Evidence** The risk shot. A second of occlusion in four leaves ~75% coverage, above the
+**Declares** `face_expected=True`, `persona_present=True`, `swing=None` — **deliberately
+not declared.** The facepalm puts a hand above the shoulder line by design, which is
+exactly what a swing declaration refuses. Declaring one here would block the shot for
+doing what this brief asks it to do. Shot 2 carries the trap instead.
+**Evidence** The risk shot. A second of occlusion in five leaves ~80% coverage, above the
 60% floor; `celebrate` showed that big expression changes cost identity, so the beat is
 played dry rather than broad.
 
@@ -120,15 +135,21 @@ played dry rather than broad.
 Four keyframes at $0.08, several takes each because that is production rather than
 science, voice on two shots, lip sync on two.
 
+Built at 1080P on the owner's instruction. The figures below are what the cost guard
+estimated from `config/providers.yaml`, not an approximation:
+
 | | |
 |---|---|
-| keyframes, with redraws | ~$0.50 |
-| 4 takes × 4 shots × ~4s at $0.04/s | $2.56 |
-| voice + lip sync on shots 1 and 4 | ~$0.90 |
-| **total** | **~$4** |
+| 4 keyframes at $0.08, before redraws | $0.32 |
+| 3 takes × 4 shots × 5s at $0.08/s | $4.80 |
+| voice on shots 1 and 4 | $0.05 |
+| lip sync on shots 1 and 4, 10s at $0.096/s | $0.96 |
+| **estimate** | **$6.13** |
 
-At 1080P rather than 768P the video doubles to ~$5.10 and the piece meets the brief's
-1080×1920. Worth doing on a piece meant to be seen.
+Up from the ~$5.10 quoted when this brief was written, for two reasons stated plainly:
+the 5s floor adds a second to every shot, and that earlier figure was a guess rather than
+the guard's arithmetic. A redraw adds $0.08 each; the run was given an $8 budget to leave
+room for them.
 
 ---
 

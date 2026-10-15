@@ -131,10 +131,15 @@ class RunRecorder:
         storage_key: str | None = None,
         identity_min: float | None = None,
         identity_mean: float | None = None,
-        status: str = "scored",
+        status: str = "generating",
         embedding_model: str | None = None,
     ) -> Generation:
-        """One take, scored or not, picked or not. Rejected takes are recorded too.
+        """One take, recorded the moment the provider bills for it.
+
+        Called before the take is scored, which is why `status` defaults to "generating"
+        and the scores default to None: the cost is known at once and the quality is not.
+        `rescore` fills the rest in. Recording the pair in the other order would mean a
+        crash during scoring loses spend that has already happened.
 
         A take that was generated and then not used still cost what it cost. Recording
         only the picked take would understate a run by the number of takes minus one,
@@ -166,6 +171,46 @@ class RunRecorder:
         )
         self.session.commit()
         return row
+
+    def find_take(self, storage_key: str) -> Generation | None:
+        """The take already recorded under this key, if there is one.
+
+        Lets a resumed run finish a record it did not start. `--skip-generate` reuses
+        files an earlier run paid for, so it must not write a second ledger row for
+        them — but the take it reuses may still be sitting at status "generating" with
+        no scores, because the earlier run died before scoring. Looking it up by key
+        lets the resume complete that row instead of leaving it half-written.
+        """
+        return (
+            self.session.execute(select(Generation).where(Generation.storage_key == storage_key))
+            .scalars()
+            .first()
+        )
+
+    def rescore(
+        self,
+        take: Generation,
+        *,
+        identity_min: float | None,
+        identity_mean: float | None,
+        status: str,
+        embedding_model: str | None = None,
+    ) -> Generation:
+        """Attach scores to a take that was recorded the moment it was billed.
+
+        Separate from `take` on purpose. A take is paid for when the provider returns it;
+        it is scored minutes later, after a dlib pass over every frame of every take in
+        the shot. Recording it only once scoring finished would leave the window where
+        the money is spent and nothing in the ledger says so — which is the exact hole
+        this module exists to close, reopened one step further in.
+        """
+        take.identity_score_min = identity_min
+        take.identity_score_mean = identity_mean
+        take.status = status
+        if embedding_model is not None:
+            take.embedding_model = embedding_model
+        self.session.commit()
+        return take
 
     def voice(
         self,
@@ -256,6 +301,52 @@ def open_run(
         recorder.shots[spec.name] = row
     session.commit()
     return recorder
+
+
+#: Statuses a piece can be resumed from. A published or abandoned piece is finished.
+RESUMABLE = frozenset({"brief", "shotlist", "generating", "review"})
+
+
+def resume_run(session: Session, *, brief: str, shots: list[ShotSpec]) -> RunRecorder | None:
+    """Pick up the most recent unfinished piece for this brief, or None if there is none.
+
+    A resumed run must continue the piece it is resuming. Opening a fresh one would
+    split a single piece's spend across two `content_piece` rows, which breaks the
+    per-piece ceiling and makes the record of what this piece cost unreadable — the
+    audit problem this module exists to fix, in a new place.
+
+    Shots are matched by `order_index`, because `shot` has no name column: the shot
+    list's order *is* its identity. If the list has changed shape since, this refuses
+    rather than guessing, since a mismatched map would hang new takes off the wrong shot.
+    """
+    piece = (
+        session.execute(
+            select(ContentPiece)
+            .where(ContentPiece.brief == brief, ContentPiece.status.in_(RESUMABLE))
+            .order_by(ContentPiece.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if piece is None:
+        return None
+
+    rows = list(
+        session.execute(
+            select(Shot).where(Shot.content_piece_id == piece.id).order_by(Shot.order_index)
+        ).scalars()
+    )
+    if len(rows) != len(shots):
+        raise ValueError(
+            f"piece {piece.id} has {len(rows)} shots and this run declares {len(shots)}. "
+            f"The shot list changed since that piece was opened, so there is no safe "
+            f"mapping between them; start a new piece instead of resuming this one."
+        )
+    return RunRecorder(
+        session=session,
+        piece=piece,
+        shots={spec.name: row for spec, row in zip(shots, rows, strict=True)},
+    )
 
 
 def piece_id_of(recorder: RunRecorder) -> uuid.UUID:

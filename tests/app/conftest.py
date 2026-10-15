@@ -6,9 +6,17 @@ and a test suite that builds its schema from the models cannot see a broken
 migration. Task 0.3 asks for the migration to run up and down, so the migration
 is what the tests run against.
 
-Without `DATABASE_URL` the whole module skips. The constraints under test are
+Without a database URL the whole module skips. The constraints under test are
 Postgres features — a composite foreign key onto a unique pair, and `pgvector` —
 so there is no in-memory substitute that would prove anything.
+
+**`TEST_DATABASE_URL`, not `DATABASE_URL`, where the two differ.** These fixtures roll
+every test back, but they also run `alembic upgrade head`, and several tests assert on
+ledger *totals*, which only hold in an empty database. That was fine for as long as
+nothing wrote to the real one. The moment a run recorded its spend (ADR 0020), five
+tests failed on rows that were correct — the suite was reading production. So the URL is
+taken from `TEST_DATABASE_URL` when set, and `_refuse_a_used_database` turns the
+remaining footgun into a loud failure rather than a confusing one.
 """
 
 from __future__ import annotations
@@ -24,12 +32,35 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.orm import Session
 
 REPO = Path(__file__).resolve().parents[2]
-DB_URL = os.environ.get("DATABASE_URL", "").strip()
+DB_URL = (
+    os.environ.get("TEST_DATABASE_URL", "").strip() or os.environ.get("DATABASE_URL", "").strip()
+)
 
 requires_db = pytest.mark.skipif(
     not DB_URL,
-    reason="DATABASE_URL is not set; these tests need a real Postgres with pgvector",
+    reason="neither TEST_DATABASE_URL nor DATABASE_URL is set; these tests need a real "
+    "Postgres with pgvector",
 )
+
+#: Tables whose contents would make a totals assertion wrong. Checked once, before any
+#: test runs, because the alternative is five failures that each look like a bug in the
+#: thing under test.
+MUST_BE_EMPTY = ("cost_ledger", "content_piece")
+
+
+def _refuse_a_used_database(engine: Engine) -> None:
+    for table in MUST_BE_EMPTY:
+        with engine.connect() as connection:
+            rows: int = connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+        if rows:
+            pytest.exit(
+                f"{table} already has {rows} rows, so this database is in use. These "
+                f"tests roll back their own writes but assert on ledger totals, which "
+                f"only hold in an empty database — and they run migrations against "
+                f"whatever they are pointed at. Set TEST_DATABASE_URL to a throwaway "
+                f"database (e.g. persona_studio_test) and run again.",
+                returncode=1,
+            )
 
 
 def _alembic(*args: str, url: str) -> subprocess.CompletedProcess[str]:
@@ -56,6 +87,7 @@ def migrated_engine() -> Iterator[Engine]:
     result = _alembic("upgrade", "head", url=DB_URL)
     assert result.returncode == 0, f"alembic upgrade failed:\n{result.stderr}"
     engine = create_engine(DB_URL, future=True)
+    _refuse_a_used_database(engine)
     yield engine
     engine.dispose()
 

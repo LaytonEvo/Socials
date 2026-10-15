@@ -24,7 +24,17 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-SOURCE_DIRS = ("app", "workers", "scripts")
+#: `tests` is scanned too. The suite is our code, not a dependency, and a variable it
+#: reads is genuinely used — `TEST_DATABASE_URL` arrived in .env.example and was
+#: reported as stale because the scanner could not see the conftest that reads it. The
+#: alternative was filing it under READ_BY_DEPENDENCIES, which would have been a lie in
+#: the one list that exists to stop this check rotting.
+SOURCE_DIRS = ("app", "workers", "scripts", "tests")
+
+#: Ambient OS variables, which are not application configuration and have no business
+#: in `.env.example`. Deliberately tiny and specific: this is a second escape hatch, and
+#: a broad one would let a real credential through under the heading "ambient".
+AMBIENT = frozenset({"PATH"})
 
 #: Variables read by a dependency rather than by our own code, so the scanner will
 #: never find them. Each needs a reason, because this list is the escape hatch that
@@ -198,7 +208,7 @@ def _environment_reads(path: Path) -> set[str]:
 def _all_environment_reads() -> dict[str, list[str]]:
     reads: dict[str, list[str]] = {}
     for path in _source_files():
-        for name in _environment_reads(path):
+        for name in _environment_reads(path) - AMBIENT:
             reads.setdefault(name, []).append(str(path.relative_to(REPO)))
     return reads
 
