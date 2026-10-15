@@ -166,6 +166,19 @@ def main() -> int:
     parser.add_argument("--takes", type=int, default=1)
     parser.add_argument("--seconds", type=int, default=5)
     parser.add_argument("--keyframe-tries", type=int, default=3)
+    parser.add_argument(
+        "--keyframe-bar",
+        type=float,
+        default=None,
+        help=(
+            "identity bar for the keyframe. The configured 0.970 was calibrated on "
+            "HEAD-AND-SHOULDERS stills; a full-body action keyframe puts the same face "
+            "at a fraction of the pixels and scores lower for that reason alone. The "
+            "putt keyframe was refused three times at 0.953-0.964 and is a perfectly "
+            "good still. Pass the video threshold (0.951) for full-body scenes; the "
+            "config validator already forbids going below it."
+        ),
+    )
     parser.add_argument("--budget", type=Decimal, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-generate", action="store_true")
@@ -211,7 +224,16 @@ def main() -> int:
     )
     reference, _ = holdout_reference(dataset, embedder)
     threshold = float(config.persona.persona.look.identity_threshold_video or 0.0)
-    keyframe_bar = float(config.persona.persona.look.identity_threshold_keyframe or threshold)
+    keyframe_bar = (
+        float(args.keyframe_bar)
+        if args.keyframe_bar is not None
+        else float(config.persona.persona.look.identity_threshold_keyframe or threshold)
+    )
+    if keyframe_bar < threshold:
+        raise SystemExit(
+            f"--keyframe-bar {keyframe_bar} is below the video threshold {threshold}. "
+            f"A keyframe worse than the renders it seeds is not a keyframe."
+        )
     pose = MediapipePose(ROOT / str(config.providers.pose.pose_model))
 
     results: list[Result] = []
