@@ -100,3 +100,15 @@ def test_a_colour_image_is_read_as_greyscale(tmp_path) -> None:  # type: ignore[
 def test_a_non_image_array_is_refused() -> None:
     with pytest.raises(ValueError, match="2-D greyscale"):
         scan(np.zeros((4, 4, 3)))
+
+
+def test_a_burned_in_overlay_reads_as_a_seam_which_is_why_this_runs_before_one() -> None:
+    """The disclosure band is a hard-edged rectangle and this cannot tell it from a paste.
+
+    Measured on the 2026-10-15 rebuild: the lip-synced take scores 0.91 and the same frame
+    after `apply_disclosure` scores 18.82, at the row where the band begins. The detector
+    is working; the input is wrong. Keyframes and raw takes only.
+    """
+    image = textured()
+    image[370:392, 10:150] = 20.0  # a dark caption/disclosure box near the bottom
+    assert scan(image).seamed

@@ -25,6 +25,13 @@ plus the 5 keyframes with no visible seam:
     clean population      max 4.22   p99 3.76   p95 2.40
     known composites      9.83 (shot1-final/keyframe)  13.74 (broll/address_strike)
 
+**Run this BEFORE the overlay pass, never after.** The disclosure band and the caption
+box are hard-edged rectangles drawn onto the picture, and this cannot tell our own overlay
+from a model's paste: measured on the 2026-10-15 rebuild, the lip-synced take scores 0.91
+and the same frame after `apply_disclosure` scores 18.82 at the row where the disclosure
+band begins. That is the detector working, on the wrong input. It belongs on keyframes and
+on raw takes.
+
 `SEAM_LIMIT` sits in the empty gap between those. **The negative class is well sampled and
 the positive class is two images**, so the bar is justified by what clean images do NOT do
 rather than by a model of what seams DO. Revisit it when there are more examples.

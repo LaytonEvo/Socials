@@ -34,6 +34,7 @@ from app.identity.embedder import DlibEmbedder, cosine
 from app.identity.evaluation import holdout_reference
 from app.identity.master_set import read_still
 from app.pipeline.acceptance import ShotUnderTest, StillScreen, assess, best_still, screen_still
+from app.pipeline.artefacts import scan as scan_for_seams
 from app.pipeline.assembler import duration_of
 from app.pipeline.captions import burn_in, split_into_cues, write_srt
 from app.pipeline.disclosure import apply_disclosure
@@ -91,6 +92,7 @@ def keyframe_from_a_real_still(
     reference: Any,
     dest: Path,
     source_name: str | None,
+    tries: int = 3,
 ) -> tuple[Path, float, float]:
     """Edit one of her master stills into the shot, rather than rendering her.
 
@@ -140,24 +142,43 @@ def keyframe_from_a_real_still(
     }
     for problem in check_golf(str(arguments["prompt"])):
         raise SystemExit(f"edit prompt contains {problem.rule} — {problem.why}")
-    response = client.post(f"{QUEUE_ROOT}/{slot.model}", json=arguments)
-    if response.status_code >= 400:
-        raise SystemExit(f"keyframe edit failed {response.status_code}: {response.text[:300]}")
-    submitted = response.json()
-    for _ in range(150):
-        if client.get(submitted["status_url"]).json().get("status") in {
-            "COMPLETED",
-            "FAILED",
-            "ERROR",
-        }:
+    # Redrawn until the edit comes back without a composite seam (ADR 0018). This model
+    # pastes its content in as a rectangle often enough that the keyframe behind the
+    # owner's one approved video had a hard boundary across its lower third — and it
+    # scored 0.98756 on identity, so the screen that existed could not see it.
+    seams: list[str] = []
+    for attempt in range(tries):
+        response = client.post(f"{QUEUE_ROOT}/{slot.model}", json=arguments)
+        if response.status_code >= 400:
+            raise SystemExit(f"keyframe edit failed {response.status_code}: {response.text[:300]}")
+        submitted = response.json()
+        for _ in range(150):
+            if client.get(submitted["status_url"]).json().get("status") in {
+                "COMPLETED",
+                "FAILED",
+                "ERROR",
+            }:
+                break
+            time.sleep(3)
+        result = client.get(submitted["response_url"]).json()
+        images = result.get("images") or []
+        url = (images[0].get("url") if images else None) or (result.get("image") or {}).get("url")
+        if not url:
+            raise SystemExit(f"edit COMPLETED with no image: {str(result)[:300]}")
+        dest.write_bytes(client.get(url, timeout=300.0).content)
+        seam = scan_for_seams(dest)
+        if not seam.seamed:
+            if seams:
+                print(f"  keyframe redrawn {len(seams)}x for seams: {'; '.join(seams)}")
             break
-        time.sleep(3)
-    result = client.get(submitted["response_url"]).json()
-    images = result.get("images") or []
-    url = (images[0].get("url") if images else None) or (result.get("image") or {}).get("url")
-    if not url:
-        raise SystemExit(f"edit COMPLETED with no image: {str(result)[:300]}")
-    dest.write_bytes(client.get(url, timeout=300.0).content)
+        seams.append(f"attempt {attempt + 1} scored {seam.score:.1f}")
+        print(f"  keyframe attempt {attempt + 1}: {seam.explain()} — redrawing")
+    else:
+        raise SystemExit(
+            f"every one of {tries} keyframe edits came back seamed ({'; '.join(seams)}). "
+            f"This is the edit model pasting its content in as a rectangle, not bad luck; "
+            f"change the edit prompt or the source still rather than drawing again."
+        )
     edited_score = screen_still(dest, reference=reference, embedder=embedder, threshold=0.0).score
     return source, source_score, edited_score
 
