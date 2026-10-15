@@ -154,6 +154,54 @@ providers:
           # for. Set to `balanced` between 2026-09-25 and 2026-09-28; every
           # clip generated in that window ran an expanded prompt.
           prompt_expansion_mode: disabled
+    # The same model at 1080P, for pieces meant to be seen. A SEPARATE SLOT rather
+    # than a flag, because the price is per resolution and ADR 0013 binds a price to
+    # the request it is a price FOR — one slot that could send either resolution
+    # would be a slot whose price is sometimes a lie.
+    #
+    # Read from the model's own record on fal.ai/models/minimax/h3-max-turbo/
+    # image-to-video, 2026-10-15:
+    #
+    #   "Video costs $0.015 per second at 480p, $0.024 at 768p, and $0.048 at 1080p.
+    #    Note: these are promotional rates, 40% off for a limited time. The discount
+    #    ends October 15, after which 480p is $0.025/second, 768p is $0.04/second,
+    #    and 1080p is $0.08/second."
+    #
+    # The discount ends TODAY, so the promotional figure would be wrong by tomorrow.
+    # `price_convention: higher_of_published_figures` takes the post-discount rate,
+    # which is also what the 768P slot already carries.
+    golf_1080:
+      backend: fal
+      model: minimax/h3-max-turbo/image-to-video
+      endpoint: null
+      price_usd_per_second: 0.08
+      verified_on: 2026-10-15
+      price_basis:
+        resolution: 1080P
+      capabilities:
+        durations_s: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        resolutions: ["480P", "768P", "1080P"]
+        canvas: follows_keyframe
+        aspects: ["9:16"]
+        image_to_video: true
+        native_audio: forced
+        seed: accepted_not_honoured
+      # Field-for-field the same as the 768P slot above, with only the resolution
+      # changed. Written by copying the shape that is known to work rather than from
+      # memory: a wrong field name on this model is a 422, and inventing
+      # `duration_field`/`prompt_optimizer` here was exactly that mistake before the
+      # loaded config was printed and compared.
+      request:
+        duration_s: 5
+        duration_style: seconds_int
+        audio_field: target_audio_url
+        image_field: image_url
+        end_image_field: end_image_url
+        base:
+          resolution: 1080P
+          enable_safety_checker: true
+          prompt_expansion_mode: disabled
+
     face:
       # Kept for face-forward work, where its quality is verified and its
       # native audio can be switched off. 4× the turbo rate and it renders no
