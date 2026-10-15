@@ -37,6 +37,7 @@ from app.identity.dataset import NO_FACE_STILLS, collect, split
 from app.identity.embedder import DlibEmbedder
 from app.identity.evaluation import holdout_reference
 from app.pipeline.acceptance import ShotUnderTest, assess
+from app.pipeline.artefacts import scan as scan_for_seams
 from app.pipeline.disclosure import apply_disclosure
 from app.pipeline.golf import apply_house_style
 from app.pipeline.golf import check as check_golf
@@ -96,7 +97,12 @@ SHOTS: dict[str, dict[str, Any]] = {
 
 
 def edit_keyframe(
-    client: httpx.Client, slot: Any, source: Path, instruction: str, dest: Path
+    client: httpx.Client,
+    slot: Any,
+    source: Path,
+    instruction: str,
+    dest: Path,
+    tries: int = 3,
 ) -> Path:
     """Move the camera by editing shot 1's keyframe, rather than generating a new scene.
 
@@ -117,25 +123,41 @@ def edit_keyframe(
         field: [payload] if shape.get("image_field_is_list") else payload,
         **dict(shape.get("base") or {}),
     }
-    response = client.post(f"{QUEUE_ROOT}/{slot.model}", json=arguments)
-    if response.status_code >= 400:
-        raise SystemExit(f"keyframe edit failed {response.status_code}: {response.text[:300]}")
-    submitted = response.json()
-    for _ in range(150):
-        if client.get(submitted["status_url"]).json().get("status") in {
-            "COMPLETED",
-            "FAILED",
-            "ERROR",
-        }:
-            break
-        time.sleep(3)
-    result = client.get(submitted["response_url"]).json()
-    images = result.get("images") or []
-    url = (images[0].get("url") if images else None) or (result.get("image") or {}).get("url")
-    if not url:
-        raise SystemExit(f"edit COMPLETED with no image: {str(result)[:300]}")
-    dest.write_bytes(client.get(url, timeout=300.0).content)
-    return dest
+    # Screened and redrawn on a seam, exactly as the single-shot path is (ADR 0018).
+    # This matters more here than anywhere: these keyframes are EDITS OF shot 1's
+    # keyframe, so a seam in the source is inherited — address_strike_keyframe.png
+    # scored 13.74, the worst measured, because it was edited from a still that scored
+    # 9.83.
+    seams: list[str] = []
+    for attempt in range(tries):
+        response = client.post(f"{QUEUE_ROOT}/{slot.model}", json=arguments)
+        if response.status_code >= 400:
+            raise SystemExit(f"keyframe edit failed {response.status_code}: {response.text[:300]}")
+        submitted = response.json()
+        for _ in range(150):
+            if client.get(submitted["status_url"]).json().get("status") in {
+                "COMPLETED",
+                "FAILED",
+                "ERROR",
+            }:
+                break
+            time.sleep(3)
+        result = client.get(submitted["response_url"]).json()
+        images = result.get("images") or []
+        url = (images[0].get("url") if images else None) or (result.get("image") or {}).get("url")
+        if not url:
+            raise SystemExit(f"edit COMPLETED with no image: {str(result)[:300]}")
+        dest.write_bytes(client.get(url, timeout=300.0).content)
+        seam = scan_for_seams(dest)
+        if not seam.seamed:
+            return dest
+        seams.append(f"attempt {attempt + 1} scored {seam.score:.1f}")
+        print(f"    seam: {seam.explain()} — redrawing")
+    raise SystemExit(
+        f"every one of {tries} edits of {source.name} came back seamed "
+        f"({'; '.join(seams)}). Check the SOURCE keyframe first: a seam in it is "
+        f"inherited by every edit of it."
+    )
 
 
 def main() -> int:
@@ -144,7 +166,7 @@ def main() -> int:
     parser.add_argument(
         "--from-shot1",
         type=Path,
-        default=ROOT / "spike" / "runs" / "shot1-final" / "keyframe.png",
+        default=ROOT / "spike" / "runs" / "shot1-v2" / "keyframe.png",
         help="the keyframe shot 1 was built from; wardrobe and light come from here",
     )
     parser.add_argument("--takes", type=int, default=3)

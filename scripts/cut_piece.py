@@ -72,7 +72,7 @@ PIECE: list[Shot] = [
         # The lip-synced take, NOT `final.mp4` or `final_captioned.mp4`: those already
         # carry the disclosure and this piece gets it once, at the end, over everything.
         "name": "explain",
-        "path": "spike/runs/shot1-final/synced.mp4",
+        "path": "spike/runs/shot1-v2/synced.mp4",
         "line": str(SHOT["line"]),
         "speaks": True,
         "audio_source": "voice",
@@ -82,10 +82,12 @@ PIECE: list[Shot] = [
         "swing": None,
     },
     {
-        # Nobody in frame: the ball finishing near the hole. 0% pose coverage measured
-        # 2026-10-13, which is correct for a cutaway and is why it declares no swing.
+        # Nobody in frame: the ball finishing near the hole. 0% pose coverage, which is
+        # correct for a cutaway and is why it declares no swing. Regenerated 2026-10-15
+        # from a seam-screened keyframe; the 2026-10-13 version had a bag and a trolley
+        # on the putting surface, two flagsticks and the hole cut in the fringe.
         "name": "result",
-        "path": "spike/runs/broll/result_take_0.mp4",
+        "path": "spike/runs/broll-v2/result_take_0.mp4",
         "line": None,
         "speaks": False,
         "audio_source": "none",

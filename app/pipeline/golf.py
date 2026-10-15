@@ -80,7 +80,14 @@ RULES: Final[tuple[tuple[str, str, str], ...]] = (
 HOUSE_STYLE: Final = (
     "correct golf equipment for the shot, plausible stance and grip, "
     "no logos or brand names or text on clothing or equipment, "
-    "bag and trolley kept off the putting surface"
+    "bag and trolley kept off the putting surface, "
+    # Added 2026-10-15 after watching broll/result_take_0: a bag and a trolley ON the
+    # putting surface, TWO flagsticks, and the hole cut in the fringe rather than on the
+    # green. Worth saying, and expected to do little: the bag instruction above was
+    # already here when that clip was generated and the model put one there anyway.
+    # Scene content has the same shape as swing length — the prompt is not a control
+    # surface, which is why ADR 0016 measures the render instead.
+    "exactly one flagstick in the scene, and the hole cut in the putting surface"
 )
 
 

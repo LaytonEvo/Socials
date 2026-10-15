@@ -32,7 +32,17 @@ and the same frame after `apply_disclosure` scores 18.82 at the row where the di
 band begins. That is the detector working, on the wrong input. It belongs on keyframes and
 on raw takes.
 
-`SEAM_LIMIT` sits in the empty gap between those. **The negative class is well sampled and
+`SEAM_LIMIT` sits in the empty gap between those.
+
+**The margin is narrower on landscape frames than that table suggests.** The clean
+population above is almost all portraits of her. The b-roll keyframe regenerated on
+2026-10-15 — a ball on a green with the mown edge running dead straight across a uniform
+foreground — scored **6.63** and has no seam in it at all: a flat horizon over featureless
+turf is both wide coverage and isolated. So on landscape content the headroom is a few
+percent rather than the 66% the portrait population implies. A near miss is recorded here
+rather than used to move the bar on one example, and it is the first thing to revisit.
+
+**The negative class is well sampled and
 the positive class is two images**, so the bar is justified by what clean images do NOT do
 rather than by a model of what seams DO. Revisit it when there are more examples.
 """

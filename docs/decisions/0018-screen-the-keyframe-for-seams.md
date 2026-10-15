@@ -58,6 +58,13 @@ while a paste is one pixel wide by construction: isolation 14 against 201.
 justified by what clean images do *not* do rather than by a model of what seams do, and it
 says so in the module. Revisit it when there are more examples.
 
+**Amended the same day.** The clean population above is almost all portraits of her. The
+b-roll keyframe regenerated on 2026-10-15 — a ball on a green, mown edge dead straight
+across a uniform foreground — scored **6.63** with no seam in it, because a flat horizon
+over featureless turf is both wide coverage and isolated. On landscape content the
+headroom is a few percent, not the 66% the portrait numbers imply. Recorded rather than
+acted on: one example is not grounds to move a bar, and it is the first thing to revisit.
+
 ### Blocking, not review
 
 A keyframe is $0.08 and a false refusal costs one more draw. A seam that gets through costs
