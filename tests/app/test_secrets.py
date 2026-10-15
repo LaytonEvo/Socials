@@ -54,7 +54,12 @@ SECRET_PATTERNS = {
     "GitHub token": r"\bghp_[A-Za-z0-9]{36}\b",
     "GitHub fine-grained token": r"\bgithub_pat_[A-Za-z0-9_]{50,}\b",
     "OpenAI API key": r"\bsk-proj-[A-Za-z0-9_\-]{20,}",
-    "private key block": r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    # The header AND key material, not the header alone. Matching the bare words
+    # fired on a comment explaining which PEM label the C2PA library requires and on
+    # test fixtures with no key in them — and a scanner people have to write around
+    # is one they stop trusting. A real pasted key always carries its base64 body, so
+    # requiring 40+ characters of it keeps every genuine leak and drops the prose.
+    "private key block": (r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]{0,80}?[A-Za-z0-9+/]{40,}"),
     "fal credential pair": (
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{20,}"
     ),
@@ -196,6 +201,22 @@ def _all_environment_reads() -> dict[str, list[str]]:
         for name in _environment_reads(path):
             reads.setdefault(name, []).append(str(path.relative_to(REPO)))
     return reads
+
+
+def test_the_private_key_pattern_still_catches_a_real_block() -> None:
+    """Tightened on 2026-10-15 so it stops firing on prose. This is the proof it did not
+    stop firing on key material, which is the only reason the pattern exists."""
+    pattern = re.compile(SECRET_PATTERNS["private key block"])
+    real = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg" + "A" * 40 + "\n"
+        "-----END PRIVATE KEY-----\n"
+    )
+    assert pattern.search(real), "a real key block must still be caught"
+    assert not pattern.search(
+        "the key must be PKCS#8; its PEM label reads PRIVATE KEY, not EC PRIVATE KEY"
+    )
+    assert not pattern.search('key="-----BEGIN PRIVATE KEY-----\ny\n"'), "a stub is not a key"
 
 
 # ------------------------------------------------------------- no keys in repo --

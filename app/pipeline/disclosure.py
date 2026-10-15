@@ -125,6 +125,32 @@ def probe_size(video: Path) -> tuple[int, int]:
     return width, height
 
 
+def still_disclosed(render: FinalRender, derived: Path) -> FinalRender:
+    """A `FinalRender` for a file derived from one by a step that KEEPS the overlay.
+
+    Burning captions produces a new file, and that new file is the deliverable — so
+    signing the uncaptioned one would sign something nobody ships. This is the narrow,
+    named way to carry the evidence across such a step.
+
+    **The obligation is on the caller and it is real.** Only a transformation that leaves
+    the disclosure legible may use this. Captioning qualifies because `burn_in` refuses
+    outright when the caption band would overlap the disclosure band; a crop, a reframe or
+    a platform cut would NOT qualify without re-running the overlay pass.
+
+    Narrow on purpose: the alternative was to let `sign` take an arbitrary path alongside a
+    `FinalRender`, which would have made the proof meaningless everywhere instead of
+    asking for care in one place.
+    """
+    if not derived.is_file():
+        raise DisclosureFailed(f"nothing at {derived} to carry the disclosure to")
+    return FinalRender(
+        path=derived,
+        disclosure_text=render.disclosure_text,
+        position=render.position,
+        _key=_MAKE_KEY,
+    )
+
+
 def apply_disclosure(
     source: Path, dest: Path, *, overlay: DisclosureOverlay | dict[str, Any]
 ) -> FinalRender:

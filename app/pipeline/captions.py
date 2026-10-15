@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config.schema import DisclosureOverlay
-from app.pipeline.disclosure import FONT, probe_size
+from app.pipeline.disclosure import FONT, FinalRender, probe_size, still_disclosed
 from app.pipeline.errors import PipelineError
 
 #: Where captions sit, as a fraction of frame height — the baseline of the block.
@@ -299,15 +299,19 @@ def caption_band(
 
 
 def burn_in(
-    video: Path,
+    video: FinalRender,
     cues: list[Cue],
     dest: Path,
     *,
     overlay: DisclosureOverlay,
     centre_fraction: float = CAPTION_CENTRE_FRACTION,
     height_fraction: float = CAPTION_HEIGHT_FRACTION,
-) -> Path:
+) -> FinalRender:
     """Burn the cues into the picture, refusing if they would sit over the disclosure.
+
+    Takes and returns a `FinalRender`: the captioned file is the deliverable, so the
+    evidence that the overlay ran has to travel with it or signing would sign the
+    wrong file. Legitimate because this refuses when the two bands overlap.
 
     The refusal is the point. Every final render must carry a visible disclosure, and a
     caption box painted across it leaves the overlay in the file while removing it from the
@@ -327,7 +331,7 @@ def burn_in(
             f"defeated rather than kept. Move the captions or the overlay."
         )
 
-    frame_width, frame_height = probe_size(video)
+    frame_width, frame_height = probe_size(video.path)
     font_px = max(1, int(frame_height * height_fraction))
 
     filters = []
@@ -361,7 +365,7 @@ def burn_in(
             "error",
             "-y",
             "-i",
-            str(video),
+            str(video.path),
             "-vf",
             ",".join(filters),
             # Audio copied rather than re-encoded: the voice has already been through the
@@ -375,4 +379,4 @@ def burn_in(
     )
     if completed.returncode != 0:
         raise CaptionsFailed(f"ffmpeg failed burning captions: {completed.stderr[:400]}")
-    return dest
+    return still_disclosed(video, dest)

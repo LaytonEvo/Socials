@@ -33,7 +33,7 @@ from app.pipeline.captions import (
     wrap_to_frame,
     write_srt,
 )
-from app.pipeline.disclosure import FONT
+from app.pipeline.disclosure import FONT, FinalRender, apply_disclosure, still_disclosed
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -115,13 +115,49 @@ def test_captions_do_not_overlap_a_top_disclosure() -> None:
     assert not caption_band().overlaps(disclosure_band(_overlay("top-right")))
 
 
+def _tiny_video(path: Path, *, size: str = "360x640", seconds: float = 2.0) -> Path:
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=green:s={size}:d={seconds}",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return path
+
+
+def _disclosed(tmp_path: Path, source: Path, position: str = "bottom-left") -> FinalRender:
+    """Captions follow disclosure in the pipeline, so the tests go the same way.
+
+    `burn_in` takes a FinalRender because the captioned file is the deliverable and the
+    evidence that the overlay ran has to reach it; see `still_disclosed`.
+    """
+    return apply_disclosure(
+        source, tmp_path / f"disclosed-{source.stem}.mp4", overlay=_overlay(position)
+    )
+
+
 def test_a_caption_placed_over_the_disclosure_is_refused(tmp_path: Path) -> None:
     """Pushed down to where a Shorts caption would naturally sit, it collides."""
-    video = tmp_path / "v.mp4"
-    video.write_bytes(b"not really a video")
+    junk = tmp_path / "v.mp4"
+    junk.write_bytes(b"not really a video")
+    # still_disclosed rather than a second render: the point is that the band check
+    # refuses BEFORE anything opens the file, so the file is deliberately not a video.
+    render = still_disclosed(_disclosed(tmp_path, _tiny_video(tmp_path / "real.mp4")), junk)
     with pytest.raises(CaptionsFailed, match="defeated rather than kept"):
         burn_in(
-            video,
+            render,
             split_into_cues(LINE, 6.0),
             tmp_path / "out.mp4",
             overlay=_overlay("bottom-left"),
@@ -179,7 +215,7 @@ def test_captions_burn_into_the_picture_and_keep_the_audio(tmp_path: Path) -> No
         capture_output=True,
     )
     out = burn_in(
-        source,
+        _disclosed(tmp_path, source),
         split_into_cues("Hello there. Second cue here.", 3.0),
         tmp_path / "out.mp4",
         overlay=_overlay(),
@@ -193,7 +229,7 @@ def test_captions_burn_into_the_picture_and_keep_the_audio(tmp_path: Path) -> No
             "stream=codec_type",
             "-of",
             "csv=p=0",
-            str(out),
+            str(out.path),
         ],
         capture_output=True,
         text=True,
@@ -224,12 +260,12 @@ def test_an_apostrophe_does_not_break_the_filter(tmp_path: Path) -> None:
         capture_output=True,
     )
     out = burn_in(
-        source,
+        _disclosed(tmp_path, source),
         split_into_cues("Pin's middle: don't blink.", 2.0),
         tmp_path / "out.mp4",
         overlay=_overlay(),
     )
-    assert out.is_file() and out.stat().st_size > 0
+    assert out.path.is_file() and out.path.stat().st_size > 0
 
 
 # --------------------------------------------- what a character budget cannot know --

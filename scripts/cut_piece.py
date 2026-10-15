@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
+from app.compliance.c2pa import credentials, sign
 from app.config import load_all
 from app.identity.dataset import NO_FACE_STILLS, collect, split
 from app.identity.embedder import DlibEmbedder
@@ -164,12 +165,29 @@ def main() -> int:
     cues = cues_for(PIECE, lengths)
     srt = write_srt(cues, args.out / "captions.srt")
     captioned = burn_in(
-        final.path,
+        final,
         cues,
         args.out / "final_captioned.mp4",
         overlay=config.persona.persona.disclosure.overlay,
     )
-    print(f"captions    {captioned.name}  ({len(cues)} cues) + {srt.name}")
+    print(f"captions    {captioned.path.name}  ({len(cues)} cues) + {srt.name}")
+
+    # ----------------------------------------------------------- signing --
+    # Every finished piece, not only the approved ones (owner's decision,
+    # 2026-10-15). The manifest records what made the file and when; it does not
+    # claim anybody approved it, and publication still needs a named human. There
+    # is no flag to skip this: a missing certificate is an error with a one-line
+    # remedy, not a reason to ship something unsigned.
+    signed = sign(
+        captioned,
+        args.out / "final_signed.mp4",
+        creds=credentials(),
+        title=f"Mollie — {len(PIECE)} shots",
+        persona_name=str(config.persona.persona.name),
+        ingredients=[s["name"] for s in PIECE],
+    )
+    state = "self-signed" if not signed.trusted_chain else "trusted chain"
+    print(f"signed      {signed.path.name}  ({state}; valid, not trusted — A9)")
 
     if args.no_gate:
         print("\n--no-gate: not judged.")
@@ -225,7 +243,7 @@ def main() -> int:
     print("\n" + "=" * 70)
     print(verdict.report())
     print("=" * 70)
-    print(f"\ndeliverable  {captioned}")
+    print(f"\ndeliverable  {signed.path}")
     return 0 if verdict.accepted else 1
 
 

@@ -27,6 +27,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.compliance.c2pa import credentials, sign
 from app.config import load_all
 from app.costs.guard import BudgetGuard
 from app.identity.dataset import NO_FACE_STILLS, collect, split
@@ -549,16 +550,38 @@ def main() -> int:
     cues = split_into_cues(SHOT["line"], float(duration_of(final.path)))
     srt = write_srt(cues, args.out / "captions.srt")
     captioned = burn_in(
-        final.path,
+        final,
         cues,
         args.out / "final_captioned.mp4",
         overlay=config.persona.persona.disclosure.overlay,
     )
-    print(f"captions    {captioned.name} ({len(cues)} cues) + {srt.name}")
+    print(f"captions    {captioned.path.name} ({len(cues)} cues) + {srt.name}")
+
+    # ----------------------------------------------------------- signing --
+    # Every finished piece, not only the approved ones (owner's decision,
+    # 2026-10-15). The manifest records what made the file and when; it does not
+    # claim anybody approved it, and publication still needs a named human. There
+    # is no flag to skip this: a missing certificate is an error with a one-line
+    # remedy, not a reason to ship something unsigned.
+    signed = sign(
+        captioned,
+        args.out / "final_signed.mp4",
+        creds=credentials(),
+        title="Mollie — " + SHOT["line"][:40],
+        persona_name=str(config.persona.persona.name),
+        ingredients=[
+            str(edit_slot.model),
+            str(video_slot.model),
+            str(voice_slot.model),
+            str(sync_slot.model),
+        ],
+    )
+    state = "self-signed" if not signed.trusted_chain else "trusted chain"
+    print(f"signed      {signed.path.name}  ({state}; valid, not trusted — A9)")
 
     # ------------------------------------------------------------- the gate --
     verdict = assess(
-        [ShotUnderTest(name="single", path=captioned, speaks=True, audio_source="voice")],
+        [ShotUnderTest(name="single", path=captioned.path, speaks=True, audio_source="voice")],
         reference=reference,
         embedder=embedder,
         threshold=threshold,
