@@ -143,14 +143,23 @@ def _environment_reads(path: Path) -> set[str]:
 
     constants: dict[str, str] = {}
     for statement in tree.body:
-        if (
-            isinstance(statement, ast.Assign)
-            and isinstance(statement.value, ast.Constant)
-            and isinstance(statement.value.value, str)
-        ):
-            for target in statement.targets:
-                if isinstance(target, ast.Name):
-                    constants[target.id] = statement.value.value
+        # Both forms, because this codebase writes most constants as `NAME: Final = "X"`.
+        # Understanding only the bare `NAME = "X"` form made the scanner silently miss
+        # `C2PA_SIGN_CERT` and `C2PA_SIGN_KEY` — the same failure its own docstring warns
+        # about, one syntax node along.
+        if isinstance(statement, ast.AnnAssign):
+            targets: list[ast.expr] = [statement.target]
+            value = statement.value
+        elif isinstance(statement, ast.Assign):
+            targets = list(statement.targets)
+            value = statement.value
+        else:
+            continue
+        if not (isinstance(value, ast.Constant) and isinstance(value.value, str)):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                constants[target.id] = value.value
 
     def resolve(node: ast.expr) -> str | None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):

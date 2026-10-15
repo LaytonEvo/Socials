@@ -72,6 +72,10 @@ dinov2 = [
 # Needs libEGL at the system level (`apt-get install libegl1 libgles2`); without it the
 # import succeeds and creating a landmarker fails with a dlopen error.
 pose = ["mediapipe>=1.1"]
+# C2PA signing (task 3.11). Optional because the manifest SHAPE is pure and tested
+# without it — only `sign` and `read_manifest` touch the library, and signing also
+# needs a certificate, which is a separate procurement question (amendment A9).
+c2pa = ["c2pa-python>=0.38"]
 
 [tool.setuptools]
 packages = [
@@ -108,7 +112,7 @@ module = [
   "PIL", "PIL.*", "numpy", "numpy.*", "yaml", "yaml.*", "pytest", "_pytest.*",
   "cv2", "cv2.*", "dlib", "torch", "torch.*", "transformers", "transformers.*",
   "boto3", "boto3.*", "botocore", "botocore.*", "pgvector", "pgvector.*",
-  "mediapipe", "mediapipe.*",
+  "mediapipe", "mediapipe.*", "c2pa", "c2pa.*",
 ]
 ignore_missing_imports = true
 
