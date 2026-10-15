@@ -258,19 +258,20 @@ providers:
       price_usd_per_second: 0.0562
       verified_on: 2026-10-13
       capabilities:
-        # The output length FOLLOWS THE AUDIO. There is no duration field and the
-        # response returns the duration it produced, so the line decides the clip
-        # rather than a drift budget deciding how much line fits. That is the whole
-        # argument for this endpoint on a talking shot: a 15-second line is not a
-        # 15-second gamble.
-        duration: follows_audio
-        # INFERRED, NOT VERIFIED. The schema has no aspect or resolution field, so the
-        # canvas presumably follows image_url as h3-max-turbo's does. Nothing confirms
-        # it until a clip comes back, and our shot is 1080x1920 — so the first run
-        # checks the output's dimensions before anything else.
-        canvas: follows_image_unverified
-        # Not documented on this endpoint. Kling's avatar models cap audio length
-        # upstream; the figure is unverified, so a long line may be refused.
+        # MEASURED 2026-10-15, and it corrected two guesses recorded here on 2026-10-13.
+        #
+        # Duration does NOT simply follow the audio. A 5.69s voice line produced a 7.20s
+        # clip, twice, with the audio stream itself still 5.69s — so the picture runs
+        # about 1.5s past the last word and she stands there. The clip still comes back
+        # at the length the model chooses rather than one we request (there is no
+        # duration field), but "follows_audio" was wrong: the tail has to be trimmed.
+        duration: longer_than_the_audio
+        # Output was 720x1280 from a 768x1370 keyframe. So the ASPECT follows the image
+        # and the RESOLUTION does not — it normalises to 720p whatever goes in. That
+        # rules this endpoint out for the brief's 1080x1920 on its own, whatever the
+        # quality turns out to be.
+        canvas: aspect_follows_image_resolution_is_720p
+        # Not documented, and 5.69s is the longest tested.
         max_audio_seconds: unverified
         native_audio: carries_the_input_voice
       request:

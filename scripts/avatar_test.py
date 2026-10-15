@@ -98,15 +98,27 @@ def submit_avatar(
     if response.status_code >= 400:
         raise SystemExit(f"avatar submit failed {response.status_code}: {response.text[:400]}")
     submitted = response.json()
-    for _ in range(200):
+    # 20 minutes. The first attempt allowed 10 and the THIRD take was still queued when
+    # it ran out, so the generation was billed and then thrown away with a message that
+    # read like a provider failure. A timeout and a failure are different things and the
+    # message has to say which, or the next person debugs the wrong one.
+    deadline = time.monotonic() + 1200
+    status = None
+    while time.monotonic() < deadline:
         status = client.get(submitted["status_url"]).json().get("status")
         if status in {"COMPLETED", "FAILED", "ERROR"}:
             break
         time.sleep(3)
+    else:
+        raise SystemExit(
+            f"still {status!r} after 20 minutes. This generation was BILLED; it is not "
+            f"lost — poll {submitted['status_url']} and fetch "
+            f"{submitted['response_url']} rather than resubmitting."
+        )
     result = client.get(submitted["response_url"]).json()
     url = (result.get("video") or {}).get("url")
     if not url:
-        raise SystemExit(f"avatar finished with no video: {str(result)[:400]}")
+        raise SystemExit(f"avatar finished {status} with no video: {str(result)[:400]}")
     return str(url)
 
 
