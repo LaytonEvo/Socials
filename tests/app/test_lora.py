@@ -391,12 +391,30 @@ async def test_training_that_completes_with_no_weights_is_a_billed_failure(
 
 
 async def test_an_unpriced_trainer_refuses_before_submitting() -> None:
-    """A 2000-step run is not the kind of spend to discover afterwards."""
-    trainer = FalLoraTrainer(settings=LoraSettings(trainer=TRAINER))
+    """A 2000-step run is not the kind of spend to discover afterwards.
+
+    "Before submitting" is the whole assertion, so the transport records whether a
+    request was made. The earlier version of this test had no client at all and made a
+    REAL call to fal on every `make check`; it passed only because the response happened
+    to be a 5xx, which routed through the one branch that priced the job. When fal
+    started answering 403 the test failed and the bug underneath it showed: `train` was
+    posting first and pricing afterwards.
+    """
+    posted: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        posted.append(str(request.url))
+        return httpx.Response(200, json={"request_id": "should-never-get-here"})
+
+    trainer = FalLoraTrainer(
+        settings=LoraSettings(trainer=TRAINER),
+        client=httpx.Client(transport=httpx.MockTransport(handle)),
+    )
     with pytest.raises(ProviderError, match="priced per STEP"):
         await trainer.train(
             TrainingRequest(archive_url="u", trigger_word="M", steps=2000, dataset_hash="h")
         )
+    assert posted == [], f"refused after submitting to {posted}"
 
 
 # -------------------------------------------------------------- evaluation --

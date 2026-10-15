@@ -221,6 +221,13 @@ class FalLoraTrainer:
         if not trainer:
             raise ProviderRefused("lora.trainer is not set in config/providers.yaml")
         _refuse_oversized_data_uri(req.archive_url)
+        # BEFORE the submit, not after it. This used to be reached only in the error
+        # path, so an unpriced trainer would post a 2000-step GPU run and discover it
+        # had no price when the response came back — the opposite of what the method
+        # below it promises and what CLAUDE.md requires of every paid call. The test
+        # that was supposed to catch it passed by accident: it made a real request to
+        # fal, and the price check only ran because the response happened to be a 5xx.
+        self.estimate_cost(req)
 
         job = ProviderJob(provider=self.name, model=trainer)
         self.jobs.append(job)
