@@ -142,6 +142,40 @@ ACTIONS: dict[str, Action] = {
         "swing": None,
         "tests": "a large, fast motion with no club in it",
     },
+    # --- head-up variants, added after the first run -----------------------------
+    # Every unmeasurable result in that run was an action where she looks DOWN: the
+    # scorer reads faces and a golfer looking at a ball is not presenting one. hold_up
+    # scored 0.97477 with zero frames below on the 40% of frames that HAD a face, and
+    # the putt stroke itself measured correct. So the motion was never the problem;
+    # the face simply was not there to check. These ask for the same actions and then
+    # bring her eyes up, which costs nothing and buys coverage in the back half.
+    "putt_lookup": {
+        "scene": KEEP + "She stands over a golf ball on a putting green with a putter, "
+        "addressing it, the hole a few feet away. Whole body in frame, face toward camera.",
+        "motion": "She makes a short putting stroke: the putter moves back a few inches "
+        "and through, striking the ball. She watches it go, then lifts her head and "
+        "looks straight at the camera with a raised eyebrow. The camera does not move.",
+        "swing": "putt",
+        "tests": "the putt again, with her eyes up at the end — coverage, not motion",
+    },
+    "hold_up_lookup": {
+        "scene": KEEP + "She stands on the fairway holding a golf scorecard up beside her "
+        "face, looking at the camera. Head and shoulders and hands in frame.",
+        "motion": "She holds the scorecard up next to her face and looks straight into "
+        "the camera the whole time, raising her eyebrows and giving a small shrug. She "
+        "does not look down at the card. The camera does not move.",
+        "swing": None,
+        "tests": "the same prop shot with her eyes never leaving the lens",
+    },
+    "mark_ball": {
+        "scene": KEEP + "She is crouched on one knee on a putting green beside a golf "
+        "ball, her head up and her face turned toward the camera, whole body in frame.",
+        "motion": "She crouches beside the ball, places a coin marker, and looks up at "
+        "the camera as she stands. Her face stays toward the camera. The camera does "
+        "not move.",
+        "swing": None,
+        "tests": "read_green's posture change, reframed so a face exists to measure",
+    },
     "club_throw": {
         "scene": KEEP + "She stands on the fairway holding a golf club in one hand, "
         "whole body in frame, facing the camera with a resigned expression.",

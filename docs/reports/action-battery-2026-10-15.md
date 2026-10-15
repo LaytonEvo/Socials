@@ -83,13 +83,56 @@ rule about, a rule that reads prompts and so never fired. `club_throw` has her h
 **two clubs**, a wedge and a putter. Scene content remains unmeasured and remains wrong,
 exactly as the standing REVIEW line says.
 
+## The head-up re-run
+
+Three actions re-shot with her eyes coming up. $0.84.
+
+| action | coverage | below | identity | roll | verdict |
+|---|---|---|---|---|---|
+| `hold_up_lookup` | **100%** (was 40%) | **0** | 0.96792 | 17.0° | **holds** |
+| `putt_lookup` | 60% (was 30%) | 4 | 0.94612 | 23.6° | off-identity |
+| `mark_ball` | 100% (read_green had none) | 5 | 0.95051 | 23.4° | off-identity |
+
+**`hold_up` is fixed.** Coverage went from 40% to 100%, zero frames below, and it now
+holds outright. One line of prompt — *"she does not look down at the card"* — turned an
+unverifiable shot into a passing one. That is the cheapest fix found on this project.
+
+**The putt got more measurable and less good.** Coverage doubled, but identity fell from
+0.96489 to 0.94612 and four frames went under. **The stroke stayed correct** — hands
+peaked at -0.18, below the hip line, zero of 124 frames above the shoulder line. So the
+golf survived the change and the face did not.
+
+**`mark_ball` solved read_green's missing face** and landed five frames under.
+
+### A relationship I was about to assert, and the data does not support
+
+Lifting her head adds head roll, and the two worse results both roll about 23°, so the
+obvious story is "roll costs identity". Across all seven measured actions the correlation
+between head roll and identity mean is **+0.381 — the wrong sign**, driven entirely by
+`club_throw`, which rolls 64.4° and has the *best* identity of anything measured.
+
+    club_throw       0.97114   0 below   64.4°
+    hold_up_lookup   0.96792   0 below   17.0°
+    putt             0.96489   0 below    4.2°
+    walk             0.95870   1 below   12.3°
+    mark_ball        0.95051   5 below   23.4°
+    putt_lookup      0.94612   4 below   23.6°
+    celebrate        0.93457   9 below   11.6°
+
+So there is no roll-to-identity law here. The three worst are a laugh, a head lift with an
+expression change, and a crouch-to-stand — which *suggests* that changing expression and
+posture costs identity where moving a limb does not. **One take per action cannot tell
+that from luck**, and this report is not going to pretend otherwise.
+
 ## What to do next
 
-1. **Re-run the head-down actions with the face coming up.** "She strokes the putt, then
-   looks up at the camera" buys coverage in the back half without touching the gate. A
-   prompt change, about $0.60 to test, and it is the difference between a good putt shot
-   being refused and being usable.
-2. **Calibrate a full-body keyframe bar** against the body stills, so a correct still is
+1. ~~Re-run the head-down actions with the face coming up.~~ Done. It fixed `hold_up`
+   outright and half-fixed the putt.
+2. **Take more than one draw of each.** Everything above is n=1. The talking shot needed
+   six takes to find a good one and this gave every action a single roll of the dice, so
+   "this action is hard" and "this draw was unlucky" are not separable. Four takes each of
+   `hold_up_lookup`, `putt_lookup`, `lean` and `walk` is about $2 and would settle it.
+3. **Calibrate a full-body keyframe bar** against the body stills, so a correct still is
    not refused three times again.
-3. **Leave `celebrate` alone.** Big fast motion without a club is a real failure, and
+4. **Leave `celebrate` alone.** Big fast motion without a club is a real failure, and
    there is no obvious lever.
