@@ -8,12 +8,13 @@ with no way to ask for the good one again. Selection is the only lever left.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from app.pipeline.takes import TakeMeasurement, best_take, steadiest
+from app.pipeline.takes import TakeMeasurement, best_take, sample_frames, steadiest
 
 
 def _take(name: str, roll: float, frames: int = 20, sampled: int | None = None) -> TakeMeasurement:
@@ -262,3 +263,67 @@ def test_swing_needs_two_readings_to_mean_anything() -> None:
         _rolled("one", (5.0,), (0.96,)).roll_swing_deg
         != _rolled("one", (5.0,), (0.96,)).roll_swing_deg
     )
+
+
+def test_sample_frames_deletes_its_directory(tmp_path: Path) -> None:
+    """The leak that filled the disk and killed two live runs mid-scoring.
+
+    The first version called `mkdtemp` and returned paths, trusting a caller to clean
+    up. None did. One 5s 1080p take at 8fps is ~120MB of PNG and `measure` extracts
+    twice per take, so a few runs left 424 orphaned directories holding 15GB.
+
+    Asserting the directory is gone afterwards is the whole point: a future refactor
+    back to `return` would fail here rather than in production three weeks later.
+    """
+    clip = tmp_path / "clip.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=4:duration=1",
+            str(clip),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    with sample_frames(clip, fps=4.0) as frames:
+        assert frames, "ffmpeg produced no frames, so this proves nothing"
+        directory = frames[0].parent
+        assert directory.is_dir()
+
+    assert not directory.exists(), f"{directory} outlived its context manager"
+
+
+def test_sample_frames_cleans_up_when_the_caller_raises(tmp_path: Path) -> None:
+    """Both live crashes happened mid-scoring, which is exactly this path."""
+    clip = tmp_path / "clip.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=4:duration=1",
+            str(clip),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    directory: Path | None = None
+    with pytest.raises(RuntimeError, match="scoring blew up"), sample_frames(clip, 4.0) as frames:
+        directory = frames[0].parent
+        raise RuntimeError("scoring blew up")
+
+    assert directory is not None and not directory.exists()

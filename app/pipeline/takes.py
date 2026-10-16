@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -137,24 +139,41 @@ class TakeMeasurement:
         )
 
 
-def sample_frames(clip: Path, fps: float = 8.0) -> list[Path]:
-    directory = Path(tempfile.mkdtemp())
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-i",
-            str(clip),
-            "-vf",
-            f"fps={fps}",
-            str(directory / "f_%04d.png"),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    return sorted(directory.glob("*.png"))
+@contextmanager
+def sample_frames(clip: Path, fps: float = 8.0) -> Iterator[list[Path]]:
+    """Extract frames to a temporary directory, and delete it on the way out.
+
+    **A context manager because the first version was not.** It called `mkdtemp` and
+    returned the paths, leaving the directory for a caller that never removed it. One
+    5-second 1080p take at 8fps is about 120MB of PNG, `measure` extracts twice per
+    take, and a run measures a dozen takes. By the time this was found, 424 orphaned
+    directories held **15GB** — which is what actually filled the disk and killed two
+    bunker runs mid-scoring, long before the takes themselves were a factor.
+
+    The diagnosis was wrong twice before it was right: first the 1080p takes were
+    blamed, then the reference stills. Both were deleted, neither was the cause. The
+    leak was in the measuring, not the thing being measured.
+
+    Yielding rather than returning is the point. A caller cannot hold the paths past
+    the `with`, so there is no version of this that leaks again by omission.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-i",
+                str(clip),
+                "-vf",
+                f"fps={fps}",
+                str(Path(directory) / "f_%04d.png"),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        yield sorted(Path(directory).glob("*.png"))
 
 
 GATE_SAMPLE_FPS = 2.0
@@ -199,59 +218,63 @@ def measure(
     # Identity and coverage, at the gate's rate, over its own extraction.
     scores: list[float] = []
     scorable = 0
-    identity_frames: list[Path] = []
+    sampled = 0
     if embedder is not None:
-        identity_frames = sample_frames(clip, identity_fps)
-        for frame in identity_frames:
-            reading = embedder.read(np.asarray(Image.open(frame).convert("RGB")))
-            if reading.embedding is None:
-                continue
-            scorable += 1
-            if reference is not None:
-                scores.append(cosine(reading.embedding, reference))
+        with sample_frames(clip, identity_fps) as identity_frames:
+            sampled = len(identity_frames)
+            for frame in identity_frames:
+                reading = embedder.read(np.asarray(Image.open(frame).convert("RGB")))
+                if reading.embedding is None:
+                    continue
+                scorable += 1
+                if reference is not None:
+                    scores.append(cosine(reading.embedding, reference))
 
     # Geometry, densely, since a standard deviation over 10 frames is just a noisier one.
     rolls: list[float] = []
     crops: list[np.ndarray] = []
-    frames = sample_frames(clip, fps)
-    for frame in frames:
-        image = np.asarray(Image.open(frame).convert("RGB"))
-        faces = detector(image, 1)  # type: ignore[operator]
-        if not faces:
-            continue
-        box = faces[0]
-        shape = predictor(image, box)  # type: ignore[operator]
-        points = (
-            np.array(
-                [[shape.part(i).x, shape.part(i).y] for i in range(shape.num_parts)], dtype=float
+    dense = 0
+    with sample_frames(clip, fps) as frames:
+        dense = len(frames)
+        for frame in frames:
+            image = np.asarray(Image.open(frame).convert("RGB"))
+            faces = detector(image, 1)  # type: ignore[operator]
+            if not faces:
+                continue
+            box = faces[0]
+            shape = predictor(image, box)  # type: ignore[operator]
+            points = (
+                np.array(
+                    [[shape.part(i).x, shape.part(i).y] for i in range(shape.num_parts)],
+                    dtype=float,
+                )
+                if hasattr(shape, "num_parts")
+                else np.array([[shape.part(i).x, shape.part(i).y] for i in range(4)], dtype=float)
             )
-            if hasattr(shape, "num_parts")
-            else np.array([[shape.part(i).x, shape.part(i).y] for i in range(4)], dtype=float)
-        )
-        if len(points) >= 3:
-            dx, dy = points[0] - points[2]
-            # Folded into [-90, 90]. The 5-point predictor orders the eye corners so that
-            # this vector points right-to-left, putting raw angles near +/-180 where they
-            # wrap: a head level one frame and barely tilted the next reads as a 350-degree
-            # jump. A standard deviation survived that by luck, because the readings within
-            # one take happened to share a sign; swing and drift would not have.
-            angle = float(np.degrees(np.arctan2(dy, dx)))
-            while angle > 90.0:
-                angle -= 180.0
-            while angle < -90.0:
-                angle += 180.0
-            rolls.append(angle)
+            if len(points) >= 3:
+                dx, dy = points[0] - points[2]
+                # Folded into [-90, 90]. The 5-point predictor orders the eye corners so that
+                # this vector points right-to-left, putting raw angles near +/-180 where they
+                # wrap: a head level one frame and barely tilted the next reads as a 350-degree
+                # jump. A standard deviation survived that by luck, because the readings within
+                # one take happened to share a sign; swing and drift would not have.
+                angle = float(np.degrees(np.arctan2(dy, dx)))
+                while angle > 90.0:
+                    angle -= 180.0
+                while angle < -90.0:
+                    angle += 180.0
+                rolls.append(angle)
 
-        grey = np.asarray(Image.open(frame).convert("L"), dtype=float)
-        height, width = box.bottom() - box.top(), box.right() - box.left()
-        patch = grey[
-            max(box.top() + int(height * 0.60), 0) : box.top() + int(height * 0.92),
-            max(box.left() + int(width * 0.25), 0) : box.left() + int(width * 0.75),
-        ]
-        if patch.size:
-            crops.append(
-                np.asarray(Image.fromarray(patch.astype("uint8")).resize((48, 32)), dtype=float)
-            )
+            grey = np.asarray(Image.open(frame).convert("L"), dtype=float)
+            height, width = box.bottom() - box.top(), box.right() - box.left()
+            patch = grey[
+                max(box.top() + int(height * 0.60), 0) : box.top() + int(height * 0.92),
+                max(box.left() + int(width * 0.25), 0) : box.left() + int(width * 0.75),
+            ]
+            if patch.size:
+                crops.append(
+                    np.asarray(Image.fromarray(patch.astype("uint8")).resize((48, 32)), dtype=float)
+                )
 
     activity = (
         float(np.mean([np.abs(crops[i + 1] - crops[i]).mean() for i in range(len(crops) - 1)]))
@@ -263,7 +286,7 @@ def measure(
         # When an embedder is given, coverage is what *it* could read, because that is
         # what the gate will be able to score. Without one this falls back to detections.
         frames_with_face=scorable if embedder is not None else len(crops),
-        frames_sampled=len(identity_frames) if embedder is not None else len(frames),
+        frames_sampled=sampled if embedder is not None else dense,
         head_roll_sd_deg=float(np.std(rolls)) if rolls else float("nan"),
         mouth_activity=activity,
         identity_scores=tuple(scores),
