@@ -86,6 +86,26 @@ Two smaller things fell out of the same run:
   it. Nothing caught it because nothing wrote keyframe rows: an empty table agrees with
   every query you ask of it.
 
+## The ledger is only as durable as the box it sits on
+
+On 2026-10-16 the dev container was recycled. Postgres came back with no
+`persona_studio` database at all: schema, ledger and every `content_piece` gone. The
+$2.80 recorded the day before — reconstructed once already after the crash above —
+went with it. The rendered takes survived only because they were written into the
+repository tree rather than to a temporary path.
+
+This is worth stating plainly because the ADR above argues the ledger is the record of
+what was spent. It is not, yet. It is a record held in a container-local database with
+no backup, no replication and no export, and the only durable account of what this
+project has spent is fal's invoice. A ledger that can vanish cannot be the thing a
+monthly ceiling is enforced against, any more than an empty one could.
+
+What follows from that is a question for the human, not a decision to take here: either
+the ledger moves to a managed database, or runs export their rows to the repository as
+they go, or the ceiling is enforced against the provider's own usage API and the ledger
+is treated as a local convenience. All three are real options with different costs.
+What is not an option is leaving it as it is and believing the number.
+
 ## What this does not fix
 
 **The ledger starts from a false zero.** Everything spent before today is unrecorded and
